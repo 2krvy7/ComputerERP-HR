@@ -290,11 +290,11 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
               )}
 
               <h3 style={{ margin: "0 0 0.6vw", fontSize: "1vw", color: "#365f68" }}>
-                Bids ({quotations.length})
+                Quotations ({quotations.length})
               </h3>
 
               {quotations.length === 0 ? (
-                <p style={{ color: "#888" }}>No bids yet.</p>
+                <p style={{ color: "#888" }}>No Quotation yet.</p>
               ) : (
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>

@@ -67,6 +67,13 @@ def add_quotation(pr_id: int, body: QuotationIn):
                 )
                 if cur.fetchone():
                     raise HTTPException(status_code=409, detail="This supplier already has a bid on this request")
+                
+                cur.execute('SELECT "status" FROM public."Supplier" WHERE "SupplierID" = %s', (body.supplier_id,))
+                sup = cur.fetchone()
+                if not sup:
+                    raise HTTPException(status_code=404, detail="Supplier not found")
+                if sup["status"] != "Active":
+                    raise HTTPException(status_code=409, detail="This supplier is archived and can't receive new bids")                
 
                 cur.execute(
                     '''INSERT INTO public."RequestQuotation" ("PR_ID", "SupplierID", "QuotedAmount", "DeliveryTerms")
