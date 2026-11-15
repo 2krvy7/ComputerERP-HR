@@ -1,69 +1,114 @@
 import Image from "next/image";
+import "./globals.css";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+
+    
+    <div className="dashboard">
+      <h1 className="page-title">Finance Dashboard</h1>
+
+      {/* Summary Cards */}
+      <div className="card-grid">
+        <div className="summary-card">
+          <h3>Total Assets</h3>
+          <p>$1,250,000</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="summary-card">
+          <h3>Total Liabilities</h3>
+          <p>$450,000</p>
         </div>
-      </main>
+
+        <div className="summary-card">
+          <h3>Cash Balance</h3>
+          <p>$150,000</p>
+        </div>
+
+        <div className="summary-card">
+          <h3>Net Income</h3>
+          <p>$85,000</p>
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="dashboard-row">
+        <div className="panel">
+          <h2>Revenue vs Expenses</h2>
+          <div className="chart-placeholder">
+            Chart goes here
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>Cash Flow</h2>
+          <div className="chart-placeholder">
+            Chart goes here
+          </div>
+        </div>
+      </div>
+
+      {/* Journal Entries */}
+      <div className="panel">
+        <h2>Recent Journal Entries</h2>
+
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Reference</th>
+              <th>Description</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr>
+              <td>2026-11-12</td>
+              <td>JE-001</td>
+              <td>Office Supplies</td>
+              <td>$500</td>
+            </tr>
+
+            <tr>
+              <td>2026-11-11</td>
+              <td>JE-002</td>
+              <td>Sales Revenue</td>
+              <td>$8,500</td>
+            </tr>
+
+            <tr>
+              <td>2026-11-10</td>
+              <td>JE-003</td>
+              <td>Utility Expense</td>
+              <td>$1,200</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* AP/AR */}
+      <div className="dashboard-row">
+        <div className="panel">
+          <h2>Accounts Payable</h2>
+
+          <ul>
+            <li>Outstanding Invoices: 15</li>
+            <li>Total Due: $35,000</li>
+            <li>Due This Week: $8,500</li>
+          </ul>
+        </div>
+
+        <div className="panel">
+          <h2>Accounts Receivable</h2>
+
+          <ul>
+            <li>Outstanding Invoices: 22</li>
+            <li>Total Receivable: $58,000</li>
+            <li>Past Due: $6,000</li>
+          </ul>
+        </div>
+      </div>
     </div>
   );
-}
+  }
