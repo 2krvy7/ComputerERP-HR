@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Pagination from "@/components/Pagination";
 
 const API = "http://127.0.0.1:8000";
+const PAGE_SIZE = 10;
 
 type Supplier = {
   SupplierID: number;
@@ -179,6 +181,7 @@ export default function SupplierList({ limit }: { limit?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("Active");
+  const [page, setPage] = useState(1);
   const [form, setForm] = useState<Supplier | "new" | null>(null); // which popup is open
 
   // The backend does the searching, so we ask again when the text or filter changes
@@ -217,7 +220,12 @@ export default function SupplierList({ limit }: { limit?: number }) {
     load();
   }
 
-  const shown = limit ? suppliers.slice(0, limit) : suppliers;
+  const shown = limit ? suppliers.slice(0, limit) : suppliers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+  const pages = Math.max(1, Math.ceil(suppliers.length / PAGE_SIZE));
+  if (page > pages) setPage(pages);
+  }, [suppliers, page]);
 
   const note = (text: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>{text}</p>
@@ -332,7 +340,7 @@ export default function SupplierList({ limit }: { limit?: number }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
             <thead>
               <tr>
-                {["ID", "Name", "Contact person", "Phone", "Email", "Address", ...(limit ? [] : [""])].map((h, i) => (
+                {["Name", "Contact person", "Phone", "Email", "Address", ...(limit ? [] : [""])].map((h, i) => (
                   <th
                     key={i}
                     style={{
@@ -356,7 +364,6 @@ export default function SupplierList({ limit }: { limit?: number }) {
                   key={s.SupplierID}
                   style={{ borderBottom: "1px solid #f0f0f0", opacity: s.status === "Archived" ? 0.6 : 1 }}
                 >
-                  <td style={{ ...cell, color: "#888" }}>{s.SupplierID}</td>
                   <td style={{ ...cell, fontWeight: 500 }}>
                     {s.SupplierName}
                     {s.status === "Archived" && (
@@ -394,7 +401,7 @@ export default function SupplierList({ limit }: { limit?: number }) {
           </table>
         )}
       </div>
-
+      {!limit && <Pagination total={suppliers.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
       {/* Add / Edit popup */}
       {form && (
         <SupplierForm
