@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Package,
   Warehouse,
-  ClipboardCheck,
+  ClipboardList,
   ArrowLeftRight,
   BookOpenText,
 } from "lucide-react";
@@ -16,7 +16,7 @@ const navigation = [
   { name: "Dashboard", href: "/", Icon: LayoutDashboard },
   { name: "Item Master", href: "/items", Icon: Package },
   { name: "Warehouse Management", href: "/warehouses", Icon: Warehouse },
-  { name: "Approvals", href: "/approvals", Icon: ClipboardCheck },
+  { name: "Orders", href: "/orders", Icon: ClipboardList },
   { name: "Stock Actions", href: "/stock_actions", Icon: ArrowLeftRight },
   { name: "Stock Ledger", href: "/stock_ledger", Icon: BookOpenText },
 ];
