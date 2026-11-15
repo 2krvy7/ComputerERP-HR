@@ -196,32 +196,7 @@ export default function CustomerBalancePage() {
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 text-gray-900 md:p-10">
-      <div className="mx-auto max-w-7xl space-y-8">
-
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-500">
-              Sales Module
-            </p>
-
-            <h1 className="mt-1 text-3xl font-bold">
-              Customer Balance
-            </h1>
-
-            <p className="mt-2 text-sm text-gray-500">
-              Review each customer's total invoices, payments, and outstanding balance.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            disabled={loading}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-50"
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </header>
+      <div className="mx-auto max-w-7xl space-y-8"> 
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -298,13 +273,13 @@ export default function CustomerBalancePage() {
               <table className="w-full text-left text-sm">
                 <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
                   <tr>
-                    <th className="px-4 py-3">Customer ID</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Invoices</th>
-                    <th className="px-4 py-3">Total Invoiced</th>
-                    <th className="px-4 py-3">Total Paid</th>
-                    <th className="px-4 py-3">Balance</th>
-                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 text-left py-3">Customer ID</th>
+                    <th className="px-4 text-center py-3">Customer</th>
+                    <th className="px-4 text-center py-3">Invoices</th>
+                    <th className="px-4 text-center py-3">Total Invoiced</th>
+                    <th className="px-4 text-center py-3">Total Paid</th>
+                    <th className="px-4 text-center py-3">Balance</th>
+                    <th className="px-4 text-center py-3">Status</th>
                   </tr>
                 </thead>
 
@@ -318,29 +293,29 @@ export default function CustomerBalancePage() {
                         CUS-{record.customer_id}
                       </td>
 
-                      <td className="px-4 py-3 font-medium">
+                      <td className="px-4 text-center py-3 font-medium">
                         {record.customer_name}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 text-center py-3">
                         {record.invoice_count}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 text-center">
                         {money(record.total_invoiced)}
                       </td>
 
-                      <td className="px-4 py-3 text-green-700">
+                      <td className="px-4 py-3 text-green-700 text-center">
                         {money(record.total_paid)}
                       </td>
 
-                      <td className="px-4 py-3 font-semibold">
+                      <td className="px-4 py-3 font-semibold text-red-700 text-center">
                         {money(record.balance)}
                       </td>
 
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 items-center text-center">
                         <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyle(record.status)}`}
+                          className={`rounded-full px-3 py-1 text-center text-xs font-medium ${statusStyle(record.status)}`}
                         >
                           {record.status}
                         </span>
@@ -386,7 +361,7 @@ function SummaryCard({
   color,
 }: {
   title: string;
-  value: string;
+  value: string; 
   color: string;
 }) {
   return (
