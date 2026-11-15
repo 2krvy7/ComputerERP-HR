@@ -19,7 +19,6 @@ export default function ReportsPage() {
   const [report, setReport] = useState<ProductionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -47,7 +46,7 @@ export default function ReportsPage() {
     };
 
     fetchReport();
-  }, [refreshKey]);
+  }, []);
 
   const summaryCards = [
     {
@@ -75,26 +74,6 @@ export default function ReportsPage() {
 
   return (
     <div className="p-8 space-y-6">
-
-      {/* PAGE HEADER */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800">
-            Production Reports
-          </h1>
-
-          <p className="text-sm text-gray-500 mt-1">
-            Monitor production performance and manufacturing progress.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setRefreshKey((current) => current + 1)}
-          className="px-4 py-2 rounded-lg bg-[#365f68] text-white text-sm hover:bg-[#294b53]"
-        >
-          Refresh
-        </button>
-      </div>
 
       {/* LOADING AND ERROR */}
       {loading ? (
@@ -162,6 +141,69 @@ export default function ReportsPage() {
             </div>
           </div>
 
+                    {/* PRODUCT PRODUCTION COMPARISON */}
+          <div className="bg-white border border-gray-200 rounded-xl p-6">
+            <div className="mb-5">
+              <h2 className="text-lg font-semibold text-gray-800">
+                Product Production Comparison
+              </h2>
+
+              <p className="text-sm text-gray-500 mt-1">
+                Compare the total production output of finished products.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* OFFICE PC */}
+              <div className="border border-gray-200 rounded-lg p-5">
+                <p className="text-sm font-medium text-gray-700">
+                  Office PC
+                </p>
+
+                <h3 className="text-2xl font-bold text-gray-800 mt-3">
+                  —
+                </h3>
+
+                <p className="text-xs text-gray-400 mt-1">
+                  Units produced
+                </p>
+
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-4" />
+              </div>
+
+              {/* GAMING PC */}
+              <div className="border border-gray-200 rounded-lg p-5">
+                <p className="text-sm font-medium text-gray-700">
+                  Gaming PC
+                </p>
+
+                <h3 className="text-2xl font-bold text-gray-800 mt-3">
+                  —
+                </h3>
+
+                <p className="text-xs text-gray-400 mt-1">
+                  Units produced
+                </p>
+
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-4" />
+              </div>
+            </div>
+
+            <div className="py-4 mt-5 border border-dashed border-gray-300 rounded-lg text-center">
+              <p className="text-sm font-semibold text-gray-600">
+                To be updated: Pie Chart
+              </p>
+
+              <p className="text-sm text-amber-600 font-medium mt-1">
+                Pending Input: Inventory
+              </p>
+            </div>
+
+            <p className="text-xs text-gray-400 mt-5 text-center">
+              Product comparison data will appear once production records are available.
+            </p>
+          </div>
+          
           {/* PRODUCTION STATUS */}
           <div className="bg-white border border-gray-200 rounded-xl p-6">
 

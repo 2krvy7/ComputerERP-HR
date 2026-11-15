@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -30,18 +29,18 @@ const panelOptions: {
 }[] = [
   {
     id: "production-monitoring",
-    title: "Production Monitoring",
-    description: "Monitor and update manufactured quantities.",
+    title: "Pending Requests",
+    description: "Review incoming production requests from Inventory.",
   },
   {
     id: "deadlines",
-    title: "Upcoming Deadlines",
+    title: "Upcoming Production Deadlines",
     description: "Monitor upcoming and overdue production orders.",
   },
   {
     id: "recent-orders",
-    title: "Recent Production Orders",
-    description: "View your five latest production orders.",
+    title: "Processing Release Orders",
+    description: "View completed batches awaiting handoff to Inventory.",
   },
   {
     id: "quick-actions",
@@ -200,11 +199,6 @@ export default function Home() {
   .filter(
     (order) => order.status?.toLowerCase() !== "completed"
   )
-  .sort((a, b) => b.Production_ID - a.Production_ID)
-  .filter(
-    (order, index, array) =>
-      array.findIndex((item) => item.PM_ID === order.PM_ID) === index
-  )
   .sort(
     (a, b) =>
       new Date(a.Deadline).getTime() -
@@ -240,17 +234,6 @@ export default function Home() {
 
   return (
     <div className="p-6 space-y-6">
-
-      {/* PAGE HEADER */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">
-          Production Dashboard
-        </h1>
-
-        <p className="text-sm text-gray-500 mt-1">
-          Overview of your production operations.
-        </p>
-      </div>
 
       {/* LOADING AND ERROR */}
       {loading ? (
@@ -297,142 +280,28 @@ export default function Home() {
           {/* CUSTOM DASHBOARD PANELS */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
-            {/* PRODUCTION MONITORING */}
-            {activePanels.includes("production-monitoring") && (
-              <div className="bg-white border border-gray-200 rounded-xl p-5 xl:col-span-2">
-                <h2 className="text-lg font-semibold text-gray-800 mb-1">
-                  Production Progress Monitor
-                </h2>
+          {/* PENDING REQUESTS */}
+          {activePanels.includes("production-monitoring") && (
+            <div className="bg-white border border-gray-200 rounded-xl p-5 xl:col-span-2">
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">
+                Pending Requests
+              </h2>
 
-                <p className="text-sm text-gray-500 mb-5">
-                  Update the cumulative quantity produced for each order.
+              <p className="text-sm text-gray-500 mb-5">
+                Review incoming production requests from Inventory.
+              </p>
+
+              <div className="py-10 text-center border border-dashed border-gray-300 rounded-lg">
+                <p className="text-gray-500 text-sm">
+                  No pending requests to display.
                 </p>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50 text-gray-600">
-                      <tr>
-                        <th className="p-3">Production ID</th>
-                        <th className="p-3">Product</th>
-                        <th className="p-3">Quantity</th>
-                        <th className="p-3 min-w-40">Progress</th>
-                        <th className="p-3">Remaining</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3">Update Produced</th>
-                        <th className="p-3">Action</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {orders.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={8}
-                            className="px-4 py-8 text-center text-gray-400"
-                          >
-                            No production orders found.
-                          </td>
-                        </tr>
-                      ) : (
-                        orders.map((order) => {
-                          const progress =
-                            (order.QuantityProduced /
-                              order.QuantityRequired) *
-                            100;
-
-                          const remaining =
-                            order.QuantityRequired -
-                            order.QuantityProduced;
-
-                          return (
-                            <tr
-                              key={order.Production_ID}
-                              className="border-b border-gray-100"
-                            >
-                              <td className="px-3 py-4 font-medium text-gray-700">
-                                #{order.Production_ID}
-                              </td>
-
-                              <td className="px-3 py-4 text-gray-700">
-                                PM #{order.PM_ID}
-                              </td>
-
-                              <td className="px-3 py-4 text-gray-700">
-                                {order.QuantityProduced} /{" "}
-                                {order.QuantityRequired}
-                              </td>
-
-                              <td className="px-3 py-4">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div
-                                      className="bg-[#668d98] h-2 rounded-full"
-                                      style={{
-                                        width: `${progress}%`,
-                                      }}
-                                    />
-                                  </div>
-
-                                  <span className="text-xs text-gray-600">
-                                    {progress.toFixed(1)}%
-                                  </span>
-                                </div>
-                              </td>
-
-                              <td className="px-3 py-4 text-gray-700">
-                                {remaining}
-                              </td>
-
-                              <td className="px-3 py-4">
-                                <span
-                                  className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusStyle(order.status)}`}
-                                >
-                                  {order.status}
-                                </span>
-                              </td>
-
-                              <td className="px-3 py-4">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={order.QuantityRequired}
-                                  step="1"
-                                  value={
-                                    draftValues[order.Production_ID] ?? ""
-                                  }
-                                  onChange={(event) =>
-                                    setDraftValues((previous) => ({
-                                      ...previous,
-                                      [order.Production_ID]:
-                                        event.target.value,
-                                    }))
-                                  }
-                                  className="w-24 px-2 py-2 border border-gray-300 rounded-lg text-gray-700"
-                                />
-                              </td>
-
-                              <td className="px-3 py-4">
-                                <button
-                                  onClick={() => updateProgress(order)}
-                                  disabled={
-                                    updatingId !== null || loading
-                                  }
-                                  className="px-3 py-2 rounded-lg bg-[#365f68] text-white text-xs hover:bg-[#294b53] disabled:opacity-50"
-                                >
-                                  {updatingId === order.Production_ID
-                                    ? "Saving..."
-                                    : "Update"}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <p className="text-gray-400 text-xs mt-1">
+                  Incoming requests will appear here.
+                </p>
               </div>
-            )}
+            </div>
+          )}
 
             {/* UPCOMING DEADLINES */}
             {activePanels.includes("deadlines") && (
@@ -494,52 +363,25 @@ export default function Home() {
               </div>
             )}
 
-            {/* RECENT PRODUCTION ORDERS */}
+            {/* PROCESSING RELEASE ORDERS */}
             {activePanels.includes("recent-orders") && (
               <div className="bg-white border border-gray-200 rounded-xl p-5">
                 <h2 className="text-lg font-semibold text-gray-800 mb-1">
-                  Recent Production Orders
+                  Processing Release Orders
                 </h2>
 
                 <p className="text-sm text-gray-500 mb-5">
-                  Your five latest production orders.
+                  Completed production batches awaiting handoff to Inventory.
                 </p>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50 text-gray-600">
-                      <tr>
-                        <th className="p-3">Order ID</th>
-                        <th className="p-3">Product</th>
-                        <th className="p-3">Status</th>
-                      </tr>
-                    </thead>
+                <div className="py-10 text-center border border-dashed border-gray-300 rounded-lg">
+                  <p className="text-gray-500 text-sm">
+                    No release orders to display.
+                  </p>
 
-                    <tbody>
-                      {recentOrders.map((order) => (
-                        <tr
-                          key={order.Production_ID}
-                          className="border-b border-gray-100"
-                        >
-                          <td className="p-3">
-                            #{order.Production_ID}
-                          </td>
-
-                          <td className="p-3">
-                            PM #{order.PM_ID}
-                          </td>
-
-                          <td className="p-3">
-                            <span
-                              className={`text-xs px-2 py-1 rounded-full ${getStatusStyle(order.status)}`}
-                            >
-                              {order.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <p className="text-gray-400 text-xs mt-1">
+                    Completed batches awaiting Inventory handoff will appear here.
+                  </p>
                 </div>
               </div>
             )}
@@ -556,6 +398,17 @@ export default function Home() {
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <a
+                    href="/products"
+                    className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition">
+                    <p className="font-medium text-gray-800">
+                      Products
+                    </p>
+
+                    <p className="text-xs text-gray-500 mt-1">
+                      View and manage products
+                    </p>
+                  </a>
                   <a
                     href="/orders"
                     className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"

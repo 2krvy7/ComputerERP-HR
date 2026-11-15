@@ -16,6 +16,7 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showAddProduct, setShowAddProduct] = useState(false);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -43,18 +44,8 @@ export default function ProductsPage() {
     fetchProducts();
   }, []);
 
-  return (
+    return (
     <div className="p-6 space-y-6">
-
-      {/* Page Heading */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">
-          Products
-        </h1>
-        <p className="text-sm text-gray-500">
-          Manage and view registered production products.
-        </p>
-      </div>
 
       {/* Product Master Header */}
       <div className="flex flex-wrap justify-between items-center gap-3">
@@ -70,9 +61,8 @@ export default function ProductsPage() {
         </div>
 
         <button
-          disabled
-          title="Product registration will be available after Inventory integration."
-          className="bg-[#365f68] text-white px-4 py-2 rounded-lg opacity-60 cursor-not-allowed"
+          onClick={() => setShowAddProduct(true)}
+          className="bg-[#365f68] text-white px-4 py-2 rounded-lg hover:bg-[#294b53] transition"
         >
           + Add Product
         </button>
@@ -133,6 +123,76 @@ export default function ProductsPage() {
           </tbody>
         </table>
       </div>
+            {/* ADD PRODUCT MODAL */}
+      {showAddProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white w-full max-w-lg rounded-xl shadow-xl p-6">
+
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-semibold text-gray-800">
+                Add New Product
+              </h2>
+
+              <button
+                onClick={() => setShowAddProduct(false)}
+                className="text-gray-400 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <p className="text-sm text-gray-500 mb-6">
+              Register a finished product using an existing Inventory Item Master record.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Inventory Item
+                </label>
+
+                <select
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select a finished product...
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Manual
+                </label>
+
+                <textarea
+                  rows={3}
+                  placeholder="Enter product details..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowAddProduct(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                disabled
+                className="px-4 py-2 rounded-lg bg-[#365f68] text-white opacity-60 cursor-not-allowed"
+              >
+                Save Product
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 }

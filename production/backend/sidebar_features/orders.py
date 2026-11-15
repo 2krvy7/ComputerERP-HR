@@ -12,6 +12,7 @@ class ProductionOrderInput(BaseModel):
     PM_ID: int
     WH_ID: int
     QuantityRequired: int = Field(gt=0)
+    UnitProductionCost: float | None = None
     StartDate: datetime
     Deadline: datetime
 
@@ -36,7 +37,8 @@ def get_orders():
                 "QuantityProduced",
                 "StartDate",
                 "Deadline",
-                status
+                status,
+                "UnitProductionCost"
             FROM public."PRODUCTION"
             ORDER BY "Production_ID" DESC
         """)
@@ -108,9 +110,10 @@ def create_order(order: ProductionOrderInput):
                         "QuantityProduced",
                         "StartDate",
                         "Deadline",
-                        "status"
+                        "status",
+                        "UnitProductionCost"
                     )
-                VALUES (%s, %s, %s, 0, %s, %s, 'Pending')
+                VALUES (%s, %s, %s, 0, %s, %s, 'Pending', %s)
                 RETURNING "Production_ID";
                 """,
                 (
@@ -118,7 +121,8 @@ def create_order(order: ProductionOrderInput):
                     order.WH_ID,
                     order.QuantityRequired,
                     order.StartDate,
-                    order.Deadline
+                    order.Deadline,
+                    order.UnitProductionCost
                 )
             )
 
@@ -133,7 +137,8 @@ def create_order(order: ProductionOrderInput):
             "WH_ID": order.WH_ID,
             "QuantityRequired": order.QuantityRequired,
             "QuantityProduced": 0,
-            "status": "Pending"
+            "status": "Pending",
+            "UnitProductionCost": order.UnitProductionCost,
         }
 
     except HTTPException:
