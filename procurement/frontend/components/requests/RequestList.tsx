@@ -122,7 +122,7 @@ export default function RequestList({ limit }: { limit?: number }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
               <thead>
                 <tr>
-                  {["ID", "Item", "Qty", "Warehouse", "Bids", "Status", "Issued"].map((h) => (
+                  {["ID", "Item", "Qty", "Warehouse", "Quoatations", "Status", "Issued"].map((h) => (
                     <th
                       key={h}
                       style={{
