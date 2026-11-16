@@ -34,7 +34,25 @@ class SalesInvoice(Base):
         nullable=True,
     )
 
+    installment_months: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    interest_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
+    interest_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
     total_due: Mapped[Decimal] = mapped_column(
-        Numeric,
+        Numeric(12, 2),
         nullable=False,
     )

@@ -113,11 +113,11 @@ export default function QuotationPanel() {
 
   const getStatusStyle = (status: QuotationStatus) => {
     const styles: Record<QuotationStatus, string> = {
-      Draft: "bg-slate-100 text-slate-700 text-center",
-      Sent: "bg-blue-100 text-blue-700 text-center",
-      Accepted: "bg-emerald-100 text-emerald-700 text-center",
-      Rejected: "bg-rose-100 text-rose-700 text-center",
-      Expired: "bg-amber-100 text-amber-700 text-center",
+      Draft: "bg-slate-100 text-slate-700",
+      Sent: "bg-blue-100 text-blue-700",
+      Accepted: "bg-emerald-100 text-emerald-700",
+      Rejected: "bg-rose-100 text-rose-700",
+      Expired: "bg-amber-100 text-amber-700",
     };
 
     return styles[status];
@@ -173,7 +173,7 @@ export default function QuotationPanel() {
   ).length;
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-5 bg-green-50 text-slate-800">
       {/* Summary Cards */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
@@ -202,13 +202,13 @@ export default function QuotationPanel() {
       </section>
 
       {/* Quotation Records */}
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-5">
+      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="border-b border-[#D1D5DB] p-5">
           <h2 className="font-bold text-slate-900">
             Quotation Records
           </h2>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             View quotations and update their current status.
           </p>
         </div>
@@ -220,7 +220,7 @@ export default function QuotationPanel() {
             placeholder="Search quotation ID or customer ID..."
             value={search}
             onChange={(event) => handleSearchChange(event.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           />
 
           <select
@@ -249,7 +249,7 @@ export default function QuotationPanel() {
 
         {/* Loading */}
         {loading && (
-          <div className="p-10 text-center text-sm text-slate-500">
+          <div className="p-10 text-center text-sm text-slate-600">
             Loading quotations...
           </div>
         )}
@@ -274,48 +274,53 @@ export default function QuotationPanel() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[850px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
                   <tr>
-                    <th className="px-5 text-center py-4 font-semibold">
+                    <th className="px-5 py-4 text-center font-semibold">
                       Quotation No.
                     </th>
-                    <th className="px-5 text-center py-4 font-semibold">
+
+                    <th className="px-5 py-4 text-center font-semibold">
                       Customer ID
                     </th>
+
                     <th className="px-5 py-4 font-semibold">
                       Quotation Date
                     </th>
+
                     <th className="px-5 py-4 text-center font-semibold">
                       Items
                     </th>
+
                     <th className="px-5 py-4 text-center font-semibold">
                       Total Amount
                     </th>
+
                     <th className="px-5 py-4 text-center font-semibold">
                       Status
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#D1D5DB]">
                   {paginatedQuotations.map((quotation) => (
                     <tr
                       key={quotation.quotation_id}
-                      className="transition hover:bg-slate-50"
+                      className="bg-[#E5E7EB] transition-colors hover:bg-[#DDE1E5]"
                     >
-                      <td className="whitespace-nowrap  text-center px-5 py-4 font-semibold text-slate-900">
+                      <td className="whitespace-nowrap px-5 py-4 text-center font-semibold text-slate-900">
                         QT-{String(quotation.quotation_id).padStart(4, "0")}
                       </td>
 
-                      <td className="px-5 text-center py-4 text-slate-600">
+                      <td className="px-5 py-4 text-center text-slate-700">
                         #{quotation.customer_id}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
                         {formatDate(quotation.quotation_date)}
                       </td>
 
-                      <td className="px-5 py-4 text-center text-slate-600">
+                      <td className="px-5 py-4 text-center text-slate-700">
                         {quotation.details?.length ?? 0}
                       </td>
 
@@ -323,21 +328,22 @@ export default function QuotationPanel() {
                         {formatCurrency(Number(quotation.total_amount) || 0)}
                       </td>
 
+                      {/* Status Badge and Updater Side-by-Side */}
                       <td className="px-5 py-4">
-                        <div className="flex flex-col text-center items-start gap-2">
+                        <div className="flex items-center justify-center gap-2 whitespace-nowrap">
                           <span
-                            className={`rounded-full px-3 py-1 text-xs text-center font-semibold ${getStatusStyle(
+                            className={`rounded-full px-3 py-1 text-center text-xs font-semibold ${getStatusStyle(
                               quotation.status
                             )}`}
                           >
                             {quotation.status}
                           </span>
 
-                          <select 
+                          <select
                             aria-label={`Update status for quotation ${quotation.quotation_id}`}
                             value={quotation.status}
                             disabled={
-                              savingQuotationId === quotation.quotation_id
+                              savingQuotationId !== null
                             }
                             onChange={(event) =>
                               void handleStatusChange(
@@ -345,7 +351,7 @@ export default function QuotationPanel() {
                                 event.target.value as QuotationStatus
                               )
                             }
-                            className="max-w-full rounded-md border text-center border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-600 disabled:cursor-wait disabled:opacity-60"
+                            className="max-w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-600 disabled:cursor-wait disabled:opacity-60"
                           >
                             {statuses
                               .filter((status) => status !== "All")
@@ -355,13 +361,13 @@ export default function QuotationPanel() {
                                 </option>
                               ))}
                           </select>
-
-                          {savingQuotationId === quotation.quotation_id && (
-                            <span className="text-xs text-blue-600">
-                              Saving...
-                            </span>
-                          )}
                         </div>
+
+                        {savingQuotationId === quotation.quotation_id && (
+                          <p className="mt-1 text-center text-xs text-blue-600">
+                            Saving...
+                          </p>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -370,7 +376,7 @@ export default function QuotationPanel() {
                     <tr>
                       <td
                         colSpan={6}
-                        className="px-5 py-12 text-center text-slate-500"
+                        className="px-5 py-12 text-center text-slate-600"
                       >
                         {quotations.length === 0
                           ? "No quotation records available."
@@ -383,14 +389,17 @@ export default function QuotationPanel() {
             </div>
 
             {/* Pagination */}
-            <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-slate-500">
+            <div className="flex flex-col gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-600">
                 Showing{" "}
                 {filteredQuotations.length === 0
                   ? 0
                   : (safeCurrentPage - 1) * PAGE_SIZE + 1}{" "}
                 to{" "}
-                {Math.min(safeCurrentPage * PAGE_SIZE, filteredQuotations.length)}{" "}
+                {Math.min(
+                  safeCurrentPage * PAGE_SIZE,
+                  filteredQuotations.length
+                )}{" "}
                 of {filteredQuotations.length} quotations
               </p>
 
@@ -401,12 +410,12 @@ export default function QuotationPanel() {
                   onClick={() =>
                     setCurrentPage((page) => Math.max(1, page - 1))
                   }
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
                 </button>
 
-                <span className="px-2 text-xs font-medium text-slate-600">
+                <span className="px-2 text-xs font-medium text-slate-700">
                   Page {safeCurrentPage} of {totalPages}
                 </span>
 
@@ -416,7 +425,7 @@ export default function QuotationPanel() {
                   onClick={() =>
                     setCurrentPage((page) => Math.min(totalPages, page + 1))
                   }
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>
@@ -439,14 +448,18 @@ function SummaryCard({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-600">{title}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-semibold text-slate-600">
+        {title}
+      </p>
 
       <h3 className="mt-3 break-words text-2xl font-bold tracking-tight text-slate-900">
         {value}
       </h3>
 
-      <p className="mt-2 text-xs text-slate-500">{description}</p>
+      <p className="mt-2 text-xs text-slate-600">
+        {description}
+      </p>
     </div>
   );
 }

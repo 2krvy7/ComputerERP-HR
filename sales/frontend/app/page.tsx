@@ -77,8 +77,9 @@ const getLastSixMonths = () => {
   return months;
 };
 
+// Dashboard card styling
 const cardClass =
-  "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+  "rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm";
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -314,14 +315,14 @@ export default function DashboardPage() {
 
   // Line graph dimensions and coordinates
   const chartWidth = 600;
-const chartHeight = 200;
+  const chartHeight = 200;
 
-const chartPadding = {
-  top: 15,
-  right: 20,
-  bottom: 35,
-  left: 70,
-};
+  const chartPadding = {
+    top: 15,
+    right: 20,
+    bottom: 35,
+    left: 70,
+  };
 
   const maxMonthlyValue = Math.max(
     1,
@@ -357,14 +358,14 @@ const chartPadding = {
   const chartAxisLabels = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="min-h-full space-y-6 bg-#8FB1B8-50 p-4 sm:p-6">
+    <div className="min-h-full space-y-6 bg-green-50 p-4 text-slate-900 sm:p-6">
       {/* Dashboard Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">
             {PAGE_TITLE}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Overview of sales performance and financial activities.
           </p>
         </div>
@@ -380,49 +381,49 @@ const chartPadding = {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Sales
           </p>
           <p className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "—" : money(analytics.totalSales)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Based on sales invoices
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Orders
           </p>
           <p className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "—" : analytics.totalOrders.toLocaleString()}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             {analytics.activeOrders} non-cancelled orders
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Outstanding Balance
           </p>
           <p className="mt-2 text-2xl font-bold text-amber-600">
             {loading ? "—" : money(analytics.outstandingBalance)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Remaining accounts receivable
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Collections
           </p>
           <p className="mt-2 text-2xl font-bold text-emerald-600">
             {loading ? "—" : money(analytics.totalCollections)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Recorded customer payments
           </p>
         </div>
@@ -434,31 +435,31 @@ const chartPadding = {
           <h2 className="text-lg font-bold text-slate-900">
             Sales Performance
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Monthly sales and collections for the last six months.
           </p>
         </div>
 
         {loading ? (
-          <p className="py-10 text-center text-sm text-slate-500">
+          <p className="py-10 text-center text-sm text-slate-600">
             Loading sales performance...
           </p>
         ) : monthlyAnalytics.every(
             (month) => month.sales === 0 && month.collections === 0
           ) ? (
-          <p className="py-10 text-center text-sm text-slate-500">
+          <p className="py-10 text-center text-sm text-slate-600">
             No sales or collection records available for this period.
           </p>
         ) : (
           <>
             {/* Graph Legend */}
             <div className="mb-4 flex flex-wrap gap-5 text-sm">
-              <span className="flex items-center gap-2 text-slate-600">
+              <span className="flex items-center gap-2 text-slate-700">
                 <span className="h-3 w-3 rounded-full bg-blue-600" />
                 Sales
               </span>
 
-              <span className="flex items-center gap-2 text-slate-600">
+              <span className="flex items-center gap-2 text-slate-700">
                 <span className="h-3 w-3 rounded-full bg-emerald-500" />
                 Collections
               </span>
@@ -484,7 +485,7 @@ const chartPadding = {
                         y1={y}
                         x2={chartWidth - chartPadding.right}
                         y2={y}
-                        stroke="#e2e8f0"
+                        stroke="#cbd5e1"
                         strokeDasharray="4 4"
                       />
 
@@ -493,7 +494,7 @@ const chartPadding = {
                         y={y + 4}
                         textAnchor="end"
                         fontSize="11"
-                        fill="#64748b"
+                        fill="#475569"
                       >
                         {value >= 1000
                           ? `₱${(value / 1000).toFixed(0)}k`
@@ -560,7 +561,7 @@ const chartPadding = {
                       y={chartHeight - 12}
                       textAnchor="middle"
                       fontSize="11"
-                      fill="#64748b"
+                      fill="#475569"
                     >
                       {month.label}
                     </text>
@@ -570,9 +571,9 @@ const chartPadding = {
             </div>
 
             {/* Monthly Totals */}
-            <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+            <div className="mt-5 grid grid-cols-1 gap-3 border-t border-[#D1D5DB] pt-4 sm:grid-cols-2">
               <div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-600">
                   Sales in displayed period
                 </p>
                 <p className="mt-1 font-semibold text-blue-700">
@@ -586,7 +587,7 @@ const chartPadding = {
               </div>
 
               <div>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-600">
                   Collections in displayed period
                 </p>
                 <p className="mt-1 font-semibold text-emerald-700">
@@ -609,24 +610,24 @@ const chartPadding = {
           <h2 className="text-lg font-bold text-slate-900">
             Top Selling Products
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Products ranked by net quantity sold, after recorded returns.
           </p>
         </div>
 
         {loading ? (
-          <p className="py-8 text-center text-sm text-slate-500">
+          <p className="py-8 text-center text-sm text-slate-600">
             Loading product analytics...
           </p>
         ) : topProducts.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">
+          <p className="py-8 text-center text-sm text-slate-600">
             No product sales records available yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[650px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
                   <th className="px-4 py-3 text-left">Rank</th>
                   <th className="px-4 py-3 text-center">Product</th>
                   <th className="px-4 py-3 text-center">SKU</th>
@@ -643,22 +644,22 @@ const chartPadding = {
                 {topProducts.map((product, index) => (
                   <tr
                     key={product.IM_ID}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                    className="border-b border-[#D1D5DB] last:border-0 hover:bg-[#DDE1E5]"
                   >
-                    <td className="px-4 py-4 font-semibold text-slate-500 ">
+                    <td className="px-4 py-4 font-semibold text-slate-600">
                       #{index + 1}
                     </td>
 
-                    <td className="px-4 py-4 text-center ">
-                      <p className="font-semibold text-slate-800 text-center">
+                    <td className="px-4 py-4 text-center">
+                      <p className="text-center font-semibold text-slate-800">
                         {product.name}
                       </p>
-                      <p className="text-xs text-slate-500 text-center">
+                      <p className="text-center text-xs text-slate-600">
                         Item ID: {product.IM_ID}
                       </p>
                     </td>
 
-                    <td className="px-4 py-4 text-slate-600 text-center">
+                    <td className="px-4 py-4 text-center text-slate-700">
                       {product.sku}
                     </td>
 
@@ -683,16 +684,16 @@ const chartPadding = {
           <h2 className="text-lg font-bold text-slate-900">
             Sales Order Status
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Current distribution of sales orders.
           </p>
 
           {loading ? (
-            <p className="py-8 text-center text-sm text-slate-500">
+            <p className="py-8 text-center text-sm text-slate-600">
               Loading order statuses...
             </p>
           ) : orders.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">
+            <p className="py-8 text-center text-sm text-slate-600">
               No sales orders available.
             </p>
           ) : (
@@ -722,11 +723,9 @@ const chartPadding = {
                       </span>
                     </div>
 
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-300">
                       <div
-                        className={`h-full rounded-full ${
-                          statusColors[item.status]
-                        }`}
+                        className={`h-full rounded-full ${statusColors[item.status]}`}
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
@@ -741,13 +740,13 @@ const chartPadding = {
           <h2 className="text-lg font-bold text-slate-900">
             Financial Overview
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Summary of recorded sales and payment activity.
           </p>
 
           <div className="mt-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-b border-[#D1D5DB] pb-3">
+              <span className="text-sm text-slate-700">
                 Total Sales
               </span>
               <span className="font-semibold text-slate-900">
@@ -755,8 +754,8 @@ const chartPadding = {
               </span>
             </div>
 
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-b border-[#D1D5DB] pb-3">
+              <span className="text-sm text-slate-700">
                 Total Collections
               </span>
               <span className="font-semibold text-emerald-700">
@@ -764,8 +763,8 @@ const chartPadding = {
               </span>
             </div>
 
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-b border-[#D1D5DB] pb-3">
+              <span className="text-sm text-slate-700">
                 Outstanding Balance
               </span>
               <span className="font-semibold text-amber-600">
@@ -773,8 +772,8 @@ const chartPadding = {
               </span>
             </div>
 
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
+            <div className="flex items-center justify-between border-b border-[#D1D5DB] pb-3">
+              <span className="text-sm text-slate-700">
                 Total Sales Returns
               </span>
               <span className="font-semibold text-red-600">
@@ -783,7 +782,7 @@ const chartPadding = {
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">
+              <span className="text-sm text-slate-700">
                 Overdue Accounts
               </span>
               <span className="font-semibold text-red-600">
@@ -800,24 +799,24 @@ const chartPadding = {
           <h2 className="text-lg font-bold text-slate-900">
             Recent Sales Invoices
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             The five most recently issued sales invoices.
           </p>
         </div>
 
         {loading ? (
-          <p className="py-8 text-center text-sm text-slate-500">
+          <p className="py-8 text-center text-sm text-slate-600">
             Loading recent invoices...
           </p>
         ) : recentInvoices.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">
+          <p className="py-8 text-center text-sm text-slate-600">
             No sales invoices available yet.
           </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[550px] text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
                   <th className="px-4 py-3 text-left">Invoice ID</th>
                   <th className="px-4 py-3 text-center">Order ID</th>
                   <th className="px-4 py-3 text-center">Invoice Date</th>
@@ -829,18 +828,18 @@ const chartPadding = {
                 {recentInvoices.map((invoice) => (
                   <tr
                     key={invoice.invoice_id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                    className="border-b border-[#D1D5DB] last:border-0 hover:bg-[#DDE1E5]"
                   >
-                    <td className="px-4 py-4 font-semibold text-blue-700 text-left">
+                    <td className="px-4 py-4 text-left font-semibold text-blue-700">
                       #{invoice.invoice_id}
                     </td>
-                    <td className="px-4 py-4 text-slate-600 text-center">
+                    <td className="px-4 py-4 text-center text-slate-700">
                       #{invoice.order_id}
                     </td>
-                    <td className="px-4 py-4 text-slate-600 text-center">
+                    <td className="px-4 py-4 text-center text-slate-700">
                       {formatDate(invoice.invoice_date)}
                     </td>
-                    <td className="px-4 py-4 font-semibold text-slate-800 text-center">
+                    <td className="px-4 py-4 text-center font-semibold text-slate-800">
                       {money(invoice.total_due)}
                     </td>
                   </tr>

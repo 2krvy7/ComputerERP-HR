@@ -130,15 +130,16 @@ export default function CustomersPage() {
   const tabClass = (tab: CustomerTab) =>
     `rounded-lg px-5 py-3 text-sm font-semibold transition ${
       activeTab === tab
-        ? "bg-blue-700 text-white shadow-sm"
-        : "text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+        ? "bg-green-700 text-white shadow-sm"
+        : "text-slate-600 hover:bg-[#D1D5DB] hover:text-blue-700"
     }`;
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 text-slate-900 md:p-10">
+    <main className="min-h-screen bg-green-50 p-6 text-slate-900 md:p-10">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        <div className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
+        {/* Customer Tabs */}
+        <div className="flex flex-wrap gap-2 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-2 shadow-sm">
           <button
             type="button"
             onClick={() => setActiveTab("customers")}
@@ -156,6 +157,7 @@ export default function CustomersPage() {
           </button>
         </div>
 
+        {/* Customers Tab */}
         {activeTab === "customers" && (
           <section className="space-y-6">
             {error && (
@@ -167,7 +169,7 @@ export default function CustomersPage() {
               </div>
             )}
 
-
+            {/* Customer Summary Cards */}
             <section className="grid gap-4 sm:grid-cols-3">
               <SummaryCard
                 title="Total Customers"
@@ -187,13 +189,15 @@ export default function CustomersPage() {
               />
             </section>
 
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center">
+            {/* Customer List Card */}
+            <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+              <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center">
                 <div>
                   <h2 className="font-semibold text-slate-900">
                     Customer List
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500">
+
+                  <p className="mt-1 text-sm text-slate-600">
                     Search, edit, activate, or deactivate customers.
                   </p>
                 </div>
@@ -203,22 +207,21 @@ export default function CustomersPage() {
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search customers..."
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
                 />
 
                 <div className="flex justify-end">
-  <button
-    type="button"
-    onClick={openAddForm}
-    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-  >
-    <span className="text-lg leading-none">+</span>
-    Add Customer
-  </button>
-</div>
+                  <button
+                    type="button"
+                    onClick={openAddForm}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    <span className="text-lg leading-none">+</span>
+                    Add Customer
+                  </button>
+                </div>
               </div>
 
-          
               <CustomerTable
                 customers={customers}
                 loading={loading}
@@ -229,6 +232,7 @@ export default function CustomersPage() {
           </section>
         )}
 
+        {/* Customer Balance Tab */}
         {activeTab === "balance" && (
           <section>
             <CustomerBalancePage />
@@ -239,7 +243,7 @@ export default function CustomersPage() {
       {/* Add/Edit Customer Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-auto w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+          <div className="my-auto w-full max-w-lg rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-xl">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-900">
                 {editingCustomer
@@ -247,7 +251,7 @@ export default function CustomersPage() {
                   : "Add New Customer"}
               </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-slate-600">
                 Enter the customer information below.
               </p>
             </div>
@@ -273,7 +277,7 @@ export default function CustomersPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="status-modal-title"
-            className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl"
+            className="w-full max-w-md rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-2xl"
           >
             <div
               className={`mb-4 flex h-12 w-12 items-center justify-center rounded-full ${
@@ -302,7 +306,7 @@ export default function CustomersPage() {
               customer account?
             </p>
 
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="mt-4 rounded-lg border border-[#D1D5DB] bg-[#F3F4F6] p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Customer Information
               </p>
@@ -337,7 +341,7 @@ export default function CustomersPage() {
             </div>
 
             {statusCustomer.status && (
-              <p className="mt-4 text-xs leading-5 text-slate-500">
+              <p className="mt-4 text-xs leading-5 text-slate-600">
                 Deactivating this account will mark the customer as
                 inactive. Existing customer records will remain in
                 the system.
@@ -349,7 +353,7 @@ export default function CustomersPage() {
                 type="button"
                 disabled={updatingStatus}
                 onClick={() => setStatusCustomer(null)}
-                className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -388,8 +392,8 @@ function SummaryCard({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">
         {title}
       </p>
 

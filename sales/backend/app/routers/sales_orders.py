@@ -4,14 +4,17 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models.customer import Customer
 from app.models.item_master import ItemMaster
 from app.models.sales_quotation import SalesQuotation
+from app.models.sales_quotation_detail import SalesQuotationDetail
 from app.models.sales_order import SalesOrder
 from app.models.sales_order_detail import SalesOrderDetail
+
 from app.schemas.sales_order import (
     SalesOrderCreate,
     SalesOrderResponse,
@@ -76,7 +79,8 @@ def get_orders(
     return db.scalars(statement).all()
 
 
-# Create a sales order with multiple products.
+# Create a sales order and automatically generate
+# its quotation when one is not already provided.
 @router.post(
     "",
     response_model=SalesOrderResponse,
@@ -100,11 +104,14 @@ def create_order(
             detail="This customer is inactive.",
         )
 
-    # Validate the optional quotation.
+    # Validate an existing quotation, if supplied.
     quotation = None
 
     if order_data.quotation_id is not None:
-        quotation = db.get(SalesQuotation, order_data.quotation_id)
+        quotation = db.get(
+            SalesQuotation,
+            order_data.quotation_id,
+        )
 
         if quotation is None:
             raise HTTPException(
@@ -124,7 +131,6 @@ def create_order(
                 detail="Only accepted quotations can be converted to orders.",
             )
 
-        # Prevent converting the same quotation more than once.
         existing_order = db.scalar(
             select(SalesOrder).where(
                 SalesOrder.quotation_id == order_data.quotation_id
@@ -137,7 +143,7 @@ def create_order(
                 detail="This quotation has already been converted to an order.",
             )
 
-    # Validate products and calculate totals.
+    # Validate products and calculate order totals.
     order_details = []
     order_total = Decimal("0")
 
@@ -156,11 +162,13 @@ def create_order(
                 detail=f"Item {item.Item_Name} has no available price.",
             )
 
-        unit_price = Decimal(item.Price)
-        discount = detail.discount
+        unit_price = Decimal(str(item.Price))
+        discount = Decimal(str(detail.discount))
 
         gross_total = Decimal(detail.quantity) * unit_price
-        discount_amount = gross_total * discount / Decimal("100")
+        discount_amount = (
+            gross_total * discount / Decimal("100")
+        )
         line_total = gross_total - discount_amount
 
         order_total += line_total
@@ -175,18 +183,42 @@ def create_order(
             }
         )
 
-    order = SalesOrder(
-        customer_id=order_data.customer_id,
-        quotation_id=order_data.quotation_id,
-        order_date=order_data.order_date or date.today(),
-        status="Pending",
-        total_amount=order_total,
-    )
-
     try:
+        # STEP 1: Automatically create a quotation
+        # only if the order does not already have one.
+        if quotation is None:
+            quotation = SalesQuotation(
+                customer_id=order_data.customer_id,
+                quotation_date=order_data.order_date or date.today(),
+                status="Accepted",
+                total_amount=order_total,
+            )
+
+            db.add(quotation)
+            db.flush()
+
+            # Create quotation detail records.
+            for detail in order_details:
+                db.add(
+                    SalesQuotationDetail(
+                        quotation_id=quotation.quotation_id,
+                        **detail,
+                    )
+                )
+
+        # STEP 2: Create the sales order.
+        order = SalesOrder(
+            customer_id=order_data.customer_id,
+            quotation_id=quotation.quotation_id,
+            order_date=order_data.order_date or date.today(),
+            status="Pending",
+            total_amount=order_total,
+        )
+
         db.add(order)
         db.flush()
 
+        # STEP 3: Create sales order detail records.
         for detail in order_details:
             db.add(
                 SalesOrderDetail(
@@ -195,12 +227,28 @@ def create_order(
                 )
             )
 
+        # STEP 4: Save the quotation and sales order.
+        # Invoice and AR will be created separately
+        # when the user adds a Sales Invoice.
         db.commit()
 
+        # Return the newly created order with its details.
         return db.scalar(
             select(SalesOrder)
             .options(selectinload(SalesOrder.details))
             .where(SalesOrder.order_id == order.order_id)
+        )
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Unable to create the sales order and its related "
+                "quotation. A duplicate or database constraint "
+                "conflict may exist."
+            ),
         )
 
     except Exception:

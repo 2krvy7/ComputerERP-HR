@@ -38,9 +38,7 @@ const formatDate = (value: string | null | undefined) => {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
+  if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleDateString("en-PH", {
     day: "2-digit",
@@ -87,9 +85,7 @@ export default function OrdersPage() {
       setOrders(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load sales orders."
+        err instanceof Error ? err.message : "Unable to load sales orders."
       );
     } finally {
       setLoading(false);
@@ -102,9 +98,7 @@ export default function OrdersPage() {
       setCustomers(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load customers."
+        err instanceof Error ? err.message : "Unable to load customers."
       );
     }
   }, []);
@@ -117,9 +111,7 @@ export default function OrdersPage() {
       setItems(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load items."
+        err instanceof Error ? err.message : "Unable to load items."
       );
     } finally {
       setLoadingItems(false);
@@ -156,8 +148,7 @@ export default function OrdersPage() {
     if (!term) return orders;
 
     return orders.filter((order) => {
-      const customerName =
-        customerMap.get(order.customer_id) ?? "";
+      const customerName = customerMap.get(order.customer_id) ?? "";
 
       return (
         String(order.order_id).includes(term) ||
@@ -177,10 +168,7 @@ export default function OrdersPage() {
   const paginatedOrders = useMemo(() => {
     const startIndex = (safePage - 1) * PAGE_SIZE;
 
-    return filteredOrders.slice(
-      startIndex,
-      startIndex + PAGE_SIZE
-    );
+    return filteredOrders.slice(startIndex, startIndex + PAGE_SIZE);
   }, [filteredOrders, safePage]);
 
   const totalSales = orders.reduce(
@@ -276,9 +264,7 @@ export default function OrdersPage() {
       await loadOrders();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to create sales order."
+        err instanceof Error ? err.message : "Unable to create sales order."
       );
     } finally {
       setSaving(false);
@@ -307,9 +293,7 @@ export default function OrdersPage() {
       );
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update order status."
+        err instanceof Error ? err.message : "Unable to update order status."
       );
     } finally {
       setUpdatingOrderId(null);
@@ -317,7 +301,7 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="min-h-full space-y-5 text-slate-800">
+    <div className="min-h-full space-y-5 bg-green-50 text-slate-800">
       {/* Error Message */}
       {error && (
         <div
@@ -325,6 +309,7 @@ export default function OrdersPage() {
           className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
           <span>{error}</span>
+
           <button
             type="button"
             onClick={() => setError("")}
@@ -362,13 +347,14 @@ export default function OrdersPage() {
       </section>
 
       {/* Sales Order List */}
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
+      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-semibold text-slate-800">
               Sales Order List
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+
+            <p className="mt-1 text-sm text-slate-600">
               View and update your sales orders.
             </p>
           </div>
@@ -382,7 +368,7 @@ export default function OrdersPage() {
                 setCurrentPage(1);
               }}
               placeholder="Search order, customer, or status..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-600 focus:ring-2 focus:ring-green-100 sm:w-72"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:w-72"
             />
 
             <button
@@ -391,44 +377,50 @@ export default function OrdersPage() {
                 setError("");
                 setShowForm(true);
               }}
-              className="whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+              className="whitespace-nowrap rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
             >
               + Create Sales Order
             </button>
           </div>
         </div>
 
+        {/* Orders Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+            <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
               <tr>
-                <th className="whitespace-nowrap text-center px-5 py-3">
+                <th className="whitespace-nowrap px-5 py-3 text-center">
                   Order No.
                 </th>
+
                 <th className="whitespace-nowrap px-5 py-3">
                   Customer
                 </th>
-                <th className="whitespace-nowrap text-center px-5 py-3">
+
+                <th className="whitespace-nowrap px-5 py-3 text-center">
                   Order Date
                 </th>
+
                 <th className="whitespace-nowrap px-5 py-3 text-center">
                   Items
                 </th>
+
                 <th className="whitespace-nowrap px-5 py-3">
                   Total Amount
                 </th>
+
                 <th className="whitespace-nowrap px-5 py-3 text-center">
                   Status
                 </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#D1D5DB]">
               {loading ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-10 text-center text-slate-500"
+                    className="px-5 py-10 text-center text-slate-600"
                   >
                     Loading sales orders...
                   </td>
@@ -437,7 +429,7 @@ export default function OrdersPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-10 text-center text-slate-500"
+                    className="px-5 py-10 text-center text-slate-600"
                   >
                     {search
                       ? "No sales orders match your search."
@@ -452,9 +444,9 @@ export default function OrdersPage() {
                   return (
                     <tr
                       key={order.order_id}
-                      className="transition-colors hover:bg-slate-50"
+                      className="bg-[#E5E7EB] transition-colors hover:bg-[#DDE1E5]"
                     >
-                      <td className="whitespace-nowrap text-center px-5 py-4 font-semibold text-slate-800">
+                      <td className="whitespace-nowrap px-5 py-4 text-center font-semibold text-slate-800">
                         SO-{String(order.order_id).padStart(4, "0")}
                       </td>
 
@@ -463,7 +455,7 @@ export default function OrdersPage() {
                           `Customer #${order.customer_id}`}
                       </td>
 
-                      <td className="whitespace-nowrap text-center px-5 py-4 text-slate-600">
+                      <td className="whitespace-nowrap px-5 py-4 text-center text-slate-600">
                         {formatDate(order.order_date)}
                       </td>
 
@@ -476,7 +468,7 @@ export default function OrdersPage() {
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4">
-                        <div className="flex items-center gap-2 items-center">
+                        <div className="flex items-center gap-2">
                           <select
                             value={order.status}
                             disabled={isUpdating}
@@ -499,7 +491,7 @@ export default function OrdersPage() {
                           </select>
 
                           {isUpdating && (
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-slate-600">
                               Saving...
                             </span>
                           )}
@@ -515,14 +507,14 @@ export default function OrdersPage() {
 
         {/* Pagination */}
         {!loading && filteredOrders.length > 0 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row">
-            <p className="text-xs text-slate-500">
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row">
+            <p className="text-xs text-slate-600">
               Showing{" "}
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-slate-800">
                 {startRecord}–{endRecord}
               </span>{" "}
               of{" "}
-              <span className="font-semibold text-slate-700">
+              <span className="font-semibold text-slate-800">
                 {filteredOrders.length}
               </span>{" "}
               orders
@@ -535,12 +527,12 @@ export default function OrdersPage() {
                   setCurrentPage((page) => Math.max(1, page - 1))
                 }
                 disabled={safePage === 1}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Previous
               </button>
 
-              <span className="min-w-20 text-center text-sm text-slate-600">
+              <span className="min-w-20 text-center text-sm text-slate-700">
                 Page {safePage} of {totalPages}
               </span>
 
@@ -552,7 +544,7 @@ export default function OrdersPage() {
                   )
                 }
                 disabled={safePage === totalPages}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next
               </button>
@@ -564,13 +556,14 @@ export default function OrdersPage() {
       {/* Create Sales Order Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-6">
+          <div className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-xl sm:p-6">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
                   Create Sales Order
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+
+                <p className="mt-1 text-sm text-slate-600">
                   Select a customer and add the items for this order.
                 </p>
               </div>
@@ -579,7 +572,7 @@ export default function OrdersPage() {
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                className="rounded-lg p-2 text-slate-600 hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-50"
                 aria-label="Close form"
               >
                 ✕
@@ -601,7 +594,7 @@ export default function OrdersPage() {
                   value={customerId}
                   onChange={(e) => setCustomerId(e.target.value)}
                   disabled={saving}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-green-600"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-blue-600"
                 >
                   <option value="">Select customer</option>
 
@@ -631,12 +624,12 @@ export default function OrdersPage() {
                     onChange={(e) => setItemSearch(e.target.value)}
                     placeholder="Search items..."
                     disabled={saving}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-600"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-600"
                   />
                 </div>
 
                 {loadingItems && (
-                  <p className="mb-2 text-xs text-slate-500">
+                  <p className="mb-2 text-xs text-slate-600">
                     Loading items...
                   </p>
                 )}
@@ -645,7 +638,7 @@ export default function OrdersPage() {
                   {lines.map((line, index) => (
                     <div
                       key={index}
-                      className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_90px_100px_auto]"
+                      className="grid gap-3 rounded-lg border border-[#D1D5DB] bg-white p-3 sm:grid-cols-[minmax(0,1fr)_90px_100px_auto]"
                     >
                       <select
                         value={line.IM_ID || ""}
@@ -683,7 +676,7 @@ export default function OrdersPage() {
                         disabled={saving}
                         aria-label="Quantity"
                         placeholder="Qty"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
                       />
 
                       <input
@@ -703,7 +696,7 @@ export default function OrdersPage() {
                         disabled={saving}
                         aria-label="Discount percentage"
                         placeholder="Discount %"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
                       />
 
                       <button
@@ -719,7 +712,7 @@ export default function OrdersPage() {
                 </div>
 
                 {!loadingItems && items.length === 0 && (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-600">
                     No items found. Try a different search.
                   </p>
                 )}
@@ -728,19 +721,19 @@ export default function OrdersPage() {
                   type="button"
                   onClick={addLine}
                   disabled={saving}
-                  className="mt-3 text-sm font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
+                  className="mt-3 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:opacity-50"
                 >
                   + Add another item
                 </button>
               </div>
 
               {/* Form Actions */}
-              <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-200 pt-5 sm:flex-row">
+              <div className="flex flex-col-reverse justify-end gap-3 border-t border-[#D1D5DB] pt-5 sm:flex-row">
                 <button
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-lg border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -749,7 +742,7 @@ export default function OrdersPage() {
                   type="button"
                   onClick={() => void handleCreateOrder()}
                   disabled={saving}
-                  className="rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg bg-blue-700 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? "Creating..." : "Create Order"}
                 </button>
@@ -772,8 +765,9 @@ function SummaryCard({
   valueColor?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{title}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+
       <p className={`mt-2 text-2xl font-bold ${valueColor}`}>
         {value}
       </p>

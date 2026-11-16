@@ -3,7 +3,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { invoiceAPI, salesOrderAPI } from "../../lib/api";
+import {
+  invoiceAPI,
+  salesOrderAPI,
+  accountsReceivableAPI,
+} from "../../lib/api";
 
 import type {
   SalesInvoice,
@@ -11,8 +15,24 @@ import type {
 } from "../../types/invoice";
 
 import type { SalesOrder } from "../../types/order";
+import type { AccountsReceivable } from "../../types/accounts-receivable";
 
 const PAGE_SIZE = 10;
+
+const INTEREST_RATES: Record<number, number> = {
+  1: 0,
+  3: 3,
+  6: 5,
+  12: 10,
+};
+
+const STATUS_STYLES: Record<string, string> = {
+  Paid: "bg-emerald-100 text-emerald-700",
+  "Partially Paid": "bg-amber-100 text-amber-700",
+  Unpaid: "bg-slate-100 text-slate-700",
+  Overdue: "bg-red-100 text-red-700",
+  "AR Not Found": "bg-gray-100 text-gray-600",
+};
 
 const money = (amount: string | number) =>
   `₱${Number(amount).toLocaleString("en-PH", {
@@ -20,28 +40,100 @@ const money = (amount: string | number) =>
     maximumFractionDigits: 2,
   })}`;
 
+// Gets today's date in the Philippines timezone.
 function getLocalDate() {
-  const date = new Date();
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
 
-  return `${year}-${month}-${day}`;
+  return year && month && day
+    ? `${year}-${month}-${day}`
+    : "";
 }
 
+// Formats YYYY-MM-DD without timezone conversion.
 function formatDate(value: string | null) {
   if (!value) return "—";
 
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
 
-  if (Number.isNaN(date.getTime())) return "—";
+  if (
+    !year ||
+    !month ||
+    !day ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return "—";
+  }
+
+  const date = new Date(year, month - 1, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return "—";
+  }
 
   return date.toLocaleDateString("en-PH", {
     day: "2-digit",
     month: "long",
     year: "numeric",
   });
+}
+
+// Calculates the due date without parsing a date-only string.
+function calculateDueDate(invoiceDate: string, months: number) {
+  if (!invoiceDate) return "";
+
+  const [year, month, day] = invoiceDate.split("-").map(Number);
+
+  if (
+    !year ||
+    !month ||
+    !day ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return "";
+  }
+
+  const date = new Date(year, month - 1, 1);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1
+  ) {
+    return "";
+  }
+
+  const targetYear = year + Math.floor((month - 1 + months) / 12);
+  const targetMonth = (month - 1 + months) % 12;
+
+  const lastDay = new Date(
+    targetYear,
+    targetMonth + 1,
+    0
+  ).getDate();
+
+  const dueDay = Math.min(day, lastDay);
+
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(
+    dueDay
+  ).padStart(2, "0")}`;
 }
 
 function SummaryCard({
@@ -56,14 +148,14 @@ function SummaryCard({
   valueColor?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">{label}</p>
 
       <p className={`mt-2 text-2xl font-bold tracking-tight ${valueColor}`}>
         {value}
       </p>
 
-      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <p className="mt-1 text-xs text-slate-600">{description}</p>
     </div>
   );
 }
@@ -71,8 +163,8 @@ function SummaryCard({
 export default function InvoicePanel() {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [receivables, setReceivables] = useState<AccountsReceivable[]>([]);
 
-  const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
   const [loading, setLoading] = useState(true);
@@ -81,47 +173,76 @@ export default function InvoicePanel() {
 
   const [showForm, setShowForm] = useState(false);
   const [orderId, setOrderId] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState(getLocalDate);
-const [dueDate, setDueDate] = useState("1");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [today, setToday] = useState("");
+  const [installmentMonths, setInstallmentMonths] = useState("1");
 
-  const today = getLocalDate();
-  function calculateDueDate(invoiceDate: string, months: number) {
-  if (!invoiceDate) return "";
+  // Initialize the current date only on the client.
+  useEffect(() => {
+    const currentDate = getLocalDate();
 
-  const date = new Date(`${invoiceDate}T00:00:00`);
+    setToday(currentDate);
+    setInvoiceDate(currentDate);
+  }, []);
 
-  const originalDay = date.getDate();
+  const selectedMonths = Number(installmentMonths);
+  const interestRate = INTEREST_RATES[selectedMonths] ?? 0;
 
-  date.setDate(1);
-  date.setMonth(date.getMonth() + months);
+  const selectedOrderAmount = () => {
+    const order = orders.find(
+      (item) => item.order_id === Number(orderId)
+    );
 
-  const lastDay = new Date(
-    date.getFullYear(),
-    date.getMonth() + 1,
-    0
-  ).getDate();
+    return order ? Number(order.total_amount) || 0 : 0;
+  };
 
-  date.setDate(Math.min(originalDay, lastDay));
+  const orderAmount = selectedOrderAmount();
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const interestAmount = Number(
+    ((orderAmount * interestRate) / 100).toFixed(2)
+  );
 
-  return `${year}-${month}-${day}`;
-}
+  const finalInvoiceAmount = orderAmount + interestAmount;
+
+  const getInvoiceStatus = (invoice: SalesInvoice) => {
+    const ar = receivables.find(
+      (record) => record.invoice_id === invoice.invoice_id
+    );
+
+    if (!ar) return "AR Not Found";
+
+    const amountPaid = Number(ar.amount_paid) || 0;
+    const balance = Number(ar.balance) || 0;
+
+    if (balance <= 0) return "Paid";
+
+    if (
+      invoice.due_date &&
+      today &&
+      invoice.due_date.slice(0, 10) < today
+    ) {
+      return "Overdue";
+    }
+
+    if (amountPaid > 0) return "Partially Paid";
+
+    return "Unpaid";
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
-      const [invoiceData, orderData] = await Promise.all([
+      const [invoiceData, orderData, arData] = await Promise.all([
         invoiceAPI.getAll(),
         salesOrderAPI.getAll(),
+        accountsReceivableAPI.getAll(),
       ]);
 
       setInvoices(invoiceData);
       setOrders(orderData);
+      setReceivables(arData);
     } catch (err) {
       setError(
         err instanceof Error
@@ -152,37 +273,16 @@ const [dueDate, setDueDate] = useState("1");
     [orders, invoicedOrderIds]
   );
 
-  const filteredInvoices = useMemo(() => {
-    const term = search.trim().toLowerCase();
-
-    if (!term) return invoices;
-
-    return invoices.filter((invoice) => {
-      const invoiceDateValue = invoice.invoice_date ?? "";
-      const dueDateValue = invoice.due_date ?? "";
-
-      return (
-        String(invoice.invoice_id).includes(term) ||
-        String(invoice.order_id).includes(term) ||
-        invoiceDateValue.toLowerCase().includes(term) ||
-        dueDateValue.toLowerCase().includes(term)
-      );
-    });
-  }, [invoices, search]);
-
   const totalPages = Math.max(
     1,
-    Math.ceil(filteredInvoices.length / PAGE_SIZE)
+    Math.ceil(invoices.length / PAGE_SIZE)
   );
 
   const paginatedInvoices = useMemo(() => {
     const startIndex = (currentPage - 1) * PAGE_SIZE;
 
-    return filteredInvoices.slice(
-      startIndex,
-      startIndex + PAGE_SIZE
-    );
-  }, [filteredInvoices, currentPage]);
+    return invoices.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [invoices, currentPage]);
 
   const totalInvoiced = invoices.reduce(
     (sum, invoice) => sum + Number(invoice.total_due),
@@ -190,18 +290,8 @@ const [dueDate, setDueDate] = useState("1");
   );
 
   const overdueInvoices = invoices.filter(
-    (invoice) =>
-      invoice.due_date &&
-      invoice.due_date.slice(0, 10) < today
+    (invoice) => getInvoiceStatus(invoice) === "Overdue"
   ).length;
-
-  const selectedOrder = orders.find(
-    (order) => order.order_id === Number(orderId)
-  );
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -213,9 +303,10 @@ const [dueDate, setDueDate] = useState("1");
     if (saving) return;
 
     setOrderId("");
-    setInvoiceDate(getLocalDate());
-    setDueDate("");
+    setInvoiceDate(today);
+    setInstallmentMonths("1");
     setShowForm(false);
+    setError("");
   }
 
   async function handleCreateInvoice() {
@@ -231,12 +322,22 @@ const [dueDate, setDueDate] = useState("1");
       return;
     }
 
+    const calculatedDueDate = calculateDueDate(
+      invoiceDate,
+      selectedMonths
+    );
+
+    if (!calculatedDueDate) {
+      setError("Unable to calculate the invoice due date.");
+      return;
+    }
 
     const data: SalesInvoiceCreate = {
-  order_id: Number(orderId),
-  invoice_date: invoiceDate,
-  due_date: calculateDueDate(invoiceDate, Number(dueDate)),
-};
+      order_id: Number(orderId),
+      invoice_date: invoiceDate,
+      due_date: calculatedDueDate,
+      installment_months: selectedMonths as 1 | 3 | 6 | 12,
+    };
 
     setSaving(true);
 
@@ -244,8 +345,8 @@ const [dueDate, setDueDate] = useState("1");
       await invoiceAPI.create(data);
 
       setOrderId("");
-      setInvoiceDate(getLocalDate());
-      setDueDate("1");
+      setInvoiceDate(today);
+      setInstallmentMonths("1");
       setShowForm(false);
 
       await loadData();
@@ -261,8 +362,7 @@ const [dueDate, setDueDate] = useState("1");
   }
 
   return (
-    <div className="space-y-5">
-
+    <div className="min-h-full space-y-5 bg-green-50 text-slate-800">
       {error && (
         <div
           role="alert"
@@ -282,7 +382,7 @@ const [dueDate, setDueDate] = useState("1");
         <SummaryCard
           label="Total Invoiced Amount"
           value={money(totalInvoiced)}
-          description="Combined invoice value"
+          description="Combined invoice value including interest"
         />
 
         <SummaryCard
@@ -293,119 +393,128 @@ const [dueDate, setDueDate] = useState("1");
         />
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center">
+      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center">
           <div>
             <h3 className="font-semibold text-slate-900">
               Sales Invoice List
             </h3>
 
-            <p className="mt-1 text-sm text-slate-500">
-              View all invoices generated from sales orders.
+            <p className="mt-1 text-sm text-slate-600">
+              View and manage invoices generated from sales orders.
             </p>
           </div>
 
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search invoice or order number..."
-            className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:max-w-sm"
-          />
-
-          <div className="flex justify-end">
-  <button
-    type="button"
-    onClick={() => {
-      setError("");
-      setShowForm(true);
-    }}
-    disabled={availableOrders.length === 0 || loading}
-    className="rounded-lg bg-blue-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-  >
-    + Create Sales Invoice
-  </button>
-</div>
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setShowForm(true);
+            }}
+            disabled={availableOrders.length === 0 || loading || !today}
+            className="whitespace-nowrap rounded-lg bg-green-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            + Add Sales Invoice
+          </button>
         </div>
-        
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+          <table className="w-full min-w-[1100px] text-sm">
+            <thead className="bg-[#D1D5DB] text-slate-700">
               <tr>
-                <th className="px-5 py-4 text-center font-semibold">Invoice No.</th>
-                <th className="px-5 py-4 text-center font-semibold">Order No.</th>
-                <th className="px-5 py-4 text-center font-semibold">Invoice Date</th>
-                <th className="px-5 py-4 text-center font-semibold">Due Date</th>
-                <th className="px-5 py-4 text-center font-semibold">
+                <th className="px-4 py-4 text-center font-semibold">
+                  Invoice No.
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Order No.
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Invoice Date
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Due Date
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Installment
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Interest
+                </th>
+                <th className="px-4 py-4 text-right font-semibold">
                   Total Due
                 </th>
-                <th className="px-5 py-4 text-center font-semibold">
+                <th className="px-4 py-4 text-center font-semibold">
                   Status
                 </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#D1D5DB]">
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-5 py-12 text-center text-slate-500"
-                  >
+                  <td colSpan={8} className="px-5 py-12 text-center text-slate-600">
                     Loading invoices...
                   </td>
                 </tr>
               ) : paginatedInvoices.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="px-5 py-12 text-center text-slate-500"
-                  >
+                  <td colSpan={8} className="px-5 py-12 text-center text-slate-600">
                     No sales invoices found.
                   </td>
                 </tr>
               ) : (
                 paginatedInvoices.map((invoice) => {
-                  const isOverdue =
-                    Boolean(invoice.due_date) &&
-                    invoice.due_date!.slice(0, 10) < today;
+                  const invoiceStatus = getInvoiceStatus(invoice);
 
                   return (
                     <tr
                       key={invoice.invoice_id}
-                      className="transition hover:bg-slate-50 text-center"
+                      className="transition hover:bg-[#DDE1E5]"
                     >
-                      <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
+                      <td className="whitespace-nowrap px-4 py-4 text-center font-semibold text-slate-900">
                         SI-{String(invoice.invoice_id).padStart(4, "0")}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                      <td className="whitespace-nowrap px-4 py-4 text-center text-slate-700">
                         SO-{String(invoice.order_id).padStart(4, "0")}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                      <td className="whitespace-nowrap px-4 py-4 text-center text-slate-700">
                         {formatDate(invoice.invoice_date)}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                      <td className="whitespace-nowrap px-4 py-4 text-center text-slate-700">
                         {formatDate(invoice.due_date)}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-center font-semibold text-slate-900">
+                      <td className="whitespace-nowrap px-4 py-4 text-center text-slate-700">
+                        {invoice.installment_months === 12
+                          ? "1 Year"
+                          : `${invoice.installment_months} Month${invoice.installment_months > 1 ? "s" : ""}`}
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 text-center">
+                        <p className="font-semibold text-slate-800">
+                          {Number(invoice.interest_rate).toFixed(2)}%
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          {money(invoice.interest_amount)}
+                        </p>
+                      </td>
+
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-slate-900">
                         {money(invoice.total_due)}
                       </td>
 
-                      <td className="px-5 py-4 text-center">
-                        {isOverdue ? (
-                          <span className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-                            Overdue
-                          </span>
-                        ) : (
-                          <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                            Current
-                          </span>
-                        )}
+                      <td className="px-4 py-4 text-center">
+                        <span
+                          className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
+                            STATUS_STYLES[invoiceStatus] ??
+                            "bg-gray-100 text-gray-600"
+                          }`}
+                        >
+                          {invoiceStatus}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -415,18 +524,15 @@ const [dueDate, setDueDate] = useState("1");
           </table>
         </div>
 
-        <div className="flex flex-col justify-between gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center">
-          <p className="text-sm text-slate-500">
+        <div className="flex flex-col justify-between gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row sm:items-center">
+          <p className="text-sm text-slate-600">
             Showing{" "}
-            {filteredInvoices.length === 0
+            {invoices.length === 0
               ? 0
               : (currentPage - 1) * PAGE_SIZE + 1}
             {" "}to{" "}
-            {Math.min(
-              currentPage * PAGE_SIZE,
-              filteredInvoices.length
-            )}
-            {" "}of {filteredInvoices.length} invoices
+            {Math.min(currentPage * PAGE_SIZE, invoices.length)}
+            {" "}of {invoices.length} invoices
           </p>
 
           <div className="flex items-center gap-2">
@@ -436,12 +542,12 @@ const [dueDate, setDueDate] = useState("1");
                 setCurrentPage((page) => Math.max(1, page - 1))
               }
               disabled={currentPage === 1}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
-            <span className="px-2 text-sm font-medium text-slate-600">
+            <span className="px-2 text-sm font-medium text-slate-700">
               Page {currentPage} of {totalPages}
             </span>
 
@@ -453,7 +559,7 @@ const [dueDate, setDueDate] = useState("1");
                 )
               }
               disabled={currentPage >= totalPages}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -463,15 +569,14 @@ const [dueDate, setDueDate] = useState("1");
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4">
-          <div className="my-auto w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="my-auto w-full max-w-lg rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-2xl">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Create Sales Invoice
+                  Add Sales Invoice
                 </h2>
-
-                <p className="mt-1 text-sm text-slate-500">
-                  Generate an invoice from an existing sales order.
+                <p className="mt-1 text-sm text-slate-600">
+                  Generate an invoice from an uninvoiced sales order.
                 </p>
               </div>
 
@@ -479,7 +584,7 @@ const [dueDate, setDueDate] = useState("1");
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+                className="rounded-lg px-2 py-1 text-slate-500 hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-40"
                 aria-label="Close form"
               >
                 ✕
@@ -495,7 +600,7 @@ const [dueDate, setDueDate] = useState("1");
                 <select
                   value={orderId}
                   onChange={(event) => setOrderId(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">Select sales order</option>
 
@@ -511,27 +616,11 @@ const [dueDate, setDueDate] = useState("1");
                 </select>
 
                 {availableOrders.length === 0 && (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-2 text-xs text-slate-600">
                     No uninvoiced sales orders are currently available.
                   </p>
                 )}
               </div>
-
-              {selectedOrder && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">
-                    Invoice Amount
-                  </p>
-
-                  <p className="mt-1 text-xl font-bold text-slate-900">
-                    {money(selectedOrder.total_amount)}
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Automatically taken from the selected sales order.
-                  </p>
-                </div>
-              )}
 
               <div>
                 <label className="mb-2 block text-sm font-semibold text-slate-700">
@@ -542,57 +631,113 @@ const [dueDate, setDueDate] = useState("1");
                   type="date"
                   value={invoiceDate}
                   onChange={(event) => setInvoiceDate(event.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
               <div>
-  <label className="mb-2 block text-sm font-semibold text-slate-700">
-    Payment Due Period
-  </label>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Payment Installment
+                </label>
 
-  <select
-    value={dueDate}
-    onChange={(event) => setDueDate(event.target.value)}
-    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-  >
-    <option value="1">1 Month</option>
-    <option value="3">3 Months</option>
-    <option value="6">6 Months</option>
-    <option value="12">1 Year</option>
-  </select>
+                <select
+                  value={installmentMonths}
+                  onChange={(event) =>
+                    setInstallmentMonths(event.target.value)
+                  }
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="1">1 Month — 0% Interest</option>
+                  <option value="3">3 Months — 3% Interest</option>
+                  <option value="6">6 Months — 5% Interest</option>
+                  <option value="12">1 Year — 10% Interest</option>
+                </select>
 
-  <p className="mt-2 text-xs text-slate-500">
-    Calculated Due Date:{" "}
-    <span className="font-semibold text-slate-700">
-      {formatDate(calculateDueDate(invoiceDate, Number(dueDate)))}
-    </span>
-  </p>
-</div>
-
+                <p className="mt-2 text-xs text-slate-600">
+                  Calculated Due Date:{" "}
+                  <span className="font-semibold text-slate-800">
+                    {formatDate(
+                      calculateDueDate(invoiceDate, selectedMonths)
+                    )}
+                  </span>
+                </p>
               </div>
 
-              <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-200 pt-5 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  disabled={saving}
-                  className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
+              {orderId && (
+                <div className="rounded-xl border border-[#D1D5DB] bg-white p-4">
+                  <h3 className="mb-3 text-sm font-bold text-slate-800">
+                    Invoice Computation
+                  </h3>
 
-                <button
-                  type="button"
-                  onClick={() => void handleCreateInvoice()}
-                  disabled={saving || availableOrders.length === 0}
-                  className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? "Creating..." : "Create Invoice"}
-                </button>
-              </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Sales Order Amount
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {money(orderAmount)}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Interest Rate
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {interestRate}%
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Interest Amount
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {money(interestAmount)}
+                      </span>
+                    </div>
+
+                    <div className="border-t border-[#D1D5DB] pt-3">
+                      <div className="flex justify-between gap-4">
+                        <span className="font-bold text-slate-900">
+                          Final Invoice Total
+                        </span>
+                        <span className="text-lg font-bold text-blue-900">
+                          {money(finalInvoiceAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex flex-col-reverse justify-end gap-3 border-t border-[#D1D5DB] pt-5 sm:flex-row">
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={saving}
+                className="rounded-lg border border-[#D1D5DB] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleCreateInvoice()}
+                disabled={
+                  saving ||
+                  availableOrders.length === 0 ||
+                  !orderId ||
+                  !invoiceDate
+                }
+                className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Creating..." : "Add Sales Invoice"}
+              </button>
             </div>
           </div>
+        </div>
       )}
     </div>
   );

@@ -26,7 +26,7 @@ const money = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value || 0);
 
-const today = () => {
+const getToday = () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -43,7 +43,7 @@ function isInPeriod(
   if (!dateValue) return false;
 
   const dateString = dateValue.slice(0, 10);
-  const currentDate = today();
+  const currentDate = getToday();
 
   if (period === "today") {
     return dateString === currentDate;
@@ -229,7 +229,7 @@ export default function ReportsPage() {
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `sales-reports-${today()}.csv`;
+    link.download = `sales-reports-${getToday()}.csv`;
 
     document.body.appendChild(link);
     link.click();
@@ -239,10 +239,10 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="min-h-full space-y-5 p-4 text-slate-800 sm:p-6">
+    <div className="min-h-full space-y-5 bg-green-50 p-4 text-slate-800 sm:p-6">
 
       {/* Report Period */}
-      <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <section className="flex flex-col gap-3 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">
             Reporting Period
@@ -257,7 +257,7 @@ export default function ReportsPage() {
           onChange={(event) =>
             setPeriod(event.target.value as ReportPeriod)
           }
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100 sm:w-48"
+          className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-48"
           aria-label="Report period"
         >
           <option value="all">All Time</option>
@@ -265,7 +265,8 @@ export default function ReportsPage() {
           <option value="month">This Month</option>
           <option value="year">This Year</option>
         </select>
-</section>
+      </section>
+
       {/* Error Message */}
       {error && (
         <div
@@ -285,7 +286,7 @@ export default function ReportsPage() {
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-10 text-center text-sm text-slate-500">
           Loading sales reports...
         </div>
       ) : !error ? (
@@ -346,34 +347,32 @@ export default function ReportsPage() {
           </section>
 
           {/* Report Summary */}
-<section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-  <div className="border-b border-slate-200 p-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="font-semibold text-slate-900">
-        Report Summary
-      </h2>
+          <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+            <div className="border-b border-[#D1D5DB] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-semibold text-slate-900">
+                  Report Summary
+                </h2>
 
-      <button
-        type="button"
-        onClick={exportCSV}
-        disabled={loading || !!error}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <span aria-hidden="true">↓</span>
-        Export to CSV
-      </button>
-    </div>
+                <button
+                  type="button"
+                  onClick={exportCSV}
+                  disabled={loading || !!error}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span aria-hidden="true">↓</span>
+                  Export to CSV
+                </button>
+              </div>
 
-    <p className="mt-1 text-sm text-slate-500">
-      Overview of sales transactions and current receivables.
-    </p>
-  </div>
-</section>
-
+              <p className="mt-1 text-sm text-slate-500">
+                Overview of sales transactions and current receivables.
+              </p>
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="whitespace-nowrap px-5 py-3">
                       Report
@@ -390,17 +389,17 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#D1D5DB]">
                   {reportRows.map((row) => (
                     <tr
                       key={row.title}
-                      className="transition-colors hover:bg-slate-50"
+                      className="transition-colors hover:bg-[#DDE1E5]"
                     >
                       <td className="whitespace-nowrap px-5 py-4 font-medium text-slate-800">
                         {row.title}
                       </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-500">
+                      <td className="whitespace-nowrap px-5 py-4 text-slate-600">
                         {row.period}
                       </td>
 
@@ -415,7 +414,7 @@ export default function ReportsPage() {
                   ))}
                 </tbody>
 
-                <tfoot className="border-t border-slate-200 bg-slate-50">
+                <tfoot className="border-t border-[#D1D5DB] bg-[#D1D5DB]">
                   <tr>
                     <td
                       colSpan={3}
@@ -435,10 +434,10 @@ export default function ReportsPage() {
                 </tfoot>
               </table>
             </div>
-            <div className="flex justify-end border-t border-slate-200 bg-white p-5">
-          </div>
+          </section>
 
-          <p className="text-xs text-slate-400">
+          {/* Report Note */}
+          <p className="text-xs text-slate-500">
             Note: Outstanding receivables show the current balance and are
             not filtered by the selected transaction period. The total
             transaction amount is a combined figure across different
@@ -462,7 +461,7 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{title}</p>
       <p className={`mt-2 text-2xl font-bold ${color}`}>
         {value}

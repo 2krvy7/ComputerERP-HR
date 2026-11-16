@@ -124,28 +124,28 @@ export default function CustomerTable({
     <div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1050px] text-left text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="text-slate-600 bg-[#D1D5DB]">
             
             <tr>
               <th className="px-5 py-4 text-center font-semibold">
                 Customer ID
               </th>
-              <th className="px-5 py-4 font-semibold">
+              <th className="px-5 text-center py-4 font-semibold">
                 Customer Name
               </th>
-              <th className="px-5 py-4 text-center font-semibold">
+              <th className="px-5 text-center py-4 font-semibold">
                 Email
               </th>
-              <th className="px-5 py-4 text-center font-semibold">
+              <th className="px-5 text-center py-4 font-semibold">
                 Contact
               </th>
-              <th className="px-5 py-4 font-semibold text-center">
+              <th className="px-5 text-center py-4 font-semibold">
                 Type
               </th>
-              <th className="px-5 py-4 font-semibold">
+              <th className="px-5 text-center py-4 font-semibold">
                 Status
               </th>
-              <th className="px-5 py-4 font-semibold">
+              <th className="px-5 text-center py-4 font-semibold">
                 Address
               </th>
               <th className="px-5 py-4 text-center font-semibold">
@@ -163,13 +163,13 @@ export default function CustomerTable({
               return (
                 <tr
                   key={customer.customer_id}
-                  className="transition hover:bg-slate-50"
+                  className="transition-colors hover:bg-[#DDE1E5]"
                 >
                   <td className="px-5 py-4 text-center font-semibold text-slate-700">
                     #{customer.customer_id}
                   </td>
 
-                  <td className="px-5 py-4 text-center font-medium text-slate-900">
+                  <td className="px-5 py-4 font-medium text-slate-900">
                     {customer.name}
                   </td>
 
@@ -182,7 +182,7 @@ export default function CustomerTable({
                       <div className="space-y-1">
                         {contactNumbers.map((contact, index) => (
                           <div key={`${contact}-${index}`}>
-                            <p className="font-medium text-center text-slate-800">
+                            <p className="font-medium text-slate-800">
                               {contact}
                             </p>
                             <span className="text-xs text-slate-500">

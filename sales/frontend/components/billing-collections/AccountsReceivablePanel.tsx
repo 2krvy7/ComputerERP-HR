@@ -73,6 +73,11 @@ export default function AccountsReceivablePanel() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [today, setToday] = useState("");
+
+  useEffect(() => {
+    setToday(getLocalDate());
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -145,10 +150,8 @@ export default function AccountsReceivablePanel() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
-
-  const today = getLocalDate();
 
   const filteredRecords = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -240,10 +243,12 @@ export default function AccountsReceivablePanel() {
   );
 
   return (
-    <div className="space-y-5 text-slate-800">
-
+    <div className="min-w-0 space-y-5 bg-green-50 text-slate-800">
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+        >
           {error}
         </div>
       )}
@@ -254,21 +259,25 @@ export default function AccountsReceivablePanel() {
           value={money(totals.amountDue)}
           color="text-blue-700"
         />
+
         <SummaryCard
           title="Amount Collected"
           value={money(totals.amountPaid)}
           color="text-green-700"
         />
+
         <SummaryCard
           title="Outstanding Balance"
           value={money(totals.balance)}
           color="text-red-700"
         />
+
         <SummaryCard
           title="Unpaid Accounts"
           value={String(totals.unpaid)}
           color="text-amber-700"
         />
+
         <SummaryCard
           title="Overdue Accounts"
           value={String(totals.overdue)}
@@ -276,13 +285,14 @@ export default function AccountsReceivablePanel() {
         />
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="font-semibold text-slate-900">
               Receivable Records
             </h3>
-            <p className="mt-1 text-xs text-slate-500">
+
+            <p className="mt-1 text-xs text-slate-600">
               View invoice balances and payment status.
             </p>
           </div>
@@ -300,14 +310,14 @@ export default function AccountsReceivablePanel() {
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-sm text-slate-500">
+          <div className="py-12 text-center text-sm text-slate-600">
             Loading accounts receivable...
           </div>
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <thead className="bg-[#D1D5DB] text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <tr>
                     <th className="px-4 py-3 text-center">AR No.</th>
                     <th className="px-4 py-3 text-center">Invoice No.</th>
@@ -320,44 +330,44 @@ export default function AccountsReceivablePanel() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-[#D1D5DB]">
                   {paginatedRecords.map((record) => {
                     const overdue = isOverdue(record, today);
 
                     return (
                       <tr
                         key={record.AR_ID}
-                        className="transition-colors hover:bg-slate-50"
+                        className="text-center transition-colors hover:bg-[#DDE1E5]"
                       >
-                        <td className="px-4 py-3 text-center font-semibold text-slate-700 text-center">
+                        <td className="px-4 py-3 font-semibold text-slate-700">
                           AR-{record.AR_ID}
                         </td>
 
-                        <td className="px-4 py-3 text-center font-medium text-blue-700 text-center">
+                        <td className="px-4 py-3 font-medium text-blue-700">
                           INV-{record.invoice_id}
                         </td>
 
-                        <td className="px-4 py-3 font-medium text-slate-800 text-center">
+                        <td className="px-4 py-3 font-medium text-slate-800">
                           {record.customer_name}
                         </td>
 
-                        <td className="px-4 py-3 whitespace-nowrap text-slate-600 text-center">
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                           {formatDate(record.due_date)}
                         </td>
 
-                        <td className="px-4 py-3 tabular-nums text-slate-700 text-center">
+                        <td className="px-4 py-3 tabular-nums text-slate-700">
                           {money(record.amount_due)}
                         </td>
 
-                        <td className="px-4 py-3 tabular-nums text-green-700 text-center">
+                        <td className="px-4 py-3 tabular-nums text-green-700">
                           {money(record.amount_paid)}
                         </td>
 
-                        <td className="px-4 py-3 text-center font-semibold tabular-nums text-slate-900">
+                        <td className="px-4 py-3 font-semibold tabular-nums text-slate-900">
                           {money(record.balance)}
                         </td>
 
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3">
                           <span
                             className={`inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${statusStyle(
                               record.status,
@@ -375,7 +385,7 @@ export default function AccountsReceivablePanel() {
                     <tr>
                       <td
                         colSpan={8}
-                        className="px-4 py-12 text-center text-slate-500"
+                        className="px-4 py-12 text-center text-slate-600"
                       >
                         {search
                           ? "No matching receivable records found."
@@ -387,14 +397,14 @@ export default function AccountsReceivablePanel() {
               </table>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500">
+            <div className="flex flex-col gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-600">
                 Showing{" "}
-                <span className="font-semibold text-slate-700">
+                <span className="font-semibold text-slate-800">
                   {startRecord}-{endRecord}
                 </span>{" "}
                 of{" "}
-                <span className="font-semibold text-slate-700">
+                <span className="font-semibold text-slate-800">
                   {filteredRecords.length}
                 </span>{" "}
                 records
@@ -407,12 +417,12 @@ export default function AccountsReceivablePanel() {
                     setPage((current) => Math.max(1, current - 1))
                   }
                   disabled={currentPage === 1}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
                 </button>
 
-                <span className="min-w-20 text-center text-sm font-medium text-slate-600">
+                <span className="min-w-20 text-center text-sm font-medium text-slate-700">
                   Page {currentPage} of {totalPages}
                 </span>
 
@@ -424,7 +434,7 @@ export default function AccountsReceivablePanel() {
                     )
                   }
                   disabled={currentPage === totalPages}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>
@@ -447,8 +457,9 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{title}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+
       <p className={`mt-2 text-xl font-bold ${color}`}>
         {value}
       </p>

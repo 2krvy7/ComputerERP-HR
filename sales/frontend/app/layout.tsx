@@ -30,10 +30,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
       <body className="h-screen w-screen overflow-hidden">
-        <div className="flex h-screen w-screen overflow-hidden bg-slate-100">
+        <div className="flex h-screen w-screen overflow-hidden bg-[#526D72]">
           <Sidebar />
 
-          <main className="h-screen min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <main className="h-screen min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-[#526D72]">
             {children}
           </main>
         </div>

@@ -27,7 +27,7 @@ const money = (value: string | number) =>
     currency: "PHP",
   }).format(Number(value) || 0);
 
-const today = () => {
+const getToday = () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -47,11 +47,18 @@ export default function CollectionsPage() {
 
   const [form, setForm] = useState<CollectionCreate>({
     AR_ID: 0,
-    payment_date: today(),
+    payment_date: "",
     payment_method: "Cash",
     transaction_number: null,
     amount_paid: 0,
   });
+
+  useEffect(() => {
+    setForm((current) => ({
+      ...current,
+      payment_date: getToday(),
+    }));
+  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -103,15 +110,12 @@ export default function CollectionsPage() {
       const rows: CollectionRow[] = paymentData.map(
         (payment: Collection) => {
           const ar = arMap.get(payment.AR_ID);
-
           const invoice = ar
             ? invoiceMap.get(ar.invoice_id)
             : undefined;
-
           const order = invoice
             ? orderMap.get(invoice.order_id)
             : undefined;
-
           const customer = order
             ? customerMap.get(order.customer_id)
             : undefined;
@@ -185,6 +189,11 @@ export default function CollectionsPage() {
       return;
     }
 
+    if (!form.payment_date) {
+      setError("Please select a payment date.");
+      return;
+    }
+
     if (
       form.payment_method === "E-Wallet" &&
       !form.transaction_number?.trim()
@@ -224,7 +233,7 @@ export default function CollectionsPage() {
 
       setForm({
         AR_ID: 0,
-        payment_date: today(),
+        payment_date: getToday(),
         payment_method: "Cash",
         transaction_number: null,
         amount_paid: 0,
@@ -242,9 +251,13 @@ export default function CollectionsPage() {
     }
   };
 
+  const hasOutstandingAccounts = receivables.some(
+    (record) => Number(record.balance) > 0
+  );
+
   return (
-    <main className="min-h-screen bg-gray-50 p-6 text-gray-900 md:p-10">
-      <div className="mx-auto max-w-7xl space-y-8">
+    <main className="min-h-full bg-green-50 p-4 text-slate-800 sm:p-6 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
 
         {/* Summary Cards */}
         <section className="grid gap-4 sm:grid-cols-3">
@@ -268,8 +281,8 @@ export default function CollectionsPage() {
         </section>
 
         {/* Record New Payment */}
-        <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-5 text-lg font-semibold">
+        <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm sm:p-6">
+          <h2 className="mb-5 text-lg font-semibold text-slate-800">
             Record New Payment
           </h2>
 
@@ -279,7 +292,7 @@ export default function CollectionsPage() {
           >
             {/* Accounts Receivable */}
             <div>
-              <label className="mb-1 block text-sm font-medium">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Accounts Receivable
               </label>
 
@@ -292,7 +305,7 @@ export default function CollectionsPage() {
                   })
                 }
                 required
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select an account</option>
 
@@ -312,7 +325,7 @@ export default function CollectionsPage() {
 
             {/* Payment Date */}
             <div>
-              <label className="mb-1 block text-sm font-medium">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Payment Date
               </label>
 
@@ -326,13 +339,13 @@ export default function CollectionsPage() {
                   })
                 }
                 required
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
             </div>
 
             {/* Payment Method */}
             <div>
-              <label className="mb-1 block text-sm font-medium">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Payment Method
               </label>
 
@@ -345,7 +358,7 @@ export default function CollectionsPage() {
                     transaction_number: null,
                   })
                 }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="Cash">Cash</option>
                 <option value="E-Wallet">E-Wallet</option>
@@ -356,7 +369,7 @@ export default function CollectionsPage() {
             {/* E-Wallet Transaction Number */}
             {form.payment_method === "E-Wallet" && (
               <div>
-                <label className="mb-1 block text-sm font-medium">
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
                   Transaction Number
                 </label>
 
@@ -372,14 +385,14 @@ export default function CollectionsPage() {
                   required
                   maxLength={100}
                   placeholder="Enter e-wallet transaction number"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             )}
 
             {/* Amount Received */}
             <div>
-              <label className="mb-1 block text-sm font-medium">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">
                 Amount Received (₱)
               </label>
 
@@ -395,21 +408,21 @@ export default function CollectionsPage() {
                   })
                 }
                 required
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 placeholder="Enter payment amount"
               />
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="md:col-span-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 md:col-span-2">
                 {error}
               </div>
             )}
 
             {/* Success Message */}
             {success && (
-              <div className="md:col-span-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 md:col-span-2">
                 {success}
               </div>
             )}
@@ -418,47 +431,45 @@ export default function CollectionsPage() {
             <div className="md:col-span-2">
               <button
                 type="submit"
-                disabled={
-                  saving ||
-                  loading ||
-                  receivables.every(
-                    (record) => Number(record.balance) <= 0
-                  )
-                }
-                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving || loading || !hasOutstandingAccounts}
+                className="rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Recording Payment..." : "Record Payment"}
               </button>
+
+              {!loading && !hasOutstandingAccounts && (
+                <p className="mt-2 text-xs text-slate-500">
+                  There are no outstanding accounts available for payment.
+                </p>
+              )}
             </div>
           </form>
         </section>
 
         {/* Payment History */}
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm sm:p-6">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">
+            <h2 className="text-lg font-semibold text-slate-800">
               Payment History
             </h2>
 
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Search payment, customer, or transaction..."
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm sm:max-w-xs"
-              />
-            </div>
+            <input
+              type="text"
+              placeholder="Search payment, customer, or transaction..."
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
+            />
           </div>
 
           {loading ? (
-            <p className="py-10 text-center text-sm text-gray-500">
+            <p className="py-10 text-center text-sm text-slate-500">
               Loading payment history...
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg border border-[#D1D5DB]">
               <table className="w-full text-left text-sm">
-                <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+                <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase text-slate-600">
                   <tr>
                     <th className="px-4 py-3 text-center">Payment No.</th>
                     <th className="px-4 py-3 text-center">AR No.</th>
@@ -471,13 +482,13 @@ export default function CollectionsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-[#D1D5DB] bg-[#E5E7EB]">
                   {filteredRecords.map((record) => (
                     <tr
                       key={record.payment_id}
-                      className="hover:bg-gray-50 text-center"
+                      className="text-center transition hover:bg-[#DDE1E5]"
                     >
-                      <td className="px-4 py-3 font-medium">
+                      <td className="px-4 py-3 font-medium text-slate-800">
                         PAY-{record.payment_id}
                       </td>
 
@@ -519,7 +530,7 @@ export default function CollectionsPage() {
                     <tr>
                       <td
                         colSpan={8}
-                        className="px-4 py-10 text-center text-gray-500"
+                        className="px-4 py-10 text-center text-slate-500"
                       >
                         No payment records found.
                       </td>
@@ -530,7 +541,7 @@ export default function CollectionsPage() {
             </div>
           )}
 
-          <div className="mt-4 text-sm text-gray-500">
+          <div className="mt-4 text-sm text-slate-500">
             Showing {filteredRecords.length} of {records.length} payments
           </div>
         </section>
@@ -549,8 +560,8 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-gray-500">{title}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm text-slate-500">{title}</p>
       <p className={`mt-2 text-2xl font-bold ${color}`}>
         {value}
       </p>
