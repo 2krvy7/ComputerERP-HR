@@ -18,6 +18,48 @@ class GoodsReceivedInspection(BaseModel):
     logged_by: str
     reorder_level: Optional[int] = Field(default=None, ge=0)
 
+class RestockRequestApproval(BaseModel):
+    approved_by: str
+
+@router.get("/upcoming-requests")
+def get_upcoming_requests():
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    rr."RR_ID",
+                    rr."IM_ID",
+                    im."Item_Name",
+                    im."SKU",
+                    im."ItemType",
+                    rr."Quantity",
+                    rr."WH_ID",
+                    w."Warehouse_Name",
+                    rr."issued",
+                    rr."status"
+                FROM "RestockRequest" rr
+                JOIN "ITEM_MASTER" im
+                    ON rr."IM_ID" = im."IM_ID"
+                JOIN "WAREHOUSE" w
+                    ON rr."WH_ID" = w."WH_ID"
+                WHERE rr."status" IS NULL
+                   OR rr."status" = 'Pending'
+                ORDER BY rr."issued" DESC
+            """)
+
+            return cur.fetchall()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 @router.get("/incoming-requests")
 def get_incoming_requests():
@@ -67,6 +109,69 @@ def get_incoming_requests():
             detail=str(e)
         )
 
+@router.put("/upcoming-requests/{rr_id}/approve")
+def approve_restock_request(
+    rr_id: int,
+    approval: RestockRequestApproval
+):
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                UPDATE "RestockRequest"
+                SET
+                    "status" = 'Approved',
+                    "approved_by" = %s,
+                    "approved_date" = CURRENT_TIMESTAMP
+                WHERE "RR_ID" = %s
+                  AND (
+                      "status" IS NULL
+                      OR "status" = 'Pending'
+                  )
+                RETURNING
+                    "RR_ID",
+                    "IM_ID",
+                    "Quantity",
+                    "WH_ID",
+                    "status",
+                    "approved_by",
+                    "approved_date"
+            """, (
+                approval.approved_by,
+                rr_id
+            ))
+
+            result = cur.fetchone()
+
+            if result is None:
+                conn.rollback()
+
+                raise HTTPException(
+                    status_code=404,
+                    detail="Request not found or it has already been approved."
+                )
+
+        conn.commit()
+
+        return {
+            "message": "Restock Request approved and sent to Procurement.",
+            "request": result
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        conn.close()
 
 @router.get("/purchase-requests")
 def get_purchase_requests():
@@ -170,24 +275,33 @@ def get_goods_received():
 
         cur.execute("""
             SELECT
-                gr."GR_ID",
-                gr."PO_ID",
-                po."RFQ_ID",
-                rq."PR_ID",
-                s."SupplierName",
-                gr."ReceivedBy",
-                gr."ReceivedDate",
-                gr."ItemCondition",
-                gr."QuantityReceived",
-                gr."Remarks"
-            FROM "GoodsReceived" gr
-            JOIN "PurchaseOrder" po
-                ON gr."PO_ID" = po."PO_ID"
-            JOIN "RequestQuotation" rq
-                ON po."RFQ_ID" = rq."RFQ_ID"
-            JOIN "Supplier" s
-                ON rq."SupplierID" = s."SupplierID"
-            ORDER BY gr."ReceivedDate" DESC
+            gr."GR_ID",
+            gr."PO_ID",
+            po."RFQ_ID",
+            rq."PR_ID",
+            s."SupplierName",
+            gr."ReceivedBy",
+            gr."ReceivedDate",
+            gr."ItemCondition",
+            gr."QuantityReceived" AS "DeliveredQuantity",
+            sl."ActualQuantity" AS "AcceptedQuantity",
+            gr."Remarks",
+            CASE
+                WHEN gr."ItemCondition" IS NULL
+                    THEN 'Pending Inspection'
+                ELSE 'Inspected'
+            END AS "InspectionStatus"
+        FROM "GoodsReceived" gr
+        LEFT JOIN "STOCK_LEDGER" sl
+            ON sl."ReferenceNo" = 'GR-' || gr."GR_ID"::text
+            AND sl."TransactionType" = 'STOCK_IN'
+        JOIN "PurchaseOrder" po
+            ON gr."PO_ID" = po."PO_ID"
+        JOIN "RequestQuotation" rq
+            ON po."RFQ_ID" = rq."RFQ_ID"
+        JOIN "Supplier" s
+            ON rq."SupplierID" = s."SupplierID"
+        ORDER BY gr."ReceivedDate" DESC
         """)
 
         rows = cur.fetchall()
@@ -286,11 +400,10 @@ def confirm_goods_received(
                     detail="This Goods Received record has already been processed."
                 )
 
-            # Update the existing GoodsReceived record
+            # Update inspection details without changing original delivered quantity
             cur.execute("""
                 UPDATE "GoodsReceived"
                 SET
-                    "QuantityReceived" = %s,
                     "ItemCondition" = %s,
                     "Remarks" = %s
                 WHERE "GR_ID" = %s
@@ -301,7 +414,6 @@ def confirm_goods_received(
                     "ItemCondition",
                     "Remarks"
             """, (
-                accepted_quantity,
                 item_condition,
                 inspection.remarks,
                 gr_id
@@ -395,13 +507,14 @@ def confirm_goods_received(
             conn.commit()
 
             return {
-                "message": "Inspection count confirmed successfully.",
-                "GR_ID": result[0],
-                "PO_ID": result[1],
-                "QuantityReceived": result[2],
-                "ItemCondition": result[3],
-                "Remarks": result[4],
-                "LogID": ledger_result[0] if ledger_result else None
+            "message": "Inspection count confirmed successfully.",
+            "GR_ID": result[0],
+            "PO_ID": result[1],
+            "DeliveredQuantity": original_quantity,
+            "AcceptedQuantity": accepted_quantity,
+            "ItemCondition": result[3],
+            "Remarks": result[4],
+            "LogID": ledger_result[0] if ledger_result else None
             }
 
     except HTTPException:

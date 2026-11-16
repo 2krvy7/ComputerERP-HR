@@ -219,14 +219,9 @@ export default function StockLedgerPage() {
   return (
     <DashboardLayout title="Stock Ledger">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1F3338]">
-            Stock Ledger
-          </h1>
-          <p className="mt-1 text-sm text-[#587176]">
-            Track and review completed inventory transactions.
-          </p>
-        </div>
+        <p className="text-sm text-[#587176]">
+        Track and review completed inventory transactions.
+        </p>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">

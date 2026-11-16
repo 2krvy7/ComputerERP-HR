@@ -117,15 +117,10 @@ const [isModalOpen, setIsModalOpen] = useState(false);
   return (
     <DashboardLayout>
       <div className="space-y-6 p-6">
-        {/* Page Header */}
-        <div>
-          <h1 className="text-2xl font-bold text-[#1F3338]">
-            Stock Actions
-          </h1>
-          <p className="mt-1 text-sm text-[#587176]">
-            Manage inventory transactions and stock movements.
-          </p>
-        </div>
+        {/* Page Description */}
+        <p className="text-sm text-[#587176]">
+          Manage inventory transactions and stock movements.
+        </p>
 
         {/* Action Buttons */}
         <div>

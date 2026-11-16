@@ -15,7 +15,7 @@ import UserProfile from "./userprofile";
 const navigation = [
   { name: "Dashboard", href: "/", Icon: LayoutDashboard },
   { name: "Item Master", href: "/items", Icon: Package },
-  { name: "Warehouse Management", href: "/warehouses", Icon: Warehouse },
+  { name: "Warehouse", href: "/warehouses", Icon: Warehouse },
   { name: "Orders", href: "/orders", Icon: ClipboardList },
   { name: "Stock Actions", href: "/stock_actions", Icon: ArrowLeftRight },
   { name: "Stock Ledger", href: "/stock_ledger", Icon: BookOpenText },
@@ -36,7 +36,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-1 flex-col gap-4">
+      <nav className="flex flex-1 flex-col gap-4 pb-12">
         {navigation.map(({ name, href, Icon }) => {
           const active =
             href === "/"
