@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import OrderPanel, { Badge, money } from "./OrderPanel";
 import type { Order } from "./OrderPanel";
+import Pagination from "@/components/Pagination"
 
 const FILTERS = ["All", "Awaiting delivery", "Awaiting invoice", "Completed"] as const;
+const PAGE_SIZE = 10;
 
 export default function OrderList({ limit }: { limit?: number }) {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -14,6 +16,7 @@ export default function OrderList({ limit }: { limit?: number }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Order | null>(null); // the order whose popup is open
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -45,7 +48,12 @@ export default function OrderList({ limit }: { limit?: number }) {
       o.SKU.toLowerCase().includes(text);
     return matchesFilter && matchesSearch;
   });
-  const shown = limit ? filtered.slice(0, limit) : filtered;
+  const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > pages) setPage(pages);
+  }, [filtered.length, page]);
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -85,7 +93,7 @@ export default function OrderList({ limit }: { limit?: number }) {
               {FILTERS.map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
+                  onClick={() => { setFilter(f); setPage(1); }}
                   style={{
                     padding: "0.4vw 1vw",
                     borderRadius: "99vw",
@@ -104,7 +112,7 @@ export default function OrderList({ limit }: { limit?: number }) {
             <div style={{ display: "flex", alignItems: "center", gap: "1vw" }}>
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 placeholder="Search supplier or item..."
                 style={{
                   width: "15vw",
@@ -189,6 +197,7 @@ export default function OrderList({ limit }: { limit?: number }) {
             </table>
           )}
         </div>
+        {!limit && <Pagination total={filtered.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
       </div>
 
       {/* The read-only popup, only while an order is selected */}
