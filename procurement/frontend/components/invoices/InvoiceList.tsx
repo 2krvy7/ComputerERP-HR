@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Pagination from "@/components/Pagination"
 
 type Invoice = {
   PI_ID: number;
@@ -18,6 +19,7 @@ type Invoice = {
   dueDate: string | null;
 };
 
+const PAGE_SIZE = 10;
 const FILTERS = ["All", "Awaiting Finance", "Outstanding", "Paid"] as const;
 
 const money = (n: number | null) =>
@@ -44,6 +46,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -73,7 +76,12 @@ export default function InvoiceList({ limit }: { limit?: number }) {
       i.Item_Name.toLowerCase().includes(text);
     return matchesFilter && matchesSearch;
   });
-  const shown = limit ? filtered.slice(0, limit) : filtered;
+  const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > pages) setPage(pages);
+  }, [filtered.length, page]);
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -112,7 +120,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             {FILTERS.map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setPage(1); }}
                 style={{
                   padding: "0.4vw 1vw",
                   borderRadius: "99vw",
@@ -131,7 +139,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           <div style={{ display: "flex", alignItems: "center", gap: "1vw" }}>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search supplier or item..."
               style={{
                 width: "15vw",
@@ -219,6 +227,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           </table>
         )}
       </div>
+      {!limit && <Pagination total={filtered.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
     </div>
   );
 }
