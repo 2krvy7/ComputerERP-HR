@@ -10,6 +10,27 @@ export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
 
+
+
+const [apOpen, setApOpen] = useState(false);
+const [arOpen, setArOpen] = useState(false);
+const [cashOpen, setCashOpen] = useState(false);
+const [reportsOpen, setReportsOpen] = useState(false);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   return (
     <nav className={`sidebar ${sidebarOpen ? "" : "closed"}`}>
       <header>
@@ -98,67 +119,105 @@ export default function Sidebar() {
 
 
         {/* Accounts Payable */}
-        <li className="nav-link parent-menu">
-          <Link href="/accounts-payable">
-            <i className="bx bx-up-arrow-alt icon"></i>
-            <span className="text nav-text">Accounts Payable</span>
-          </Link>
+<li className="nav-link parent-menu">
+  <div
+    className="menu-parent"
+    onClick={() => setApOpen(!apOpen)}
+  >
+    <i className="bx bx-up-arrow-alt icon"></i>
+    <span className="text nav-text">Accounts Payable</span>
 
-          <ul className="sub-menu">
-            <li>
-              <Link href="/accounts-payable/invoices">
-                <span className="text nav-text">AP Invoices</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/accounts-payable/payments">
-                <span className="text nav-text">AP Payments</span>
-              </Link>
-            </li>
-          </ul>
-        </li>
+    <i
+      className={`bx ${
+        apOpen ? "bx-chevron-down" : "bx-chevron-right"
+      } arrow`}
+    ></i>
+  </div>
 
-        {/* Accounts Receivable */}
-        <li className="nav-link parent-menu">
-          <Link href="/accounts-receivable">
-            <i className="bx bx-down-arrow-alt icon"></i>
-            <span className="text nav-text">Accounts Receivable</span>
-          </Link>
+  {apOpen && (
+    <ul className="sub-menu">
+      <li>
+        <Link href="/accounts-payable/invoices">
+          AP Invoices
+        </Link>
+      </li>
+      <li>
+        <Link href="/accounts-payable/payments">
+          AP Payments
+        </Link>
+      </li>
+    </ul>
+  )}
+</li>
 
-          <ul className="sub-menu">
-            <li>
-              <Link href="/accounts-receivable/invoices">
-                <span className="text nav-text">AR Invoices</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/accounts-receivable/collections">
-                <span className="text nav-text">Collections</span>
-              </Link>
-            </li>
-          </ul>
-        </li>
+
+
+
+
+
+       {/* Accounts Receivable */}
+<li className="nav-link parent-menu">
+  <div
+    className="menu-parent"
+    onClick={() => setArOpen(!arOpen)}
+  >
+    <i className="bx bx-down-arrow-alt icon"></i>
+    <span className="text nav-text">Accounts Receivable</span>
+
+    <i
+      className={`bx ${
+        arOpen ? "bx-chevron-down" : "bx-chevron-right"
+      } arrow`}
+    ></i>
+  </div>
+
+  {arOpen && (
+    <ul className="sub-menu">
+      <li>
+        <Link href="/accounts-receivable/invoices">
+          AR Invoices
+        </Link>
+      </li>
+      <li>
+        <Link href="/accounts-receivable/collections">
+          Collections
+        </Link>
+      </li>
+    </ul>
+  )}
+</li>
 
         {/* Cash & Bank */}
-        <li className="nav-link parent-menu">
-          <Link href="/cash-bank">
-            <i className="bx bx-buildings icon"></i>
-            <span className="text nav-text">Cash & Bank</span>
-          </Link>
+<li className="nav-link parent-menu">
+  <div
+    className="menu-parent"
+    onClick={() => setCashOpen(!cashOpen)}
+  >
+    <i className="bx bx-buildings icon"></i>
+    <span className="text nav-text">Cash & Bank</span>
 
-          <ul className="sub-menu">
-            <li>
-              <Link href="/cash-bank/accounts">
-                <span className="text nav-text">Bank Accounts</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/cash-bank/transactions">
-                <span className="text nav-text">Transactions</span>
-              </Link>
-            </li>
-          </ul>
-        </li>
+    <i
+      className={`bx ${
+        cashOpen ? "bx-chevron-down" : "bx-chevron-right"
+      } arrow`}
+    ></i>
+  </div>
+
+  {cashOpen && (
+    <ul className="sub-menu">
+      <li>
+        <Link href="/cash-bank/accounts">
+          Bank Accounts
+        </Link>
+      </li>
+      <li>
+        <Link href="/cash-bank/transactions">
+          Transactions
+        </Link>
+      </li>
+    </ul>
+  )}
+</li>
 
         {/* Expenses */}
         <li className="nav-link">
@@ -169,45 +228,61 @@ export default function Sidebar() {
         </li>
 
         {/* Reports */}
-        <li className="nav-link parent-menu">
-          <Link href="/reports">
-            <i className="bx bx-bar-chart-alt-2 icon"></i>
-            <span className="text nav-text">Reports</span>
-          </Link>
+<li className="nav-link parent-menu">
+  <div
+    className="menu-parent"
+    onClick={() => setReportsOpen(!reportsOpen)}
+  >
+    <i className="bx bx-bar-chart-alt-2 icon"></i>
+    <span className="text nav-text">Reports</span>
 
-          <ul className="sub-menu">
-            <li>
-              <Link href="/reports/trial-balance">
-                <span className="text nav-text">Trial Balance</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports/income-statement">
-                <span className="text nav-text">Income Statement</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports/balance-sheet">
-                <span className="text nav-text">Balance Sheet</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports/cash-flow">
-                <span className="text nav-text">Cash Flow Statement</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports/ap-aging">
-                <span className="text nav-text">AP Aging</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/reports/ar-aging">
-                <span className="text nav-text">AR Aging</span>
-              </Link>
-            </li>
-          </ul>
-        </li>
+    <i
+      className={`bx ${
+        reportsOpen ? "bx-chevron-down" : "bx-chevron-right"
+      } arrow`}
+    ></i>
+  </div>
+
+  {reportsOpen && (
+    <ul className="sub-menu">
+      <li>
+        <Link href="/reports/trial-balance">
+          Trial Balance
+        </Link>
+      </li>
+
+      <li>
+        <Link href="/reports/income-statement">
+          Income Statement
+        </Link>
+      </li>
+
+      <li>
+        <Link href="/reports/balance-sheet">
+          Balance Sheet
+        </Link>
+      </li>
+
+      <li>
+        <Link href="/reports/cash-flow">
+          Cash Flow Statement
+        </Link>
+      </li>
+
+      <li>
+        <Link href="/reports/AP-aging">
+          AP Aging
+        </Link>
+      </li>
+
+      <li>
+        <Link href="/reports/AR-aging">
+          AR Aging
+        </Link>
+      </li>
+    </ul>
+  )}
+</li>
         
         
 

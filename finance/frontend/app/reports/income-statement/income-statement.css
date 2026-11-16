@@ -1,0 +1,51 @@
+.income-page {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: 100vh;
+}
+
+.positive {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.negative {
+  color: #ea580c;
+  font-weight: 500;
+}
+
+.section-row td {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+}
+
+.total-row td {
+  background: #eef2ff;
+  font-weight: 600;
+}
+
+.gross-profit-row td {
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.net-income-row td {
+  background: #dbeafe;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.analysis-card {
+  margin-top: 20px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 18px;
+}
+
+.analysis-card p {
+  color: #64748b;
+  margin-bottom: 12px;
+  line-height: 1.6;
+}

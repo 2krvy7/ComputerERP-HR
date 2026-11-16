@@ -1,0 +1,66 @@
+.statement-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.statement-card {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.statement-header {
+  padding: 20px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.statement-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.statement-header p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.section-row td {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+}
+
+.total-row td {
+  background: #eef2ff;
+  font-weight: 600;
+}
+
+.grand-total td {
+  background: #dbeafe;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.balance-check {
+  margin-top: 24px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-weight: 500;
+}
+
+.positive {
+  color: #16a34a;
+}
+
+@media (max-width: 1200px) {
+  .statement-grid {
+    grid-template-columns: 1fr;
+  }
+}
