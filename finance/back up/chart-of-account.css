@@ -1,0 +1,225 @@
+/* =====================================================
+   CHART OF ACCOUNTS PAGE
+===================================================== */
+
+.coa-page {
+  margin-left: 0px; /* space for sidebar */
+  padding: 0px;
+  min-height: 100vh;
+  background: var(--body-color);
+}
+
+/* =====================================================
+   PAGE HEADER
+===================================================== */
+
+.coa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.coa-header h1 {
+  font-size: 32px;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
+
+.coa-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* =====================================================
+   BUTTONS
+===================================================== */
+
+.primary-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--tran-02);
+}
+
+.primary-btn:hover {
+  opacity: 0.9;
+}
+
+/* =====================================================
+   SUMMARY CARDS
+===================================================== */
+
+.coa-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.coa-card {
+  background: white;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+
+.coa-card h4 {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.coa-card h2 {
+  color: var(--text-primary);
+  font-size: 28px;
+  margin-bottom: 5px;
+}
+
+.coa-card span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* =====================================================
+   FILTER SECTION
+===================================================== */
+
+.coa-filters {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 25px;
+}
+
+.search-box {
+  flex: 1;
+  padding: 10px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.coa-filters button {
+  padding: 10px 15px;
+  border: 1px solid var(--border-color);
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* =====================================================
+   TABLE CONTAINER
+===================================================== */
+
+.coa-table-container {
+  background: white;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+/* =====================================================
+   TABLE HEADER
+===================================================== */
+
+.table-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-header h3 {
+  color: var(--text-primary);
+}
+
+/* =====================================================
+   CHART OF ACCOUNTS TABLE
+===================================================== */
+
+.coa-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.coa-table th {
+  background: #f8fafc;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  padding: 14px;
+}
+
+.coa-table td {
+  padding: 14px;
+  border-top: 1px solid #eef2f7;
+  font-size: 14px;
+}
+
+/* =====================================================
+   ACCOUNT GROUP ROWS
+   Assets / Liabilities / Equity / Revenue / Expenses
+===================================================== */
+
+.group-row td {
+  background: #f8fafc;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* =====================================================
+   STATUS BADGES
+===================================================== */
+
+.status {
+  padding: 5px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status.active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+/* =====================================================
+   TABLE HOVER EFFECT
+===================================================== */
+
+.coa-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* =====================================================
+   RESPONSIVE DESIGN
+===================================================== */
+
+@media (max-width: 1200px) {
+  .coa-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .coa-page {
+    margin-left: 90px;
+    padding: 15px;
+  }
+
+  .coa-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .coa-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+
+  .coa-filters {
+    flex-direction: column;
+  }
+}
