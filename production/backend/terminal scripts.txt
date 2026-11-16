@@ -22,8 +22,10 @@ git pull
 git add production
 git commit -m "reserved string"
 git pull
-'if': git push -u origin production
-'else': git push
+git push 
+
+git pull origin production
+git push origin production
 
 ## running the terminal of backend
 cd production\backend
