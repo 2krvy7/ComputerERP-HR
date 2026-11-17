@@ -8,7 +8,7 @@ router = APIRouter(
     tags=["AR Collections"]
 )
 
-class NewReceiptPayload(BaseModel):
+class RecordReceiptPayload(BaseModel):
     arInvoiceID: int
     bankAccountID: int
     paymentDate: str
@@ -33,22 +33,68 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     return row["table_name"] if row else None
 
 @router.get("/")
-def get_collections():
+def get_collection_worklist():
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
-            rec_table = get_exact_table_name(cur, "ARReceipt")
-            if not rec_table:
+            ar_table = get_exact_table_name(cur, "ARInvoice")
+            if not ar_table:
                 return []
-            cur.execute(f'SELECT * FROM "{rec_table}" ORDER BY 1 DESC')
+
+            ar_cols = get_exact_cols(cur, ar_table)
+            rem_col = ar_cols.get("remainingbalance") or ar_cols.get("amount") or "amount"
+            amt_col = ar_cols.get("amount") or "amount"
+            stat_col = ar_cols.get("status") or "status"
+            due_col = ar_cols.get("duedate") or "dueDate"
+
+            cust_table = get_exact_table_name(cur, "Customer")
+            if cust_table:
+                c_cols = get_exact_cols(cur, cust_table)
+                ar_cust = ar_cols.get("customerid")
+                c_pk = c_cols.get("customerid") or c_cols.get("cust_id") or c_cols.get("id")
+                c_name = next((orig for low, orig in c_cols.items() if "name" in low), None)
+
+                if ar_cust and c_pk and c_name:
+                    cur.execute(f"""
+                        SELECT 
+                            a.*,
+                            c."{c_name}" AS customer_name
+                        FROM "{ar_table}" a
+                        LEFT JOIN "{cust_table}" c ON a."{ar_cust}" = c."{c_pk}"
+                        WHERE COALESCE(a."{rem_col}", a."{amt_col}") > 0
+                          AND LOWER(COALESCE(a."{stat_col}", 'sent')) != 'paid'
+                        ORDER BY a."{due_col}" ASC
+                    """)
+                    return cur.fetchall()
+
+            cur.execute(f"""
+                SELECT *
+                FROM "{ar_table}"
+                WHERE COALESCE("{rem_col}", "{amt_col}") > 0
+                  AND LOWER(COALESCE("{stat_col}", 'sent')) != 'paid'
+                ORDER BY "{due_col}" ASC
+            """)
             return cur.fetchall()
     finally:
         conn.close()
 
-@router.post("/")
-def record_collection(payload: NewReceiptPayload):
+@router.get("/bank-accounts")
+def get_bank_accounts():
+    conn = get_db_connection()
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            bank_table = get_exact_table_name(cur, "BankAccount")
+            if not bank_table:
+                return []
+            cur.execute(f'SELECT * FROM "{bank_table}" ORDER BY 1 ASC')
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+@router.post("/receipts")
+def record_ar_receipt(payload: RecordReceiptPayload):
     if payload.amount <= 0:
-        raise HTTPException(status_code=400, detail="Receipt amount must be greater than 0")
+        raise HTTPException(status_code=400, detail="Collection amount must be greater than 0")
 
     conn = get_db_connection()
     try:
@@ -58,6 +104,7 @@ def record_collection(payload: NewReceiptPayload):
             r_cols = get_exact_cols(cur, rec_table)
             a_cols = get_exact_cols(cur, ar_table)
 
+            # 1. Insert into ARReceipt
             cur.execute(f"""
                 INSERT INTO "{rec_table}" (
                     "{r_cols.get('arinvoiceid', 'arInvoiceID')}",
@@ -73,8 +120,9 @@ def record_collection(payload: NewReceiptPayload):
                 payload.paymentDate,
                 payload.amount,
             ))
-            created = cur.fetchone()
+            created_receipt = cur.fetchone()
 
+            # 2. Update ARInvoice totalPaid, remainingBalance, and status
             pk_col = a_cols.get("arinvoiceid", "arInvoiceID")
             paid_col = a_cols.get("totalpaid", "totalPaid")
             rem_col = a_cols.get("remainingbalance", "remainingBalance")
@@ -97,7 +145,7 @@ def record_collection(payload: NewReceiptPayload):
                 raise HTTPException(status_code=404, detail="AR Invoice not found")
 
             conn.commit()
-            return created
+            return created_receipt
     except HTTPException:
         conn.rollback()
         raise

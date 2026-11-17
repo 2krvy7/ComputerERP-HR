@@ -9,6 +9,7 @@ from routers.payments import router as payments_router
 from routers.arinvoices import router as arinvoices_router
 from routers.collections import router as collections_router
 from routers.bank import router as bank_router
+from routers.transactions import router as transactions_router
 from routers.expense import router as expense_router
 from routers.reports import router as reports_router
 from routers.dashboard import router as dashboard_router
@@ -23,7 +24,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:8000"
     ],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -31,12 +32,12 @@ app.add_middleware(
 app.include_router(coa_router)
 app.include_router(journal_router)
 app.include_router(ledger_router)
-
 app.include_router(apinvoices_router)
 app.include_router(payments_router)
 app.include_router(arinvoices_router)
 app.include_router(collections_router)
 app.include_router(bank_router)
+app.include_router(transactions_router)
 app.include_router(expense_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router)
