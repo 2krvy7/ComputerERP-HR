@@ -2,12 +2,12 @@ from fastapi import APIRouter
 from database import get_db_connection
 
 router = APIRouter(
-    prefix="/api/ar",
-    tags=["Accounts Receivable"]
+    prefix="/api/bank",
+    tags=["Bank"]
 )
 
 @router.get("/")
-def get_ar_invoices():
+def get_bank_accounts():
 
     conn = get_db_connection()
 
@@ -16,8 +16,7 @@ def get_ar_invoices():
 
         cur.execute("""
             SELECT *
-            FROM "ARInvoice"
-            ORDER BY "dueDate"
+            FROM "BankAccount"
         """)
 
         rows = cur.fetchall()

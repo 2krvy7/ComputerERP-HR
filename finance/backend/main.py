@@ -6,7 +6,8 @@ from routers.journal import router as journal_router
 from routers.ledger import router as ledger_router
 from routers.apinvoices import router as apinvoices_router
 from routers.payments import router as payments_router
-from routers.ar import router as ar_router
+from routers.arinvoices import router as arinvoices_router
+from routers.collections import router as collections_router
 from routers.bank import router as bank_router
 from routers.expense import router as expense_router
 from routers.reports import router as reports_router
@@ -33,7 +34,8 @@ app.include_router(ledger_router)
 
 app.include_router(apinvoices_router)
 app.include_router(payments_router)
-app.include_router(ar_router)
+app.include_router(arinvoices_router)
+app.include_router(collections_router)
 app.include_router(bank_router)
 app.include_router(expense_router)
 app.include_router(reports_router)
