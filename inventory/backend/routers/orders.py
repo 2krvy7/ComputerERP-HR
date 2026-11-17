@@ -21,32 +21,48 @@ class GoodsReceivedInspection(BaseModel):
 class RestockRequestApproval(BaseModel):
     approved_by: str
 
+class StockReorderLevelUpdate(BaseModel):
+    reorder_level: int = Field(..., ge=0)
+
+
 @router.get("/upcoming-requests")
 def get_upcoming_requests():
+    conn = None
+
     try:
         conn = get_db_connection()
 
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("""
                 SELECT
-                    rr."RR_ID",
-                    rr."IM_ID",
+                    s."STOCK_ID",
+                    s."IM_ID",
                     im."Item_Name",
                     im."SKU",
                     im."ItemType",
-                    rr."Quantity",
-                    rr."WH_ID",
+                    s."quantity_on_hand",
+                    s."reorder_level",
+                    s."WH_ID",
                     w."Warehouse_Name",
-                    rr."issued",
-                    rr."status"
-                FROM "RestockRequest" rr
+                    CASE
+                        WHEN s."quantity_on_hand" <= s."reorder_level"
+                            THEN 'Low Stock'
+                        ELSE 'Approaching Reorder'
+                    END AS "stock_status"
+                FROM "STOCK" s
                 JOIN "ITEM_MASTER" im
-                    ON rr."IM_ID" = im."IM_ID"
+                    ON s."IM_ID" = im."IM_ID"
                 JOIN "WAREHOUSE" w
-                    ON rr."WH_ID" = w."WH_ID"
-                WHERE rr."status" IS NULL
-                   OR rr."status" = 'Pending'
-                ORDER BY rr."issued" DESC
+                    ON s."WH_ID" = w."WH_ID"
+                WHERE im."ItemType" = 'Raw'
+                  AND s."WH_ID" IN (1, 7)
+                  AND s."reorder_level" > 0
+                  AND s."quantity_on_hand" <= CEIL(
+                      s."reorder_level" * 1.2
+                  )
+                ORDER BY
+                    s."quantity_on_hand" ASC,
+                    im."Item_Name" ASC
             """)
 
             return cur.fetchall()
@@ -58,7 +74,67 @@ def get_upcoming_requests():
         )
 
     finally:
-        if 'conn' in locals():
+        if conn is not None:
+            conn.close()
+
+
+@router.put("/stock/{stock_id}/reorder-level")
+def update_stock_reorder_level(
+    stock_id: int,
+    update: StockReorderLevelUpdate
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                UPDATE "STOCK"
+                SET "reorder_level" = %s
+                WHERE "STOCK_ID" = %s
+                RETURNING
+                    "STOCK_ID",
+                    "IM_ID",
+                    "WH_ID",
+                    "quantity_on_hand",
+                    "reorder_level"
+            """, (
+                update.reorder_level,
+                stock_id
+            ))
+
+            result = cur.fetchone()
+
+            if result is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Stock record not found."
+                )
+
+        conn.commit()
+
+        return {
+            "message": "Reorder level updated successfully.",
+            "stock": result
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
             conn.close()
 
 @router.get("/incoming-requests")
@@ -426,12 +502,15 @@ def confirm_goods_received(
                     status_code=404,
                     detail="Goods Received record not found."
                 )
-
+            
             # Add accepted quantity to STOCK
             if accepted_quantity > 0:
 
                 cur.execute("""
-                    SELECT "STOCK_ID", "quantity_on_hand"
+                    SELECT
+                        "STOCK_ID",
+                        "quantity_on_hand",
+                        "reorder_level"
                     FROM "STOCK"
                     WHERE "IM_ID" = %s
                       AND "WH_ID" = %s
@@ -441,38 +520,42 @@ def confirm_goods_received(
                 stock_row = cur.fetchone()
 
                 if stock_row is None:
-
                     if inspection.reorder_level is None:
                         raise HTTPException(
                             status_code=400,
                             detail="Reorder level is required when creating a new stock record."
                         )
 
-                    cur.execute("""
-                        INSERT INTO "STOCK" (
-                            "IM_ID",
-                            "WH_ID",
-                            "quantity_on_hand",
-                            "reorder_level"
-                        )
-                        VALUES (%s, %s, %s, %s)
-                    """, (
-                        im_id,
-                        wh_id,
-                        accepted_quantity,
-                        inspection.reorder_level
-                    ))
-
+                    stock_reorder_level = inspection.reorder_level
                 else:
+                    stock_reorder_level = stock_row[2]
 
-                    cur.execute("""
-                        UPDATE "STOCK"
-                        SET "quantity_on_hand" = "quantity_on_hand" + %s
-                        WHERE "STOCK_ID" = %s
-                    """, (
-                        accepted_quantity,
-                        stock_row[0]
-                    ))
+                cur.execute("""
+                    INSERT INTO "STOCK" (
+                        "IM_ID",
+                        "WH_ID",
+                        "quantity_on_hand",
+                        "reorder_level"
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT ("IM_ID", "WH_ID")
+                    DO UPDATE SET
+                        "quantity_on_hand" =
+                            "STOCK"."quantity_on_hand"
+                            + EXCLUDED."quantity_on_hand"
+                    RETURNING
+                        "STOCK_ID",
+                        "quantity_on_hand",
+                        "reorder_level"
+                """, (
+                    im_id,
+                    wh_id,
+                    accepted_quantity,
+                    stock_reorder_level
+                ))
+
+                updated_stock = cur.fetchone()
+
 
             # Record original and accepted quantities in STOCK_LEDGER
             cur.execute("""
@@ -514,6 +597,7 @@ def confirm_goods_received(
             "AcceptedQuantity": accepted_quantity,
             "ItemCondition": result[3],
             "Remarks": result[4],
+            "Stock": updated_stock,
             "LogID": ledger_result[0] if ledger_result else None
             }
 

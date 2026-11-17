@@ -23,6 +23,19 @@ type RestockRequest = {
   status: string;
 };
 
+type UpcomingStock = {
+  STOCK_ID: number;
+  IM_ID: number;
+  Item_Name: string;
+  SKU: string;
+  ItemType: string;
+  quantity_on_hand: number;
+  reorder_level: number;
+  WH_ID: number;
+  Warehouse_Name: string;
+  stock_status: string;
+};
+
 type PurchaseRequest = {
   PR_ID: number;
   Status: string;
@@ -93,7 +106,7 @@ const sectionDescriptions: Record<string, string> = {
   "Goods Received":
     "Inspect delivered items, record accepted quantities, and process stock in.",
   "Upcoming Requests":
-    "Monitor upcoming restock requests and expected procurement activities.",
+    "Monitor raw materials with low stock or approaching reorder levels across warehouses.",
   "Material Requests":
     "View material requests submitted by the Production department.",
   "Material Release":
@@ -127,7 +140,7 @@ export default function OrdersPage() {
 
   // Upcoming Requests states
   const [upcomingRequests, setUpcomingRequests] =
-    useState<RestockRequest[]>([]);
+  useState<UpcomingStock[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [upcomingError, setUpcomingError] = useState("");
 
@@ -563,14 +576,14 @@ export default function OrdersPage() {
                 )}
               </div>
             )}
-
+          
           {/* Upcoming Requests */}
           {activeDepartment === "Procurement" &&
             activeSection === "Upcoming Requests" && (
               <div className="overflow-x-auto rounded-xl border border-[#DCE7EA]">
                 {upcomingLoading ? (
                   <p className="p-8 text-center text-sm text-[#587176]">
-                    Loading upcoming requests...
+                    Loading stock monitoring...
                   </p>
                 ) : upcomingError ? (
                   <p className="p-8 text-center text-sm text-red-600">
@@ -578,35 +591,47 @@ export default function OrdersPage() {
                   </p>
                 ) : upcomingRequests.length === 0 ? (
                   <p className="p-8 text-center text-sm text-[#587176]">
-                    No upcoming restock requests available.
+                    No low-stock or approaching-reorder items available.
                   </p>
                 ) : (
                   <table className="w-full text-left text-sm">
                     <thead className="bg-[#F2F7F8] text-[#365f68]">
                       <tr>
-                        <th className="p-3">Request ID</th>
                         <th className="p-3">Item</th>
                         <th className="p-3">SKU</th>
-                        <th className="p-3">Type</th>
-                        <th className="p-3">Quantity</th>
                         <th className="p-3">Warehouse</th>
+                        <th className="p-3">Available Stock</th>
+                        <th className="p-3">Reorder Level</th>
                         <th className="p-3">Status</th>
                       </tr>
                     </thead>
 
                     <tbody>
-                      {upcomingRequests.map((request) => (
+                      {upcomingRequests.map((item) => (
                         <tr
-                          key={request.RR_ID}
+                          key={item.STOCK_ID}
                           className="border-t border-[#DCE7EA] text-[#1F3338]"
                         >
-                          <td className="p-3">{request.RR_ID}</td>
-                          <td className="p-3">{request.Item_Name}</td>
-                          <td className="p-3">{request.SKU}</td>
-                          <td className="p-3">{request.ItemType}</td>
-                          <td className="p-3">{request.Quantity}</td>
-                          <td className="p-3">{request.Warehouse_Name}</td>
-                          <td className="p-3">{request.status}</td>
+                          <td className="p-3">{item.Item_Name}</td>
+                          <td className="p-3">{item.SKU}</td>
+                          <td className="p-3">{item.Warehouse_Name}</td>
+                          <td className="p-3">
+                            {item.quantity_on_hand}
+                          </td>
+                          <td className="p-3">
+                            {item.reorder_level}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                item.stock_status === "Low Stock"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {item.stock_status}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -614,6 +639,7 @@ export default function OrdersPage() {
                 )}
               </div>
             )}
+
 
           {/* Other Sections */}
           {!(activeDepartment === "Procurement" &&
