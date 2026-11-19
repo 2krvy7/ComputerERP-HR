@@ -1,95 +1,259 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import "./balance-sheet.css";
 
+type AccountBalance = {
+  accountID: number;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  totalDebit: number;
+  totalCredit: number;
+  netBalance: number;
+};
+
+type BalanceSheetData = {
+  assets: AccountBalance[];
+  liabilities: AccountBalance[];
+  equity: AccountBalance[];
+  netIncome: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  isBalanced: boolean;
+};
+
 export default function BalanceSheet() {
+  const [data, setData] = useState<BalanceSheetData>({
+    assets: [],
+    liabilities: [],
+    equity: [],
+    netIncome: 0,
+    totalAssets: 0,
+    totalLiabilities: 0,
+    totalEquity: 0,
+    totalLiabilitiesAndEquity: 0,
+    isBalanced: true,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activePeriod, setActivePeriod] = useState<
+    "This month" | "This quarter" | "This year" | "Custom"
+  >("This month");
+  const [todayLabel, setTodayLabel] = useState("");
+
+  async function fetchBalanceSheet() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/reports/balance-sheet");
+      if (!res.ok) throw new Error(`Balance Sheet API error: ${res.status}`);
+      const json = await res.json();
+      setData({
+        assets: Array.isArray(json.assets) ? json.assets : [],
+        liabilities: Array.isArray(json.liabilities) ? json.liabilities : [],
+        equity: Array.isArray(json.equity) ? json.equity : [],
+        netIncome: Number(json.netIncome || 0),
+        totalAssets: Number(json.totalAssets || 0),
+        totalLiabilities: Number(json.totalLiabilities || 0),
+        totalEquity: Number(json.totalEquity || 0),
+        totalLiabilitiesAndEquity: Number(json.totalLiabilitiesAndEquity || 0),
+        isBalanced: Boolean(json.isBalanced),
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to load Balance Sheet");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setTodayLabel(
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    );
+    fetchBalanceSheet();
+  }, []);
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(val || 0));
+
+  const { currentAssets, nonCurrentAssets, currentAssetTotal, nonCurrentAssetTotal } =
+    useMemo(() => {
+      const curr = data.assets.filter(
+        (a) => Number(String(a.accountCode).replace(/\D/g, "")) < 1500
+      );
+      const nonCurr = data.assets.filter(
+        (a) => Number(String(a.accountCode).replace(/\D/g, "")) >= 1500
+      );
+      return {
+        currentAssets: curr,
+        nonCurrentAssets: nonCurr,
+        currentAssetTotal: curr.reduce((s, a) => s + Number(a.netBalance || 0), 0),
+        nonCurrentAssetTotal: nonCurr.reduce((s, a) => s + Number(a.netBalance || 0), 0),
+      };
+    }, [data.assets]);
+
+  const {
+    currentLiabilities,
+    nonCurrentLiabilities,
+    currentLiabilityTotal,
+    nonCurrentLiabilityTotal,
+  } = useMemo(() => {
+    const curr = data.liabilities.filter(
+      (l) => Number(String(l.accountCode).replace(/\D/g, "")) < 2500
+    );
+    const nonCurr = data.liabilities.filter(
+      (l) => Number(String(l.accountCode).replace(/\D/g, "")) >= 2500
+    );
+    return {
+      currentLiabilities: curr,
+      nonCurrentLiabilities: nonCurr,
+      currentLiabilityTotal: curr.reduce((s, l) => s + Number(l.netBalance || 0), 0),
+      nonCurrentLiabilityTotal: nonCurr.reduce(
+        (s, l) => s + Number(l.netBalance || 0),
+        0
+      ),
+    };
+  }, [data.liabilities]);
+
+  const workingCapital = currentAssetTotal - currentLiabilityTotal;
+
+  function handleExportCSV() {
+    const rows = [
+      ["Section", "Account Code", "Account Name", "Balance"],
+      ...data.assets.map((a) => [
+        "Asset",
+        a.accountCode,
+        `"${a.accountName}"`,
+        Number(a.netBalance || 0).toFixed(2),
+      ]),
+      ["Total Assets", "", "", data.totalAssets.toFixed(2)],
+      ...data.liabilities.map((l) => [
+        "Liability",
+        l.accountCode,
+        `"${l.accountName}"`,
+        Number(l.netBalance || 0).toFixed(2),
+      ]),
+      ["Total Liabilities", "", "", data.totalLiabilities.toFixed(2)],
+      ...data.equity.map((e) => [
+        "Equity",
+        e.accountCode,
+        `"${e.accountName}"`,
+        Number(e.netBalance || 0).toFixed(2),
+      ]),
+      ["Current Net Income", "", "", data.netIncome.toFixed(2)],
+      ["Total Equity", "", "", data.totalEquity.toFixed(2)],
+      [
+        "Total Liabilities & Equity",
+        "",
+        "",
+        data.totalLiabilitiesAndEquity.toFixed(2),
+      ],
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `balance-sheet-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="balance-sheet-page">
-
       {/* Header */}
       <div className="page-header">
         <div>
           <h1>Balance Sheet</h1>
           <p>
-            See what your business owns, what it owes and the equity you've built.
+            See what your business owns, what it owes and the equity
+            you&apos;ve built.
           </p>
         </div>
 
         <div className="header-actions">
-          <button className="btn-light">Export</button>
-          <button className="btn-primary">Print report</button>
+          <button className="btn-light" onClick={handleExportCSV}>
+            Export
+          </button>
+          <button className="btn-primary" onClick={() => window.print()}>
+            Print report
+          </button>
         </div>
       </div>
 
       {/* Period Filter */}
       <div className="tabs">
-        <button className="active">This month</button>
-        <button>This quarter</button>
-        <button>This year</button>
-        <button>Custom</button>
+        {(["This month", "This quarter", "This year", "Custom"] as const).map(
+          (tab) => (
+            <button
+              key={tab}
+              className={activePeriod === tab ? "active" : ""}
+              onClick={() => setActivePeriod(tab)}
+            >
+              {tab}
+            </button>
+          )
+        )}
       </div>
 
       <div className="filters">
         <button className="btn-light">
-          As of Oct 31, 2026
+          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
         </button>
-
-        <button className="btn-light">
-          Compare: Sep 30, 2026
-        </button>
-
-        <button className="btn-light">
-          Accrual basis
-        </button>
-
-        <button className="btn-light push-right">
+        <button className="btn-light">Period: {activePeriod}</button>
+        <button className="btn-light">Accrual basis</button>
+        <button className="btn-light push-right" onClick={fetchBalanceSheet}>
           Update report
         </button>
       </div>
 
       {/* Summary Cards */}
-
       <div className="summary-grid">
         <div className="summary-card">
           <p>Total Assets</p>
-          <h2>$210,830.00</h2>
-          <span className="positive">
-            +$35,680 since September
-          </span>
+          <h2>{loading ? "..." : formatCurrency(data.totalAssets)}</h2>
+          <span className="positive">{data.assets.length} asset accounts</span>
         </div>
 
         <div className="summary-card">
           <p>Total Liabilities</p>
-          <h2>$85,840.00</h2>
-          <span className="positive">
-            +$1,440 since September
-          </span>
+          <h2>{loading ? "..." : formatCurrency(data.totalLiabilities)}</h2>
+          <span>{data.liabilities.length} liability accounts</span>
         </div>
 
         <div className="summary-card">
           <p>Total Equity</p>
-          <h2>$124,990.00</h2>
-          <span>
-            Includes October net income
-          </span>
+          <h2>{loading ? "..." : formatCurrency(data.totalEquity)}</h2>
+          <span>Includes current net income</span>
         </div>
 
         <div className="summary-card">
           <p>Working Capital</p>
-          <h2>$137,990.00</h2>
-          <span>
-            Current assets less current liabilities
-          </span>
+          <h2>{loading ? "..." : formatCurrency(workingCapital)}</h2>
+          <span>Current assets less current liabilities</span>
         </div>
       </div>
 
+      {error && (
+        <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
+      )}
+
       {/* Two Column Statements */}
-
       <div className="statement-grid">
-
         {/* Assets */}
         <div className="statement-card">
-
           <div className="statement-header">
-            <h3>Acme Studio - Assets</h3>
+            <h3>ComputerERP - Assets</h3>
             <p>Financial position · USD · Accrual basis</p>
           </div>
 
@@ -97,182 +261,169 @@ export default function BalanceSheet() {
             <thead>
               <tr>
                 <th>Account</th>
-                <th>Oct 31, 2026</th>
-                <th>Sep 30, 2026</th>
+                <th>Code</th>
+                <th>{todayLabel ? `As of ${todayLabel}` : "Current Balance"}</th>
               </tr>
             </thead>
 
             <tbody>
-
               <tr className="section-row">
                 <td colSpan={3}>Current Assets</td>
               </tr>
 
-              <tr>
-                <td>Cash & Bank</td>
-                <td>$124,580.00</td>
-                <td>$93,140.00</td>
-              </tr>
-
-              <tr>
-                <td>Accounts Receivable</td>
-                <td>$48,250.00</td>
-                <td>$54,510.00</td>
-              </tr>
-
-              <tr>
-                <td>Prepaid Expenses</td>
-                <td>$6,000.00</td>
-                <td>$4,000.00</td>
-              </tr>
+              {currentAssets.length === 0 ? (
+                <tr>
+                  <td colSpan={3}>No current asset accounts recorded</td>
+                </tr>
+              ) : (
+                currentAssets.map((acc) => (
+                  <tr key={acc.accountID}>
+                    <td>{acc.accountName}</td>
+                    <td>{acc.accountCode}</td>
+                    <td>{formatCurrency(acc.netBalance)}</td>
+                  </tr>
+                ))
+              )}
 
               <tr className="total-row">
-                <td>Total Current Assets</td>
-                <td>$178,830.00</td>
-                <td>$151,650.00</td>
+                <td colSpan={2}>Total Current Assets</td>
+                <td>{formatCurrency(currentAssetTotal)}</td>
               </tr>
 
               <tr className="section-row">
                 <td colSpan={3}>Non-Current Assets</td>
               </tr>
 
-              <tr>
-                <td>Equipment</td>
-                <td>$40,000.00</td>
-                <td>$31,000.00</td>
-              </tr>
-
-              <tr>
-                <td>Accumulated Depreciation</td>
-                <td>-$8,000.00</td>
-                <td>-$7,500.00</td>
-              </tr>
+              {nonCurrentAssets.length === 0 ? (
+                <tr>
+                  <td colSpan={3}>No non-current asset accounts recorded</td>
+                </tr>
+              ) : (
+                nonCurrentAssets.map((acc) => (
+                  <tr key={acc.accountID}>
+                    <td>{acc.accountName}</td>
+                    <td>{acc.accountCode}</td>
+                    <td>{formatCurrency(acc.netBalance)}</td>
+                  </tr>
+                ))
+              )}
 
               <tr className="total-row">
-                <td>Net Non-Current Assets</td>
-                <td>$32,000.00</td>
-                <td>$23,500.00</td>
+                <td colSpan={2}>Net Non-Current Assets</td>
+                <td>{formatCurrency(nonCurrentAssetTotal)}</td>
               </tr>
 
               <tr className="grand-total">
-                <td>Total Assets</td>
-                <td>$210,830.00</td>
-                <td>$175,150.00</td>
+                <td colSpan={2}>Total Assets</td>
+                <td>{formatCurrency(data.totalAssets)}</td>
               </tr>
-
             </tbody>
           </table>
-
         </div>
 
-        {/* Liabilities */}
-
+        {/* Liabilities & Equity */}
         <div className="statement-card">
-
           <div className="statement-header">
-            <h3>Liabilities & Equity</h3>
-            <p>As of October 31, 2026</p>
+            <h3>Liabilities &amp; Equity</h3>
+            <p>{todayLabel ? `As of ${todayLabel}` : "Current Position"}</p>
           </div>
 
           <table>
             <thead>
               <tr>
                 <th>Account</th>
-                <th>Oct 31, 2026</th>
-                <th>Sep 30, 2026</th>
+                <th>Code</th>
+                <th>{todayLabel ? `As of ${todayLabel}` : "Current Balance"}</th>
               </tr>
             </thead>
 
             <tbody>
-
               <tr className="section-row">
                 <td colSpan={3}>Current Liabilities</td>
               </tr>
 
-              <tr>
-                <td>Accounts Payable</td>
-                <td>$32,840.00</td>
-                <td>$37,840.00</td>
-              </tr>
-
-              <tr>
-                <td>Accrued Expenses</td>
-                <td>$8,000.00</td>
-                <td>$6,560.00</td>
-              </tr>
-
-              <tr className="total-row">
-                <td>Total Current Liabilities</td>
-                <td>$40,840.00</td>
-                <td>$44,400.00</td>
-              </tr>
-
-              <tr className="section-row">
-                <td colSpan={3}>Non-Current Liabilities</td>
-              </tr>
-
-              <tr>
-                <td>Business Loan</td>
-                <td>$45,000.00</td>
-                <td>$40,000.00</td>
-              </tr>
+              {currentLiabilities.length === 0 ? (
+                <tr>
+                  <td colSpan={3}>No current liability accounts recorded</td>
+                </tr>
+              ) : (
+                currentLiabilities.map((acc) => (
+                  <tr key={acc.accountID}>
+                    <td>{acc.accountName}</td>
+                    <td>{acc.accountCode}</td>
+                    <td>{formatCurrency(acc.netBalance)}</td>
+                  </tr>
+                ))
+              )}
 
               <tr className="total-row">
-                <td>Total Liabilities</td>
-                <td>$85,840.00</td>
-                <td>$84,400.00</td>
+                <td colSpan={2}>Total Current Liabilities</td>
+                <td>{formatCurrency(currentLiabilityTotal)}</td>
+              </tr>
+
+              {nonCurrentLiabilities.length > 0 && (
+                <>
+                  <tr className="section-row">
+                    <td colSpan={3}>Non-Current Liabilities</td>
+                  </tr>
+                  {nonCurrentLiabilities.map((acc) => (
+                    <tr key={acc.accountID}>
+                      <td>{acc.accountName}</td>
+                      <td>{acc.accountCode}</td>
+                      <td>{formatCurrency(acc.netBalance)}</td>
+                    </tr>
+                  ))}
+                  <tr className="total-row">
+                    <td colSpan={2}>Total Non-Current Liabilities</td>
+                    <td>{formatCurrency(nonCurrentLiabilityTotal)}</td>
+                  </tr>
+                </>
+              )}
+
+              <tr className="total-row">
+                <td colSpan={2}>Total Liabilities</td>
+                <td>{formatCurrency(data.totalLiabilities)}</td>
               </tr>
 
               <tr className="section-row">
                 <td colSpan={3}>Equity</td>
               </tr>
 
-              <tr>
-                <td>Owner Capital</td>
-                <td>$80,000.00</td>
-                <td>$80,000.00</td>
-              </tr>
+              {data.equity.map((acc) => (
+                <tr key={acc.accountID}>
+                  <td>{acc.accountName}</td>
+                  <td>{acc.accountCode}</td>
+                  <td>{formatCurrency(acc.netBalance)}</td>
+                </tr>
+              ))}
 
               <tr>
-                <td>Retained Earnings</td>
-                <td>$10,750.00</td>
-                <td>$10,750.00</td>
-              </tr>
-
-              <tr>
-                <td>October Net Income</td>
-                <td>$34,240.00</td>
-                <td>$0.00</td>
+                <td>Current Period Net Income</td>
+                <td>-</td>
+                <td>{formatCurrency(data.netIncome)}</td>
               </tr>
 
               <tr className="grand-total">
-                <td>Total Equity</td>
-                <td>$124,990.00</td>
-                <td>$90,750.00</td>
+                <td colSpan={2}>Total Equity</td>
+                <td>{formatCurrency(data.totalEquity)}</td>
               </tr>
 
               <tr className="grand-total">
-                <td>Total Liabilities + Equity</td>
-                <td>$210,830.00</td>
-                <td>$175,150.00</td>
+                <td colSpan={2}>Total Liabilities + Equity</td>
+                <td>{formatCurrency(data.totalLiabilitiesAndEquity)}</td>
               </tr>
-
             </tbody>
           </table>
-
         </div>
-
       </div>
 
       {/* Footer Check */}
-
       <div className="balance-check">
-        ✅ Balanced:
-        Assets $210,830.00 =
-        Liabilities $85,840.00 +
-        Equity $124,990.00
+        {data.isBalanced ? "✅ Balanced:" : "⚠️ Out of Balance:"} Assets{" "}
+        {formatCurrency(data.totalAssets)} = Liabilities{" "}
+        {formatCurrency(data.totalLiabilities)} + Equity{" "}
+        {formatCurrency(data.totalEquity)}
       </div>
-
     </div>
   );
 }

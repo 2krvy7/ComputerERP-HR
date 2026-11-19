@@ -22,7 +22,7 @@ export default function JournalEntries() {
   useEffect(() => {
     async function fetchEntries() {
       try {
-        const res = await fetch("http://127.0.0.1:8000/api/journal/");
+        const res = await fetch("http://127.0.0.1:8000/api/journal");
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
         const data = await res.json();
         setEntries(data);

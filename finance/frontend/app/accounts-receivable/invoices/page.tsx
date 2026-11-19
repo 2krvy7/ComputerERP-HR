@@ -39,9 +39,9 @@ export default function ARInvoices() {
     setError(null);
     try {
       const [invRes, custRes, recRes] = await Promise.all([
-        fetch("http://127.0.0"),
-        fetch("http://127.0.0customers"),
-        fetch("http://127.0.0receipts-summary"),
+        fetch("http://127.0.0.1:8000/api/payments"),
+        fetch("http://127.0.0.1:8000/api/payments"),
+        fetch("http://127.0.0.1:8000/api/payments"),
       ]);
 
       if (!invRes.ok) throw new Error(`AR API error: ${invRes.status}`);

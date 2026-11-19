@@ -1,127 +1,223 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import "./cash-flow.css";
 
+type CashFlowData = {
+  operatingInflows: number;
+  operatingOutflows: number;
+  netOperatingCashFlow: number;
+  endingCashBalance: number;
+};
+
 export default function CashFlowStatement() {
+  const [data, setData] = useState<CashFlowData>({
+    operatingInflows: 0,
+    operatingOutflows: 0,
+    netOperatingCashFlow: 0,
+    endingCashBalance: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activePeriod, setActivePeriod] = useState<
+    "This month" | "This quarter" | "This year" | "Custom"
+  >("This month");
+  const [todayLabel, setTodayLabel] = useState("");
+
+  async function fetchCashFlow() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/reports/cash-flow/");
+      if (!res.ok) throw new Error(`Cash Flow API error: ${res.status}`);
+      const json = await res.json();
+      setData({
+        operatingInflows: Number(json.operatingInflows || 0),
+        operatingOutflows: Number(json.operatingOutflows || 0),
+        netOperatingCashFlow: Number(json.netOperatingCashFlow || 0),
+        endingCashBalance: Number(json.endingCashBalance || 0),
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to load Cash Flow statement");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setTodayLabel(
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    );
+    fetchCashFlow();
+  }, []);
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(val || 0));
+
+  const formatSignedCurrency = (val: number) => {
+    const num = Number(val || 0);
+    const formatted = formatCurrency(Math.abs(num));
+    if (num > 0) return `+${formatted}`;
+    if (num < 0) return `-${formatted}`;
+    return formatted;
+  };
+
+  const investingCashFlow = 0;
+  const financingCashFlow = 0;
+  const netCashIncrease =
+    data.netOperatingCashFlow + investingCashFlow + financingCashFlow;
+  const openingCashBalance = data.endingCashBalance - netCashIncrease;
+
+  function handleExportCSV() {
+    const rows = [
+      ["Activity", "Source / Movement", "Cash Flow"],
+      [
+        "Cash Receipts from Customers (ARReceipt)",
+        "Operating Inflow",
+        data.operatingInflows.toFixed(2),
+      ],
+      [
+        "Cash Paid to Suppliers (APPayment)",
+        "Operating Outflow",
+        (-Math.abs(data.operatingOutflows)).toFixed(2),
+      ],
+      [
+        "Net Cash From Operating Activities",
+        "Operating Total",
+        data.netOperatingCashFlow.toFixed(2),
+      ],
+      [
+        "Net Cash Used in Investing Activities",
+        "Equipment & Fixed Assets",
+        investingCashFlow.toFixed(2),
+      ],
+      [
+        "Net Cash From Financing Activities",
+        "Capital & Loans",
+        financingCashFlow.toFixed(2),
+      ],
+      [
+        "Net Increase / Decrease in Cash",
+        "Operating + Investing + Financing",
+        netCashIncrease.toFixed(2),
+      ],
+      [
+        "Cash at End of Period",
+        todayLabel || "Current",
+        data.endingCashBalance.toFixed(2),
+      ],
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cash-flow-${new Date().toISOString().split("T")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="cashflow-page">
-
       {/* Header */}
-
       <div className="page-header">
         <div>
           <h1>Cash Flow Statement</h1>
           <p>
-            Follow the cash generated and used by operating,
-            investing and financing activities.
+            Follow the cash generated and used by operating, investing and
+            financing activities.
           </p>
         </div>
 
         <div className="header-actions">
-          <button className="btn-light">Export</button>
-          <button className="btn-primary">
+          <button className="btn-light" onClick={handleExportCSV}>
+            Export
+          </button>
+          <button className="btn-primary" onClick={() => window.print()}>
             Print Report
           </button>
         </div>
       </div>
 
       {/* Period Selector */}
-
       <div className="tabs">
-        <button className="active">
-          This month
-        </button>
-
-        <button>This quarter</button>
-        <button>This year</button>
-        <button>Custom</button>
+        {(["This month", "This quarter", "This year", "Custom"] as const).map(
+          (tab) => (
+            <button
+              key={tab}
+              className={activePeriod === tab ? "active" : ""}
+              onClick={() => setActivePeriod(tab)}
+            >
+              {tab}
+            </button>
+          )
+        )}
       </div>
 
       {/* Filters */}
-
       <div className="filters">
         <button className="btn-light">
-          Oct 1 - 31, 2026
+          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
         </button>
-
-        <button className="btn-light">
-          Indirect Method
-        </button>
-
-        <button className="btn-light">
-          Compare: None
-        </button>
-
-        <button className="btn-light push-right">
+        <button className="btn-light">Direct Method</button>
+        <button className="btn-light">Period: {activePeriod}</button>
+        <button className="btn-light push-right" onClick={fetchCashFlow}>
           Update Report
         </button>
       </div>
 
       {/* Summary Cards */}
-
       <div className="summary-grid">
-
         <div className="summary-card">
           <p>Operating Cash Flow</p>
-
-          <h2 className="positive">
-            +$35,440.00
+          <h2 className={data.netOperatingCashFlow >= 0 ? "positive" : "negative"}>
+            {loading ? "..." : formatSignedCurrency(data.netOperatingCashFlow)}
           </h2>
-
-          <span>
-            Cash generated by operations
-          </span>
+          <span>Cash generated by operations</span>
         </div>
 
         <div className="summary-card">
           <p>Investing Cash Flow</p>
-
-          <h2 className="negative">
-            -$9,000.00
+          <h2 className={investingCashFlow >= 0 ? "positive" : "negative"}>
+            {loading ? "..." : formatSignedCurrency(investingCashFlow)}
           </h2>
-
-          <span>
-            Equipment purchases
-          </span>
+          <span>Equipment purchases</span>
         </div>
 
         <div className="summary-card">
           <p>Financing Cash Flow</p>
-
-          <h2 className="positive">
-            +$5,000.00
+          <h2 className={financingCashFlow >= 0 ? "positive" : "negative"}>
+            {loading ? "..." : formatSignedCurrency(financingCashFlow)}
           </h2>
-
-          <span>
-            Business loan drawdown
-          </span>
+          <span>Capital &amp; loan activity</span>
         </div>
 
         <div className="summary-card">
           <p>Net Cash Flow</p>
-
-          <h2 className="positive">
-            +$31,440.00
+          <h2 className={netCashIncrease >= 0 ? "positive" : "negative"}>
+            {loading ? "..." : formatSignedCurrency(netCashIncrease)}
           </h2>
-
-          <span>
-            Closing cash balance
-            $124,580.00
-          </span>
+          <span>Closing cash balance {formatCurrency(data.endingCashBalance)}</span>
         </div>
-
       </div>
 
+      {error && (
+        <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
+      )}
+
       {/* Statement */}
-
       <div className="table-card">
-
         <div className="table-header">
-          <h3>
-            Acme Studio - Cash Flow Statement
-          </h3>
-
+          <h3>ComputerERP - Cash Flow Statement</h3>
           <p>
-            For the month ended October 31, 2026 ·
-            Indirect method · USD
+            {todayLabel ? `As of ${todayLabel} · ` : ""}Direct method · USD
           </p>
         </div>
 
@@ -135,192 +231,113 @@ export default function CashFlowStatement() {
           </thead>
 
           <tbody>
-
             {/* Operating */}
-
             <tr className="section-row">
-              <td colSpan={3}>
-                Operating Activities
-              </td>
+              <td colSpan={3}>Operating Activities</td>
             </tr>
 
             <tr>
-              <td>Net Income</td>
-              <td>Income Statement</td>
-              <td>$34,240.00</td>
+              <td>Cash Receipts from Customers</td>
+              <td>ARReceipt Collections</td>
+              <td>{formatCurrency(data.operatingInflows)}</td>
             </tr>
 
             <tr>
-              <td>Add Back Depreciation</td>
-              <td>6400 - Non-cash Expense</td>
-              <td>$500.00</td>
-            </tr>
-
-            <tr>
+              <td>Cash Paid to Suppliers</td>
+              <td>APPayment Disbursements</td>
               <td>
-                Decrease in Accounts Receivable
+                {data.operatingOutflows > 0
+                  ? `-${formatCurrency(data.operatingOutflows)}`
+                  : formatCurrency(0)}
               </td>
-              <td>
-                $54,510 → $48,250
-              </td>
-              <td>$6,260.00</td>
-            </tr>
-
-            <tr>
-              <td>
-                Increase in Prepaid Expenses
-              </td>
-              <td>
-                $4,000 → $6,000
-              </td>
-              <td>-$2,000.00</td>
-            </tr>
-
-            <tr>
-              <td>
-                Decrease in Accounts Payable
-              </td>
-              <td>
-                $37,840 → $32,840
-              </td>
-              <td>-$5,000.00</td>
-            </tr>
-
-            <tr>
-              <td>
-                Increase in Accrued Expenses
-              </td>
-              <td>
-                $6,560 → $8,000
-              </td>
-              <td>$1,440.00</td>
             </tr>
 
             <tr className="total-row">
-              <td>
-                Net Cash From Operating
-                Activities
-              </td>
+              <td>Net Cash From Operating Activities</td>
               <td></td>
-              <td>$35,440.00</td>
+              <td>{formatCurrency(data.netOperatingCashFlow)}</td>
             </tr>
 
             {/* Investing */}
-
             <tr className="section-row">
-              <td colSpan={3}>
-                Investing Activities
-              </td>
+              <td colSpan={3}>Investing Activities</td>
             </tr>
 
             <tr>
-              <td>Purchase of Equipment</td>
-              <td>JE-0093</td>
-              <td>-$9,000.00</td>
+              <td>Purchase of Equipment &amp; Fixed Assets</td>
+              <td>Fixed Assets</td>
+              <td>{formatCurrency(investingCashFlow)}</td>
             </tr>
 
             <tr className="total-row">
-              <td>
-                Net Cash Used in Investing
-                Activities
-              </td>
+              <td>Net Cash Used in Investing Activities</td>
               <td></td>
-              <td>-$9,000.00</td>
+              <td>{formatCurrency(investingCashFlow)}</td>
             </tr>
 
             {/* Financing */}
-
             <tr className="section-row">
-              <td colSpan={3}>
-                Financing Activities
-              </td>
+              <td colSpan={3}>Financing Activities</td>
             </tr>
 
             <tr>
-              <td>
-                Proceeds from Business Loan
-              </td>
-              <td>JE-0094</td>
-              <td>$5,000.00</td>
+              <td>Capital Contributions &amp; Loan Proceeds</td>
+              <td>Equity / Loans</td>
+              <td>{formatCurrency(financingCashFlow)}</td>
             </tr>
 
             <tr className="total-row">
-              <td>
-                Net Cash From Financing
-                Activities
-              </td>
+              <td>Net Cash From Financing Activities</td>
               <td></td>
-              <td>$5,000.00</td>
+              <td>{formatCurrency(financingCashFlow)}</td>
             </tr>
 
             {/* Totals */}
-
             <tr className="cash-total">
-              <td>
-                Net Increase in Cash
-              </td>
-              <td>
-                Operating + Investing +
-                Financing
-              </td>
-              <td>$31,440.00</td>
+              <td>Net Increase / Decrease in Cash</td>
+              <td>Operating + Investing + Financing</td>
+              <td>{formatCurrency(netCashIncrease)}</td>
             </tr>
 
             <tr>
-              <td>
-                Cash at Beginning of Period
-              </td>
-              <td>October 1, 2026</td>
-              <td>$93,140.00</td>
+              <td>Cash at Beginning of Period</td>
+              <td>Opening Balance</td>
+              <td>{formatCurrency(openingCashBalance)}</td>
             </tr>
 
             <tr className="ending-row">
-              <td>
-                Cash at End of Period
-              </td>
-              <td>October 31, 2026</td>
-              <td>$124,580.00</td>
+              <td>Cash at End of Period</td>
+              <td>{todayLabel || "Current"}</td>
+              <td>{formatCurrency(data.endingCashBalance)}</td>
             </tr>
-
           </tbody>
         </table>
-
       </div>
 
       {/* Reconciliation */}
-
       <div className="reconciliation-banner">
-        ✅ Reconciled: Opening cash
-        $93,140.00 + Net increase
-        $31,440.00 = Closing cash
-        $124,580.00
+        ✅ Reconciled: Opening cash {formatCurrency(openingCashBalance)} + Net
+        movement {formatSignedCurrency(netCashIncrease)} = Closing cash{" "}
+        {formatCurrency(data.endingCashBalance)}
       </div>
 
       {/* Analysis */}
-
       <div className="analysis-card">
-
         <p>
-          Cash inflows totaled $92,680.00.
-          Customer receipts and financing
-          activities generated positive cash
-          movement during October.
+          Cash inflows totaled {formatCurrency(data.operatingInflows)} from
+          customer invoice receipts (ARReceipt).
         </p>
 
         <p>
-          Cash outflows totaled $61,240.00,
-          mainly operating expenses and
-          a $9,000.00 equipment acquisition.
+          Cash outflows totaled {formatCurrency(data.operatingOutflows)} for
+          supplier bill payments (APPayment).
         </p>
 
         <p>
-          Overall cash increased by
-          $31,440.00, ending the month with
-          $124,580.00 in available cash.
+          Overall net cash movement is {formatSignedCurrency(netCashIncrease)},
+          ending with {formatCurrency(data.endingCashBalance)} in available cash.
         </p>
-
       </div>
-
     </div>
   );
 }

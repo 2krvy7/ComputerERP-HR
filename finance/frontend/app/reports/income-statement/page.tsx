@@ -1,8 +1,146 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
 import "./income-statement.css";
 
+type AccountBalance = {
+  accountID: number;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  totalDebit: number;
+  totalCredit: number;
+  netBalance: number;
+};
+
+type IncomeStatementData = {
+  revenues: AccountBalance[];
+  expenses: AccountBalance[];
+  totalRevenue: number;
+  totalExpense: number;
+  netIncome: number;
+};
+
 export default function IncomeStatement() {
-  return (
+  const [data, setData] = useState<IncomeStatementData>({
+    revenues: [],
+    expenses: [],
+    totalRevenue: 0,
+    totalExpense: 0,
+    netIncome: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activePeriod, setActivePeriod] = useState<
+    "This month" | "This quarter" | "This year" | "Custom"
+  >("This month");
+  const [todayLabel, setTodayLabel] = useState("");
+
+  async function fetchIncomeStatement() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        "http://127.0.0.1:8000/api/reports/income-statement/"
+      );
+      if (!res.ok)
+        throw new Error(`Income Statement API error: ${res.status}`);
+      const json = await res.json();
+      setData({
+        revenues: Array.isArray(json.revenues) ? json.revenues : [],
+        expenses: Array.isArray(json.expenses) ? json.expenses : [],
+        totalRevenue: Number(json.totalRevenue || 0),
+        totalExpense: Number(json.totalExpense || 0),
+        netIncome: Number(json.netIncome || 0),
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to load Income Statement");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setTodayLabel(
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    );
+    fetchIncomeStatement();
+  }, []);
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(val || 0));
+
+  const { cogsAccounts, opexAccounts, totalCogs, totalOpex } = useMemo(() => {
+    const cogs = data.expenses.filter((e) => {
+      const num = Number(String(e.accountCode).replace(/\D/g, ""));
+      return num >= 5000 && num < 5100;
+    });
+    const opex = data.expenses.filter((e) => {
+      const num = Number(String(e.accountCode).replace(/\D/g, ""));
+      return num < 5000 || num >= 5100;
+    });
+    return {
+      cogsAccounts: cogs,
+      opexAccounts: opex,
+      totalCogs: cogs.reduce((s, e) => s + Number(e.netBalance || 0), 0),
+      totalOpex: opex.reduce((s, e) => s + Number(e.netBalance || 0), 0),
+    };
+  }, [data.expenses]);
+
+  const grossProfit = data.totalRevenue - totalCogs;
+  const grossMarginPct =
+    data.totalRevenue > 0
+      ? ((grossProfit / data.totalRevenue) * 100).toFixed(1)
+      : "0.0";
+  const netMarginPct =
+    data.totalRevenue > 0
+      ? ((data.netIncome / data.totalRevenue) * 100).toFixed(1)
+      : "0.0";
+
+  function handleExportCSV() {
+    const rows = [
+      ["Section", "Account Code", "Account Name", "Amount"],
+      ...data.revenues.map((r) => [
+        "Revenue",
+        r.accountCode,
+        `"${r.accountName}"`,
+        Number(r.netBalance || 0).toFixed(2),
+      ]),
+      ["Total Revenue", "", "", data.totalRevenue.toFixed(2)],
+      ...cogsAccounts.map((c) => [
+        "Cost of Sales",
+        c.accountCode,
+        `"${c.accountName}"`,
+        Number(c.netBalance || 0).toFixed(2),
+      ]),
+      ["Gross Profit", "", "", grossProfit.toFixed(2)],
+      ...opexAccounts.map((o) => [
+        "Operating Expense",
+        o.accountCode,
+        `"${o.accountName}"`,
+        Number(o.netBalance || 0).toFixed(2),
+      ]),
+      ["Total Costs & Expenses", "", "", data.totalExpense.toFixed(2)],
+      ["Net Income", "", "", data.netIncome.toFixed(2)],
+    ];
+    const csv = rows.map((r) => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `income-statement-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+    return (
     <div className="income-page">
       {/* Header */}
       <div className="page-header">
@@ -14,26 +152,42 @@ export default function IncomeStatement() {
         </div>
 
         <div className="header-actions">
-          <button className="btn-light">Export</button>
-          <button className="btn-primary">Print Report</button>
+          <button className="btn-light" onClick={handleExportCSV}>
+            Export
+          </button>
+          <button className="btn-primary" onClick={() => window.print()}>
+            Print Report
+          </button>
         </div>
       </div>
 
       {/* Period Tabs */}
       <div className="tabs">
-        <button className="active">This month</button>
-        <button>This quarter</button>
-        <button>This year</button>
-        <button>Custom</button>
+        {(["This month", "This quarter", "This year", "Custom"] as const).map(
+          (tab) => (
+            <button
+              key={tab}
+              className={activePeriod === tab ? "active" : ""}
+              onClick={() => setActivePeriod(tab)}
+            >
+              {tab}
+            </button>
+          )
+        )}
       </div>
 
       {/* Filters */}
       <div className="filters">
-        <button className="btn-light">Oct 1 - 31, 2026</button>
-        <button className="btn-light">Compare: Previous month</button>
+        <button className="btn-light">
+          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
+        </button>
+        <button className="btn-light">Period: {activePeriod}</button>
         <button className="btn-light">Accrual basis</button>
 
-        <button className="btn-light push-right">
+        <button
+          className="btn-light push-right"
+          onClick={fetchIncomeStatement}
+        >
           Update report
         </button>
       </div>
@@ -42,45 +196,47 @@ export default function IncomeStatement() {
       <div className="summary-grid">
         <div className="summary-card">
           <p>Revenue</p>
-          <h2>$86,420.00</h2>
+          <h2>{loading ? "..." : formatCurrency(data.totalRevenue)}</h2>
           <span className="positive">
-            +8.2% vs September
+            {data.revenues.length} revenue{" "}
+            {data.revenues.length === 1 ? "account" : "accounts"}
           </span>
         </div>
 
         <div className="summary-card">
-          <p>Total costs & expenses</p>
-          <h2>$52,180.00</h2>
-          <span className="negative">
-            -3.3% vs September
+          <p>Total costs &amp; expenses</p>
+          <h2>{loading ? "..." : formatCurrency(data.totalExpense)}</h2>
+          <span>
+            {data.expenses.length} expense{" "}
+            {data.expenses.length === 1 ? "account" : "accounts"}
           </span>
         </div>
 
         <div className="summary-card">
           <p>Net income</p>
-          <h2>$34,240.00</h2>
-          <span className="positive">
-            +32.1% vs September
+          <h2>{loading ? "..." : formatCurrency(data.netIncome)}</h2>
+          <span className={data.netIncome >= 0 ? "positive" : "negative"}>
+            {data.netIncome >= 0 ? "Net Profit" : "Net Loss"}
           </span>
         </div>
 
         <div className="summary-card">
           <p>Net profit margin</p>
-          <h2>39.6%</h2>
-          <span className="positive">
-            +7.2 percentage points
-          </span>
+          <h2>{loading ? "..." : `${netMarginPct}%`}</h2>
+          <span>Gross margin: {grossMarginPct}%</span>
         </div>
       </div>
+
+      {error && (
+        <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
+      )}
 
       {/* Statement Table */}
       <div className="table-card">
         <div className="table-header">
-          <h3>Acme Studio - Income Statement</h3>
-
+          <h3>ComputerERP - Income Statement</h3>
           <p>
-            For the month ended October 31, 2026 • Compared
-            with September 2026 • USD
+            {todayLabel ? `As of ${todayLabel} • ` : ""}Accrual basis • USD
           </p>
         </div>
 
@@ -89,133 +245,100 @@ export default function IncomeStatement() {
             <tr>
               <th>Account</th>
               <th>Code</th>
-              <th>Oct 2026</th>
-              <th>Sep 2026</th>
-              <th>Change</th>
+              <th>Total Debits</th>
+              <th>Total Credits</th>
+              <th>Net Amount</th>
             </tr>
           </thead>
 
           <tbody>
-
             {/* Revenue */}
             <tr className="section-row">
               <td colSpan={5}>Revenue</td>
             </tr>
 
-            <tr>
-              <td>Design Services</td>
-              <td>4000</td>
-              <td>$74,200.00</td>
-              <td>$69,000.00</td>
-              <td className="positive">+$5,200.00</td>
-            </tr>
-
-            <tr>
-              <td>Subscription Revenue</td>
-              <td>4100</td>
-              <td>$12,220.00</td>
-              <td>$11,870.00</td>
-              <td className="positive">+$350.00</td>
-            </tr>
+            {data.revenues.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No revenue accounts posted yet</td>
+              </tr>
+            ) : (
+              data.revenues.map((acc) => (
+                <tr key={acc.accountID}>
+                  <td>{acc.accountName}</td>
+                  <td>{acc.accountCode}</td>
+                  <td>{formatCurrency(acc.totalDebit)}</td>
+                  <td>{formatCurrency(acc.totalCredit)}</td>
+                  <td className="positive">{formatCurrency(acc.netBalance)}</td>
+                </tr>
+              ))
+            )}
 
             <tr className="total-row">
-              <td>Total Revenue</td>
-              <td></td>
-              <td>$86,420.00</td>
-              <td>$79,870.00</td>
-              <td>+$6,550.00</td>
+              <td colSpan={4}>Total Revenue</td>
+              <td>{formatCurrency(data.totalRevenue)}</td>
             </tr>
 
-            {/* COS */}
+            {/* Cost of Sales */}
             <tr className="section-row">
-              <td colSpan={5}>Cost of Sales</td>
+              <td colSpan={5}>Cost of Sales / Production Costs</td>
             </tr>
 
-            <tr>
-              <td>Cost of Services</td>
-              <td>5000</td>
-              <td>$24,500.00</td>
-              <td>$25,000.00</td>
-              <td>-$500.00</td>
-            </tr>
+            {cogsAccounts.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No direct production costs posted yet</td>
+              </tr>
+            ) : (
+              cogsAccounts.map((acc) => (
+                <tr key={acc.accountID}>
+                  <td>{acc.accountName}</td>
+                  <td>{acc.accountCode}</td>
+                  <td>{formatCurrency(acc.totalDebit)}</td>
+                  <td>{formatCurrency(acc.totalCredit)}</td>
+                  <td>{formatCurrency(acc.netBalance)}</td>
+                </tr>
+              ))
+            )}
 
             <tr className="gross-profit-row">
-              <td>Gross Profit</td>
-              <td></td>
-              <td>$61,920.00</td>
-              <td>$54,870.00</td>
-              <td>+$7,050.00</td>
+              <td colSpan={4}>Gross Profit</td>
+              <td>{formatCurrency(grossProfit)}</td>
             </tr>
 
-            {/* Expenses */}
+            {/* Operating Expenses */}
             <tr className="section-row">
               <td colSpan={5}>Operating Expenses</td>
             </tr>
 
-            <tr>
-              <td>Salaries & Wages</td>
-              <td>6000</td>
-              <td>$18,500.00</td>
-              <td>$19,000.00</td>
-              <td>-$500.00</td>
-            </tr>
+            {opexAccounts.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No operating expense accounts posted yet</td>
+              </tr>
+            ) : (
+              opexAccounts.map((acc) => (
+                <tr key={acc.accountID}>
+                  <td>{acc.accountName}</td>
+                  <td>{acc.accountCode}</td>
+                  <td>{formatCurrency(acc.totalDebit)}</td>
+                  <td>{formatCurrency(acc.totalCredit)}</td>
+                  <td>{formatCurrency(acc.netBalance)}</td>
+                </tr>
+              ))
+            )}
 
-            <tr>
-              <td>Software & Subscriptions</td>
-              <td>6100</td>
-              <td>$2,480.00</td>
-              <td>$2,650.00</td>
-              <td>-$170.00</td>
-            </tr>
-
-            <tr>
-              <td>Rent & Facilities</td>
-              <td>6200</td>
-              <td>$5,000.00</td>
-              <td>$5,000.00</td>
-              <td>$0.00</td>
-            </tr>
-
-            <tr>
-              <td>Marketing</td>
-              <td>6300</td>
-              <td>$1,200.00</td>
-              <td>$1,800.00</td>
-              <td>-$600.00</td>
-            </tr>
-
-            <tr>
-              <td>Depreciation Expense</td>
-              <td>6400</td>
-              <td>$500.00</td>
-              <td>$500.00</td>
-              <td>$0.00</td>
+            <tr className="total-row">
+              <td colSpan={4}>Total Operating Expenses</td>
+              <td>{formatCurrency(totalOpex)}</td>
             </tr>
 
             <tr className="total-row">
-              <td>Total Operating Expenses</td>
-              <td></td>
-              <td>$27,680.00</td>
-              <td>$28,950.00</td>
-              <td>-$1,270.00</td>
-            </tr>
-
-            <tr className="total-row">
-              <td>Total Costs & Expenses</td>
-              <td></td>
-              <td>$52,180.00</td>
-              <td>$53,950.00</td>
-              <td>-$1,770.00</td>
+              <td colSpan={4}>Total Costs &amp; Expenses</td>
+              <td>{formatCurrency(data.totalExpense)}</td>
             </tr>
 
             <tr className="net-income-row">
-              <td>Net Income</td>
-              <td></td>
-              <td>$34,240.00</td>
-              <td>$25,920.00</td>
-              <td>+$8,320.00</td>
+              <td colSpan={4}>Net Income</td>
+              <td>{formatCurrency(data.netIncome)}</td>
             </tr>
-
           </tbody>
         </table>
       </div>
@@ -223,16 +346,15 @@ export default function IncomeStatement() {
       {/* Analysis */}
       <div className="analysis-card">
         <p>
-          Revenue grew while costs eased. Revenue increased
-          $6,550 and total costs decreased $1,770.
-          Together they lifted net income by $8,320 over
-          September.
+          Total revenue stands at {formatCurrency(data.totalRevenue)} against{" "}
+          {formatCurrency(data.totalExpense)} in total costs and expenses,
+          resulting in {formatCurrency(data.netIncome)} net income.
         </p>
 
         <p>
-          Gross margin: 71.7%. Design services generated
-          85.9% of revenue. Cost of services was
-          $24,500 leaving $61,920 in gross profit.
+          Gross margin: {grossMarginPct}% (Gross profit of{" "}
+          {formatCurrency(grossProfit)} after {formatCurrency(totalCogs)} in
+          direct production/service costs).
         </p>
       </div>
     </div>
