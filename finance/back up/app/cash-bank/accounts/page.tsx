@@ -8,11 +8,12 @@ export default function BankAccounts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters & Reconciliation status
+  // Filters, Reconciliation & Active Disbursement/Receiver Status
   const [bankFilter, setBankFilter] = useState("ALL");
   const [reconciledIds, setReconciledIds] = useState<number[]>([]);
+  const [activeDisbursementIds, setActiveDisbursementIds] = useState<number[]>([]);
 
-  // Modals
+  // Add Bank Account Modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [formBankName, setFormBankName] = useState("");
   const [formAccountNum, setFormAccountNum] = useState("");
@@ -31,10 +32,18 @@ export default function BankAccounts() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/bank/");
+      // FETCH 1: GET http://127.0.0
+      // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
+      // Database Tables: Reads "BankAccount" and aggregates "ARReceipt" inflows & "APPayment" outflows
+      // Purpose: Loads all registered bank accounts, live cash balances, and active disbursement status
+      const res = await fetch("http://127.0.0.1:8000/api/bank");
       if (!res.ok) throw new Error(`Bank API error: ${res.status}`);
       const data = await res.json();
-      setAccounts(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setAccounts(list);
+
+      // Automatically mark all fetched bank accounts as active for Disbursement & Receiving
+      setActiveDisbursementIds(list.map((b: any) => Number(b.bankAccountID)));
     } catch (err: any) {
       setError(err.message || "Failed to load bank accounts");
     } finally {
@@ -70,9 +79,10 @@ export default function BankAccounts() {
       totalInflows,
       totalOutflows,
       connectedCount: accounts.length,
+      activeDisbursementCount: activeDisbursementIds.length,
       needsRecon,
     };
-  }, [accounts, reconciledIds]);
+  }, [accounts, reconciledIds, activeDisbursementIds]);
 
   const filteredAccounts = useMemo(() => {
     if (bankFilter === "ALL") return accounts;
@@ -85,6 +95,10 @@ export default function BankAccounts() {
 
     setSubmitting(true);
     try {
+      // FETCH 2: POST http://127.0.0
+      // Backend File: finance/backend/routers/bank.py -> create_bank_account()
+      // Database Table: Inserts new bank record into "BankAccount"
+      // Purpose: Registers a new company bank account for collections and disbursements
       const res = await fetch("http://127.0.0", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -112,6 +126,10 @@ export default function BankAccounts() {
     setSelectedAccount(account);
     setTxLoading(true);
     try {
+      // FETCH 3: GET http://127.0.0{bankAccountID}/transactions
+      // Backend File: finance/backend/routers/bank.py -> get_bank_transactions()
+      // Database Tables: Reads "ARReceipt" (IN) and "APPayment" (OUT) for the selected bankAccountID
+      // Purpose: Displays the transaction history modal for a specific bank account
       const res = await fetch(
         `http://127.0.0${account.bankAccountID}/transactions`
       );
@@ -129,6 +147,14 @@ export default function BankAccounts() {
 
   function toggleReconcile(bankAccountID: number) {
     setReconciledIds((prev) =>
+      prev.includes(bankAccountID)
+        ? prev.filter((id) => id !== bankAccountID)
+        : [...prev, bankAccountID]
+    );
+  }
+
+  function toggleDisbursementActive(bankAccountID: number) {
+    setActiveDisbursementIds((prev) =>
       prev.includes(bankAccountID)
         ? prev.filter((id) => id !== bankAccountID)
         : [...prev, bankAccountID]
@@ -158,28 +184,35 @@ export default function BankAccounts() {
           <span>Total Cash Balance</span>
           <h2>{loading ? "..." : formatCurrency(stats.totalCash)}</h2>
           <small>
-            In: {formatCurrency(stats.totalInflows)} • Out: {formatCurrency(stats.totalOutflows)}
+            In: {formatCurrency(stats.totalInflows)} • Out:{" "}
+            {formatCurrency(stats.totalOutflows)}
           </small>
         </div>
 
         <div className="stat-card">
-          <span>Connected Accounts</span>
-          <h2>{loading ? "..." : stats.connectedCount}</h2>
-          <small>Synced with PostgreSQL</small>
+          <span>Active Disbursement &amp; Receiver</span>
+          <h2>{loading ? "..." : stats.activeDisbursementCount}</h2>
+          <small>
+            {stats.activeDisbursementCount > 0
+              ? "Ready for AP Payments, Payroll & AR Receipts"
+              : "0 active disbursement accounts"}
+          </small>
         </div>
 
         <div className="stat-card">
           <span>Needs Reconciliation</span>
           <h2>{loading ? "..." : stats.needsRecon}</h2>
           <small>
-            {stats.needsRecon === 0 ? "All accounts reconciled" : "Pending statement review"}
+            {stats.needsRecon === 0
+              ? "All accounts reconciled"
+              : "Pending statement review"}
           </small>
         </div>
 
         <div className="stat-card">
           <span>Sync Status</span>
           <h2>Live</h2>
-          <small>Connected to AR & AP feeds</small>
+          <small>Connected to AR &amp; AP feeds</small>
         </div>
       </div>
 
@@ -211,12 +244,17 @@ export default function BankAccounts() {
         <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
       ) : filteredAccounts.length === 0 ? (
         <p style={{ padding: "1rem" }}>
-          No bank accounts found. Click <strong>Add Account</strong> to register one.
+          No bank accounts found. Click <strong>Add Account</strong> to register
+          one.
         </p>
       ) : (
         <div className="accounts-grid">
           {filteredAccounts.map((account) => {
             const isRecon = reconciledIds.includes(account.bankAccountID);
+            const isDisbActive = activeDisbursementIds.includes(
+              account.bankAccountID
+            );
+
             return (
               <div key={account.bankAccountID} className="account-card">
                 <div className="card-header">
@@ -237,21 +275,69 @@ export default function BankAccounts() {
                 <div className="balance">{formatCurrency(account.balance)}</div>
 
                 <p className="account-meta">
-                  Acct No: {account.accountNumber} • {account.transactionCount} posted txns
+                  Acct No: {account.accountNumber} • {account.transactionCount}{" "}
+                  posted txns
                 </p>
 
-                <div className="status-row">
+                <div
+                  className="status-row"
+                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
+                >
+                  <span
+                    className="badge"
+                    style={
+                      isDisbActive
+                        ? {
+                            backgroundColor: "#ecfdf5",
+                            color: "#065f46",
+                            border: "1px solid #a7f3d0",
+                          }
+                        : {
+                            backgroundColor: "#fef2f2",
+                            color: "#991b1b",
+                            border: "1px solid #fecaca",
+                          }
+                    }
+                  >
+                    {isDisbActive
+                      ? "Active: Disbursement & Receiver"
+                      : "Inactive Disbursement"}
+                  </span>
+
                   <span className="badge">
                     {isRecon ? "Reconciled" : "Feed Connected"}
                   </span>
                 </div>
 
-                <div className="card-actions">
+                <div
+                  className="card-actions"
+                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
+                >
+                  <button
+                    className="btn secondary"
+                    onClick={() =>
+                      toggleDisbursementActive(account.bankAccountID)
+                    }
+                    style={
+                      isDisbActive
+                        ? {
+                            backgroundColor: "#f0fdf4",
+                            borderColor: "#86efac",
+                            color: "#166534",
+                          }
+                        : undefined
+                    }
+                  >
+                    {isDisbActive
+                      ? "Disbursement Active ✓"
+                      : "Activate Disbursement"}
+                  </button>
+
                   <button
                     className="btn secondary"
                     onClick={() => handleViewTransactions(account)}
                   >
-                    View Transactions
+                    Transactions
                   </button>
 
                   <button
@@ -306,12 +392,19 @@ export default function BankAccounts() {
                       {acc.bankName} - {acc.accountNumber}
                     </td>
                     <td>
-                      +{formatCurrency(acc.totalIn)} / -{formatCurrency(acc.totalOut)}
+                      +{formatCurrency(acc.totalIn)} / -
+                      {formatCurrency(acc.totalOut)}
                     </td>
                     <td>{formatCurrency(acc.balance)}</td>
                     <td>
-                      <span className={isRecon ? "status success" : "status warning"}>
-                        {isRecon ? "Reconciled" : `${acc.transactionCount} txns to review`}
+                      <span
+                        className={
+                          isRecon ? "status success" : "status warning"
+                        }
+                      >
+                        {isRecon
+                          ? "Reconciled"
+                          : `${acc.transactionCount} txns to review`}
                       </span>
                     </td>
                     <td>
@@ -375,11 +468,22 @@ export default function BankAccounts() {
               onChange={(e) => setFormAccountNum(e.target.value)}
             />
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
               <button type="button" onClick={() => setShowAddModal(false)}>
                 Cancel
               </button>
-              <button type="submit" className="btn primary" disabled={submitting}>
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={submitting}
+              >
                 {submitting ? "Saving..." : "Save Account"}
               </button>
             </div>
@@ -417,13 +521,16 @@ export default function BankAccounts() {
               {selectedAccount.bankName} ({selectedAccount.accountNumber})
             </h3>
             <p>
-              <strong>Current Balance:</strong> {formatCurrency(selectedAccount.balance)}
+              <strong>Current Balance:</strong>{" "}
+              {formatCurrency(selectedAccount.balance)}
             </p>
 
             {txLoading ? (
               <p>Loading transactions...</p>
             ) : transactions.length === 0 ? (
-              <p>No AP payments or AR receipts recorded on this account yet.</p>
+              <p>
+                No AP payments or AR receipts recorded on this account yet.
+              </p>
             ) : (
               <table>
                 <thead>
@@ -442,7 +549,11 @@ export default function BankAccounts() {
                       <td>{tx.type}</td>
                       <td>{tx.reference}</td>
                       <td>{formatDate(tx.date)}</td>
-                      <td style={{ color: tx.direction === "IN" ? "green" : "crimson" }}>
+                      <td
+                        style={{
+                          color: tx.direction === "IN" ? "green" : "crimson",
+                        }}
+                      >
                         {tx.direction === "IN" ? "+" : "-"}
                         {formatCurrency(tx.amount)}
                       </td>
@@ -452,8 +563,17 @@ export default function BankAccounts() {
               </table>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
-              <button className="btn secondary" onClick={() => setSelectedAccount(null)}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: "0.5rem",
+              }}
+            >
+              <button
+                className="btn secondary"
+                onClick={() => setSelectedAccount(null)}
+              >
                 Close
               </button>
             </div>

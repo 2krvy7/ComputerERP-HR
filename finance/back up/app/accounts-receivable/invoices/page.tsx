@@ -39,9 +39,23 @@ export default function ARInvoices() {
     setError(null);
     try {
       const [invRes, custRes, recRes] = await Promise.all([
-        fetch("http://127.0.0"),
-        fetch("http://127.0.0customers"),
-        fetch("http://127.0.0receipts-summary"),
+        // FETCH 1: GET http://127.0.0
+        // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
+        // Database Tables: Reads "ARInvoice" joined with Team 4 "Customer" (auto-syncs Paid status from "ARReceipt")
+        // Purpose: Loads all customer receivables for the AR Invoices table and KPI cards
+        fetch("http://127.0.0.1:8000/api/arinvoices"),
+
+        // FETCH 2: GET http://127.0.0customers
+        // Backend File: finance/backend/routers/arinvoices.py -> get_customers()
+        // Database Table: Reads Team 4 "Customer" table
+        // Purpose: Populates the customer dropdown inside the Create AR Invoice modal
+        fetch("http://127.0.0.1:8000/api/arinvoices/customers"),
+
+        // FETCH 3: GET http://127.0.0receipts-summary
+        // Backend File: finance/backend/routers/arinvoices.py -> get_receipts_summary()
+        // Database Table: Aggregates "ARReceipt" (totalCollected and receiptCount)
+        // Purpose: Displays total collections received on the AR Invoices summary card
+        fetch("http://127.0.0.1:8000/api/arinvoices/receipts-summary"),
       ]);
 
       if (!invRes.ok) throw new Error(`AR API error: ${invRes.status}`);
@@ -157,7 +171,12 @@ export default function ARInvoices() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("http://127.0.0", {
+
+       // FETCH 4: POST http://127.0.0
+      // Backend File: finance/backend/routers/arinvoices.py -> create_ar_invoice()
+      // Database Table: Inserts a new customer invoice into "ARInvoice"
+      // Purpose: Creates a new receivable record in PostgreSQL
+      const res = await fetch("http://127.0.0.1:8000/api/arinvoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

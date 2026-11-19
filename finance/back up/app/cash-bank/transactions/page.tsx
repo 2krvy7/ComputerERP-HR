@@ -241,11 +241,18 @@ export default function Transactions() {
           onChange={(e) => setSelectedBankId(e.target.value)}
         >
           <option value="ALL">All Bank Accounts</option>
-          {bankAccounts.map((b) => (
-            <option key={b.bankAccountID} value={String(b.bankAccountID)}>
-              {b.bankName} - {b.accountNumber}
-            </option>
-          ))}
+{Array.from(
+  new Map(
+    bankAccounts.map((b) => [String(b.bankAccountID), b])
+  ).values()
+).map((b, idx) => (
+  <option
+    key={`${b.bankAccountID}-${idx}`}
+    value={String(b.bankAccountID)}
+  >
+    {b.bankName} - {b.accountNumber}
+  </option>
+))}
         </select>
 
         <input

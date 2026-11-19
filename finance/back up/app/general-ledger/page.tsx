@@ -20,8 +20,8 @@ export default function GeneralLedger() {
     setError(null);
     try {
       const [ledgerRes, accRes] = await Promise.all([
-        fetch("http://127.0.0.1:8000/api/ledger/"),
-        fetch("http://127.0.0.1:8000/api/ledger/"),
+        fetch("http://127.0.0.1:8000/api/ledger"),
+        fetch("http://127.0.0.1:8000/api/ledger"),
       ]);
 
       if (!ledgerRes.ok) throw new Error(`Ledger API error: ${ledgerRes.status}`);

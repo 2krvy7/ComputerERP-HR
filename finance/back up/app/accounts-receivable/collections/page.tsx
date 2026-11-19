@@ -34,8 +34,8 @@ export default function Collections() {
     setError(null);
     try {
       const [listRes, bankRes] = await Promise.all([
-        fetch("http://127.0.0"),
-        fetch("http://127.0.0bank-accounts"),
+        fetch("http://127.0.0.1:8000/api/collections"),
+        fetch("http://127.0.0.1:8000/api/bank"),
       ]);
 
       if (!listRes.ok) throw new Error(`Collections API error: ${listRes.status}`);
