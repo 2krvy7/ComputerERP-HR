@@ -25,6 +25,8 @@ export default function Expenses() {
   const [formPostingId, setFormPostingId] = useState("");
   const [formAmount, setFormAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [formDescription, setFormDescription] = useState("");
+
 
   useEffect(() => {
     fetchData();
@@ -35,8 +37,18 @@ export default function Expenses() {
     setError(null);
     try {
       const [expRes, optRes] = await Promise.all([
+
+        // FETCH 1: GET http://127.0.0.1:8000/api/expense/
+        // Backend File: finance/backend/routers/expense.py -> get_expenses()
+        // Database Tables: Auto-syncs Team 3 "PRODUCTION" & Team 6 "Payroll", then reads "Expense" joined with "ChartOfAccounts" & "ProductionOrder"
+        // Purpose: Loads all recorded production and operating expenses for the main table
         fetch("http://127.0.0.1:8000/api/expense/"),
-        fetch("http://127.0.0.1:8000/api/expense/"),
+
+        // FETCH 2: GET http://127.0.0
+        // Backend File: finance/backend/routers/expense.py -> get_expense_options()
+        // Database Tables: Reads "ChartOfAccounts", "ProductionOrder", and sums "PayrollExpense"
+        // Purpose: Populates modal dropdowns and displays the total HR Payroll card
+        fetch("http://127.0.0.1:8000/api/expense/options"),
       ]);
 
       if (!expRes.ok) throw new Error(`Expense API error: ${expRes.status}`);
@@ -146,26 +158,34 @@ export default function Expenses() {
 
     setSubmitting(true);
     try {
+      // FETCH: POST http://127.0.0
+      // Backend File: finance/backend/routers/expense.py -> create_expense()
+      // Database Tables: Inserts into "Expense" and auto-posts description + debit/credit lines to "JournalEntry", "JournalEntryLine", & "GeneralLedger"
+      // Purpose: Saves the expense, records its description in Journal Entries, and auto-links postingID
       const res = await fetch("http://127.0.0", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountID: Number(formAccountId),
-          productionID: Number(formProductionId),
-          postingID: formPostingId ? Number(formPostingId) : null,
+          productionID: formProductionId ? Number(formProductionId) : null,
+          description: formDescription.trim(),
           amount: Number(formAmount),
         }),
       });
+
       if (!res.ok) {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         throw new Error(errData.detail || "Failed to save expense");
       }
+
       setShowAddModal(false);
+      setFormAccountId("");
+      setFormDescription("");
+      setFormProductionId("");
       setFormAmount("");
-      setFormPostingId("");
       await fetchData();
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || "Error creating expense");
     } finally {
       setSubmitting(false);
     }
@@ -346,7 +366,7 @@ export default function Expenses() {
         )}
       </div>
 
-      {/* Add Expense Modal */}
+     {/* Add Expense Modal */}
       {showAddModal && (
         <div
           style={{
@@ -365,7 +385,7 @@ export default function Expenses() {
               background: "#fff",
               padding: "1.5rem",
               borderRadius: "8px",
-              width: "420px",
+              width: "430px",
               display: "flex",
               flexDirection: "column",
               gap: "0.75rem",
@@ -383,7 +403,8 @@ export default function Expenses() {
               {accounts.map((acc, idx) => {
                 const id = acc.accountID ?? acc.accountid ?? idx;
                 const code = acc.accountCode ?? acc.accountcode ?? "";
-                const name = acc.accountName ?? acc.accountname ?? `Account #${id}`;
+                const name =
+                  acc.accountName ?? acc.accountname ?? `Account #${id}`;
                 return (
                   <option key={id} value={id}>
                     {code ? `${code} - ` : ""}
@@ -393,14 +414,24 @@ export default function Expenses() {
               })}
             </select>
 
-            <label>Production Order *</label>
+            <label>Description (Auto-posted to Journal Entries) *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Meralco Electricity Bill or Office Supplies"
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+            />
+
+            <label>Production Order (Optional — Leave blank for Overhead)</label>
             {productions.length > 0 ? (
               <select
-                required
                 value={formProductionId}
                 onChange={(e) => setFormProductionId(e.target.value)}
               >
-                <option value="">-- Select Production Order --</option>
+                <option value="">
+                  -- None (General Operating / Overhead Expense) --
+                </option>
                 {productions.map((p, idx) => {
                   const id = p.productionID ?? p.productionid ?? idx;
                   const prod = p.productID ?? p.productid ?? "-";
@@ -414,20 +445,11 @@ export default function Expenses() {
             ) : (
               <input
                 type="number"
-                required
-                placeholder="Production Order ID (e.g. 1)"
+                placeholder="Optional: Production Order ID (leave blank for overhead)"
                 value={formProductionId}
                 onChange={(e) => setFormProductionId(e.target.value)}
               />
             )}
-
-            <label>Journal Posting ID (Optional)</label>
-            <input
-              type="number"
-              placeholder="e.g. 10"
-              value={formPostingId}
-              onChange={(e) => setFormPostingId(e.target.value)}
-            />
 
             <label>Amount *</label>
             <input
@@ -439,11 +461,27 @@ export default function Expenses() {
               onChange={(e) => setFormAmount(e.target.value)}
             />
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
+              Note: Journal Entry &amp; General Ledger posting are generated
+              automatically when you save.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
               <button type="button" onClick={() => setShowAddModal(false)}>
                 Cancel
               </button>
-              <button type="submit" className="btn-primary" disabled={submitting}>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={submitting}
+              >
                 {submitting ? "Saving..." : "Save Expense"}
               </button>
             </div>

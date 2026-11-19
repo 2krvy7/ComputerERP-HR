@@ -45,11 +45,15 @@ export default function APAgingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedSupplier, setSelectedSupplier] = useState("ALL");
+  const [todayLabel, setTodayLabel] = useState("");
 
   async function fetchAPAging() {
     setLoading(true);
     setError(null);
     try {
+      // FETCH: GET http://127.0.0
+      // Backend File: finance/backend/routers/reports.py -> ap_aging()
+      // Database Tables: Reads unpaid "APInvoice" rows joined with Team 1 "Supplier" and ages by CURRENT_DATE - dueDate
       const res = await fetch("http://127.0.0.1:8000/api/reports/ap-aging");
       if (!res.ok) throw new Error(`AP Aging API error: ${res.status}`);
       const data = await res.json();
@@ -63,6 +67,13 @@ export default function APAgingPage() {
   }
 
   useEffect(() => {
+    setTodayLabel(
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    );
     fetchAPAging();
   }, []);
 
@@ -74,17 +85,6 @@ export default function APAgingPage() {
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
-  const todayLabel = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-    []
-  );
-
-  // Group individual open bills by Supplier across the 5 aging buckets
   const supplierRows = useMemo<SupplierRow[]>(() => {
     const grouped: Record<string, SupplierRow> = {};
 
@@ -186,7 +186,7 @@ export default function APAgingPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `ap-aging-${new Date().toISOString().split("T")}.csv`;
+    link.download = `ap-aging-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -215,7 +215,9 @@ export default function APAgingPage() {
 
       {/* Filters */}
       <div className="filters">
-        <button onClick={fetchAPAging}>As of {todayLabel}</button>
+        <button onClick={fetchAPAging}>
+          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
+        </button>
         <button>Age by due date</button>
         <select
           value={selectedSupplier}
@@ -272,7 +274,7 @@ export default function APAgingPage() {
       <div className="aging-section">
         <div className="section-header">
           <h3>Balance by Age</h3>
-          <span>As of {todayLabel}</span>
+          <span>{todayLabel ? `As of ${todayLabel}` : "Current"}</span>
         </div>
 
         <div className="aging-bar">
@@ -321,7 +323,10 @@ export default function APAgingPage() {
         <div className="table-header">
           <div>
             <h3>Payables Aging by Supplier</h3>
-            <p>Outstanding supplier balances as of {todayLabel}</p>
+            <p>
+              Outstanding supplier balances{" "}
+              {todayLabel ? `as of ${todayLabel}` : ""}
+            </p>
           </div>
 
           <button className="btn btn-secondary" onClick={fetchAPAging}>

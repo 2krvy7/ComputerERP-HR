@@ -45,11 +45,15 @@ export default function ARAgingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState("ALL");
+  const [todayLabel, setTodayLabel] = useState("");
 
   async function fetchARAging() {
     setLoading(true);
     setError(null);
     try {
+      // FETCH: GET http://127.0.0
+      // Backend File: finance/backend/routers/reports.py -> ar_aging()
+      // Database Tables: Reads unpaid "ARInvoice" rows joined with Team 4 "Customer" and ages by CURRENT_DATE - dueDate
       const res = await fetch("http://127.0.0.1:8000/api/reports/ar-aging");
       if (!res.ok) throw new Error(`AR Aging API error: ${res.status}`);
       const data = await res.json();
@@ -63,10 +67,17 @@ export default function ARAgingPage() {
   }
 
   useEffect(() => {
+    setTodayLabel(
+      new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    );
     fetchARAging();
   }, []);
 
-    const formatCurrency = (val: number) =>
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
@@ -74,17 +85,6 @@ export default function ARAgingPage() {
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
-  const todayLabel = useMemo(
-    () =>
-      new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-    []
-  );
-
-  // Group open AR invoices by Customer across all 5 aging buckets
   const customerRows = useMemo<CustomerRow[]>(() => {
     const grouped: Record<string, CustomerRow> = {};
 
@@ -202,8 +202,7 @@ export default function ARAgingPage() {
     URL.revokeObjectURL(url);
   }
 
-
-    return (
+  return (
     <div className="ar-aging-page">
       {/* Header */}
       <div className="page-header">
@@ -227,7 +226,9 @@ export default function ARAgingPage() {
 
       {/* Filters */}
       <div className="filters">
-        <button onClick={fetchARAging}>As of {todayLabel}</button>
+        <button onClick={fetchARAging}>
+          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
+        </button>
         <button>Age by due date</button>
         <select
           value={selectedCustomer}
@@ -284,7 +285,7 @@ export default function ARAgingPage() {
       <div className="aging-section">
         <div className="section-header">
           <h3>Balance by Age</h3>
-          <span>As of {todayLabel}</span>
+          <span>{todayLabel ? `As of ${todayLabel}` : "Current"}</span>
         </div>
 
         <div className="aging-bar">
@@ -333,7 +334,10 @@ export default function ARAgingPage() {
         <div className="table-header">
           <div>
             <h3>Receivables Aging by Customer</h3>
-            <p>Outstanding customer balances as of {todayLabel}</p>
+            <p>
+              Outstanding customer balances{" "}
+              {todayLabel ? `as of ${todayLabel}` : ""}
+            </p>
           </div>
 
           <button className="btn btn-secondary" onClick={fetchARAging}>

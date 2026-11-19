@@ -138,7 +138,7 @@ def get_payment_options():
                     FROM "{inv_t}" i
                     {sup_join}
                     WHERE COALESCE(i."{i_rem}", i."{i_amt}") > 0
-                      AND LOWER(COALESCE(i."{i_stat}", 'open')) != 'paid'
+                      AND LOWER(COALESCE(i."{i_stat}", 'unpaid')) != 'paid'
                     ORDER BY i."{i_pk}" ASC
                 """)
                 open_invoices = cur.fetchall()
@@ -219,6 +219,51 @@ def create_payment(payload: NewPaymentPayload):
 
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="AP Invoice not found")
+
+                        # 3. Automatically post to JournalEntry, JournalEntryLine & GeneralLedger
+            payment_id = created.get("paymentID") or created.get("paymentid")
+            cur.execute('SELECT "accountID" FROM "ChartOfAccounts" WHERE "accountCode" = \'2010\' LIMIT 1')
+            ap_acc = cur.fetchone()
+            cur.execute('SELECT "accountID" FROM "ChartOfAccounts" WHERE "accountCode" = \'1020\' LIMIT 1')
+            cash_acc = cur.fetchone()
+
+            if ap_acc and cash_acc:
+                cur.execute("""
+                    INSERT INTO "JournalEntry" (
+                        "journalDate", "referenceNo", "sourceModule", "description", "sourceID"
+                    )
+                    VALUES (%s, %s, 'AP Payment', %s, %s)
+                    RETURNING "journalID"
+                """, (
+                    payload.paymentDate,
+                    f"PAY-{str(payment_id).zfill(4)}",
+                    f"Supplier payment for AP Bill #{payload.apInvoiceID}",
+                    payment_id,
+                ))
+                journal_id = cur.fetchone()["journalID"]
+
+                # Debit Accounts Payable (2010)
+                cur.execute("""
+                    INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit")
+                    VALUES (%s, %s, %s, 0)
+                """, (journal_id, ap_acc["accountID"], payload.amount))
+
+                cur.execute("""
+                    INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
+                    VALUES (%s, %s, %s, 0, %s)
+                """, (ap_acc["accountID"], journal_id, payload.amount, -payload.amount))
+
+                # Credit Cash in Bank (1020)
+                cur.execute("""
+                    INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit")
+                    VALUES (%s, %s, 0, %s)
+                """, (journal_id, cash_acc["accountID"], payload.amount))
+
+                cur.execute("""
+                    INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
+                    VALUES (%s, %s, 0, %s, %s)
+                """, (cash_acc["accountID"], journal_id, payload.amount, -payload.amount))
+
 
             conn.commit()
             return created
