@@ -66,6 +66,11 @@ export default function RequestList({ limit }: { limit?: number }) {
 
   const cell = { padding: "0.8vw 1.4vw", textAlign: "left" as const };
 
+  useEffect(() => {
+    const t = setInterval(() => setReloadKey((k) => k + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <>
       <div
