@@ -1,21 +1,23 @@
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from psycopg.rows import dict_row
 from database import get_db_connection
+from datetime import date, timedelta
+from security import require_inventory_user
 
 router = APIRouter(
     prefix="/stock_ledger",
     tags=["Stock Ledger"]
 )
 
-from datetime import date, timedelta
 
 @router.get("/")
 def get_stock_ledger(
     transaction_type: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    search: str | None = None
+    search: str | None = None,
+    user: dict = Depends(require_inventory_user)
 ):
     conditions = []
     params = []
@@ -52,7 +54,6 @@ def get_stock_ledger(
     if conditions:
         where_clause = "WHERE " + " AND ".join(conditions)
 
-    
     query = f"""
         WITH ledger_balance AS (
             SELECT
@@ -147,15 +148,18 @@ def get_stock_ledger(
 
         ORDER BY s."LogDate" DESC, s."LogID" DESC
     """
+
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(query, params)
             return cur.fetchall()
 
+
 @router.get("/summary")
 def get_stock_ledger_summary(
     start_date: date | None = None,
-    end_date: date | None = None
+    end_date: date | None = None,
+    user: dict = Depends(require_inventory_user)
 ):
     conditions = []
     params = []
@@ -207,8 +211,12 @@ def get_stock_ledger_summary(
             cur.execute(query, params)
             return cur.fetchone()
 
+
 @router.get("/{log_id}")
-def get_stock_ledger_details(log_id: int):
+def get_stock_ledger_details(
+    log_id: int,
+    user: dict = Depends(require_inventory_user)
+):
     query = """
         SELECT
             s."LogID" AS log_id,
@@ -274,5 +282,3 @@ def get_stock_ledger_details(log_id: int):
                 )
 
             return result
-
-
