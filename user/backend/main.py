@@ -16,7 +16,7 @@ app.add_middleware(
         "https://vercel.app",
         "https://vercel.app",
     ],
-    allow_origin_regex=r"https://computer-erp-f27o.*\.vercel\.app",
+    allow_origin_regex=r"https://computer-erp-login.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
