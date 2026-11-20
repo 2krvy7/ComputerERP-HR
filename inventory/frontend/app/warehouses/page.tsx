@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import DashboardLayout from "../../components/dashboardlayout";
+import { apiFetch } from "@/lib/api";
 
 interface Warehouse {
   WH_ID: number;
@@ -55,14 +56,12 @@ export default function WarehousesPage() {
   const [editWarehouseName, setEditWarehouseName] = useState("");
   const [editLocation, setEditLocation] = useState("");
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-
   // Fetch warehouse records
   async function fetchWarehouses() {
     try {
       setError("");
 
-      const response = await fetch(`${apiUrl}/warehouses/`);
+      const response = await apiFetch("/warehouses/");
 
       if (!response.ok) {
         throw new Error("Failed to load warehouse records.");
@@ -85,7 +84,7 @@ export default function WarehousesPage() {
       setStockLoading(true);
       setStockError("");
 
-      const response = await fetch(`${apiUrl}/warehouses/stock`);
+        const response = await apiFetch("/warehouses/stock");
 
       if (!response.ok) {
         throw new Error("Failed to load warehouse stock.");
@@ -124,7 +123,7 @@ export default function WarehousesPage() {
       setStockError("");
 
       const response = await fetch(
-        `${apiUrl}/orders/stock/${stockId}/reorder-level`,
+        `/orders/stock/${stockId}/reorder-level`,
         {
           method: "PUT",
           headers: {
@@ -173,7 +172,7 @@ export default function WarehousesPage() {
       setSaving(true);
       setError("");
 
-      const response = await fetch(`${apiUrl}/warehouses/`, {
+      const response = await apiFetch("/warehouses/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -229,8 +228,8 @@ export default function WarehousesPage() {
     try {
       setError("");
 
-      const response = await fetch(
-        `${apiUrl}/warehouses/${warehouse.WH_ID}`,
+      const response = await apiFetch(
+        `/warehouses/${warehouse.WH_ID}`,
         {
           method: "DELETE",
         }
@@ -444,8 +443,8 @@ export default function WarehousesPage() {
                     setSaving(true);
                     setError("");
 
-                    const response = await fetch(
-                      `${apiUrl}/warehouses/${selectedWarehouse.WH_ID}`,
+                    const response = await apiFetch(
+                      `/warehouses/${selectedWarehouse.WH_ID}`,
                       {
                         method: "PATCH",
                         headers: {

@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboardlayout";
+import { apiFetch } from "@/lib/api";
 
 interface StockLedger {
   log_id: number;
@@ -61,8 +62,6 @@ export default function StockLedgerPage() {
     total_adjustments: 0,
     total_transfers: 0,
   });
-
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState("All");
@@ -141,8 +140,8 @@ export default function StockLedgerPage() {
         params.append("search", searchTerm.trim());
       }
 
-      const response = await fetch(
-        `${API_URL}/stock_ledger/?${params.toString()}`
+      const response = await apiFetch(
+        `/stock_ledger/?${params.toString()}`
       );
 
       if (!response.ok) {
@@ -164,8 +163,8 @@ export default function StockLedgerPage() {
       if (range.start) params.append("start_date", range.start);
       if (range.end) params.append("end_date", range.end);
 
-      const response = await fetch(
-        `${API_URL}/stock_ledger/summary?${params.toString()}`
+      const response = await apiFetch(
+        `/stock_ledger/summary?${params.toString()}`
       );
 
       if (!response.ok) {
@@ -184,8 +183,8 @@ export default function StockLedgerPage() {
     setTransactionDetails(null);
 
     try {
-      const response = await fetch(
-        `${API_URL}/stock_ledger/${transaction.log_id}`
+      const response = await apiFetch(
+        `/stock_ledger/${transaction.log_id}`
       );
 
       const data = await response.json();
@@ -220,7 +219,7 @@ export default function StockLedgerPage() {
     <DashboardLayout title="Stock Ledger">
       <div className="space-y-6">
         <p className="text-sm text-[#587176]">
-        Track and review completed inventory transactions.
+          Track and review completed inventory transactions.
         </p>
 
         {/* Summary Cards */}

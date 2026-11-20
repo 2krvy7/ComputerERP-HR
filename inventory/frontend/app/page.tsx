@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import DashboardLayout from "../components/dashboardlayout";
+import { apiFetch } from "@/lib/api";
 
 type DashboardData = {
   summary: {
@@ -61,8 +62,6 @@ type DashboardData = {
   }[];
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 export default function Home() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,8 +75,8 @@ export default function Home() {
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          `${API_URL}/dashboard/summary`,
+        const response = await apiFetch(
+          "/dashboard/summary",
           { signal: controller.signal }
         );
 
