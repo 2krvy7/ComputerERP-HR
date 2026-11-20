@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from psycopg.rows import dict_row
 from database import get_db_connection
+from fastapi import Depends
+from auth import require_admin
 
 router = APIRouter(prefix="/suppliers", tags=["Suppliers"])
 
@@ -70,7 +72,7 @@ def get_supplier(supplier_id: int):
     return row
 
 
-@router.post("/", status_code=201)
+@router.post("/", status_code=201, dependencies=[Depends(require_admin)])
 def create_supplier(s: SupplierIn):
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -83,7 +85,7 @@ def create_supplier(s: SupplierIn):
             return cur.fetchone()
 
 
-@router.patch("/{supplier_id}")
+@router.patch("/{supplier_id}", dependencies=[Depends(require_admin)])
 def update_supplier(supplier_id: int, s: SupplierUpdate):
     fields = s.model_dump(exclude_unset=True)
     if not fields or fields.get("supplier_name", "x") is None:
@@ -115,10 +117,10 @@ def set_status(supplier_id: int, new_status: str):
         raise HTTPException(status_code=404, detail="Supplier not found")
     return row
 
-@router.patch("/{supplier_id}/archive")
+@router.patch("/{supplier_id}/archive", dependencies=[Depends(require_admin)])
 def archive_supplier(supplier_id: int):
     return set_status(supplier_id, "Archived")
 
-@router.patch("/{supplier_id}/restore")
+@router.patch("/{supplier_id}/restore", dependencies=[Depends(require_admin)])
 def restore_supplier(supplier_id: int):
     return set_status(supplier_id, "Active")
