@@ -2,13 +2,13 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 DeliveryStatus = Literal[
     "Pending",
     "Preparing",
-    "Shipped",
+    "Released by Inventory",
     "Delivered",
     "Cancelled",
 ]
@@ -18,7 +18,7 @@ class DeliveryCreate(BaseModel):
     order_id: int = Field(gt=0)
     WH_ID: int = Field(gt=0)
     delivery_date: date | None = None
-    delivery_address: str = Field(min_length=1)
+    delivery_address: str = ""
 
 
 class DeliveryResponse(BaseModel):
@@ -31,6 +31,14 @@ class DeliveryResponse(BaseModel):
     delivery_address: str
     status: DeliveryStatus
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def convert_legacy_status(cls, value):
+        if value == "Shipped":
+            return "Released by Inventory"
+        return value
+
 
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
+    received_by: str | None = None

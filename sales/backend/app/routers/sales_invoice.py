@@ -1,5 +1,5 @@
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -33,6 +33,7 @@ def get_invoices(db: Session = Depends(get_db)):
     statement = select(SalesInvoice).order_by(
         SalesInvoice.invoice_id.desc()
     )
+
     return db.scalars(statement).all()
 
 
@@ -85,21 +86,37 @@ def create_invoice(
     interest_rate = INTEREST_RATES[months]
 
     order_total = Decimal(str(order.total_amount))
+
+    tax_rate = Decimal(str(invoice_data.tax_rate or "0.00"))
+
+    tax_amount = (
+        order_total * tax_rate / Decimal("100")
+    ).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+
     interest_amount = (
         order_total * interest_rate
-    ).quantize(Decimal("0.01"))
+    ).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
 
-    total_due = order_total + interest_amount
+    total_due = order_total + tax_amount + interest_amount
 
     invoice = SalesInvoice(
-    order_id=invoice_data.order_id,
-    invoice_date=invoice_data.invoice_date,
-    due_date=invoice_data.due_date,
-    installment_months=months,
-    interest_rate=interest_rate * 100,
-    interest_amount=interest_amount,
-    total_due=total_due,
-)
+        order_id=invoice_data.order_id,
+        invoice_date=invoice_data.invoice_date,
+        due_date=invoice_data.due_date,
+        installment_months=months,
+        interest_rate=interest_rate * 100,
+        interest_amount=interest_amount,
+        tax_type=invoice_data.tax_type,
+        tax_rate=tax_rate,
+        tax_amount=tax_amount,
+        total_due=total_due,
+    )
 
     try:
         db.add(invoice)
@@ -122,7 +139,12 @@ def create_invoice(
 
     except IntegrityError:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to create invoice and accounts receivable record.",
         )
+
+    except Exception:
+        db.rollback()
+        raise

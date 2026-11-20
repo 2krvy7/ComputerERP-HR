@@ -12,9 +12,14 @@ import {
 import type {
   SalesInvoice,
   SalesInvoiceCreate,
+  InvoiceTaxType,
 } from "../../types/invoice";
 
-import type { SalesOrder } from "../../types/order";
+import type {
+  SalesOrder,
+  SalesOrderItem,
+} from "../../types/order";
+
 import type { AccountsReceivable } from "../../types/accounts-receivable";
 
 const PAGE_SIZE = 10;
@@ -40,7 +45,20 @@ const money = (amount: string | number) =>
     maximumFractionDigits: 2,
   })}`;
 
-// Gets today's date in the Philippines timezone.
+function escapeHtml(value: string | number | null | undefined) {
+  return String(value ?? "—").replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character];
+  });
+}
+
 function getLocalDate() {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Manila",
@@ -53,12 +71,9 @@ function getLocalDate() {
   const month = parts.find((part) => part.type === "month")?.value;
   const day = parts.find((part) => part.type === "day")?.value;
 
-  return year && month && day
-    ? `${year}-${month}-${day}`
-    : "";
+  return year && month && day ? `${year}-${month}-${day}` : "";
 }
 
-// Formats YYYY-MM-DD without timezone conversion.
 function formatDate(value: string | null) {
   if (!value) return "—";
 
@@ -93,7 +108,6 @@ function formatDate(value: string | null) {
   });
 }
 
-// Calculates the due date without parsing a date-only string.
 function calculateDueDate(invoiceDate: string, months: number) {
   if (!invoiceDate) return "";
 
@@ -123,12 +137,7 @@ function calculateDueDate(invoiceDate: string, months: number) {
   const targetYear = year + Math.floor((month - 1 + months) / 12);
   const targetMonth = (month - 1 + months) % 12;
 
-  const lastDay = new Date(
-    targetYear,
-    targetMonth + 1,
-    0
-  ).getDate();
-
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
   const dueDay = Math.min(day, lastDay);
 
   return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(
@@ -169,6 +178,10 @@ export default function InvoicePanel() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [printingInvoiceId, setPrintingInvoiceId] = useState<number | null>(
+    null
+  );
+
   const [error, setError] = useState("");
 
   const [showForm, setShowForm] = useState(false);
@@ -177,7 +190,9 @@ export default function InvoicePanel() {
   const [today, setToday] = useState("");
   const [installmentMonths, setInstallmentMonths] = useState("1");
 
-  // Initialize the current date only on the client.
+  const [taxType, setTaxType] = useState<InvoiceTaxType>("VAT");
+  const [customTaxRate, setCustomTaxRate] = useState("0");
+
   useEffect(() => {
     const currentDate = getLocalDate();
 
@@ -187,6 +202,13 @@ export default function InvoicePanel() {
 
   const selectedMonths = Number(installmentMonths);
   const interestRate = INTEREST_RATES[selectedMonths] ?? 0;
+
+  const taxRate =
+    taxType === "VAT"
+      ? 12
+      : taxType === "Non-VAT" || taxType === "Tax-Exempt"
+        ? 0
+        : Number(customTaxRate);
 
   const selectedOrderAmount = () => {
     const order = orders.find(
@@ -202,7 +224,12 @@ export default function InvoicePanel() {
     ((orderAmount * interestRate) / 100).toFixed(2)
   );
 
-  const finalInvoiceAmount = orderAmount + interestAmount;
+  const taxAmount = Number(
+    ((orderAmount * taxRate) / 100).toFixed(2)
+  );
+
+  const finalInvoiceAmount =
+    orderAmount + interestAmount + taxAmount;
 
   const getInvoiceStatus = (invoice: SalesInvoice) => {
     const ar = receivables.find(
@@ -289,6 +316,11 @@ export default function InvoicePanel() {
     0
   );
 
+  const totalTax = invoices.reduce(
+    (sum, invoice) => sum + Number(invoice.tax_amount ?? 0),
+    0
+  );
+
   const overdueInvoices = invoices.filter(
     (invoice) => getInvoiceStatus(invoice) === "Overdue"
   ).length;
@@ -305,6 +337,8 @@ export default function InvoicePanel() {
     setOrderId("");
     setInvoiceDate(today);
     setInstallmentMonths("1");
+    setTaxType("VAT");
+    setCustomTaxRate("0");
     setShowForm(false);
     setError("");
   }
@@ -319,6 +353,18 @@ export default function InvoicePanel() {
 
     if (!invoiceDate) {
       setError("Please select an invoice date.");
+      return;
+    }
+
+    if (
+      taxType === "Custom" &&
+      (
+        !Number.isFinite(taxRate) ||
+        taxRate < 0 ||
+        taxRate > 100
+      )
+    ) {
+      setError("Custom tax rate must be between 0% and 100%.");
       return;
     }
 
@@ -337,6 +383,8 @@ export default function InvoicePanel() {
       invoice_date: invoiceDate,
       due_date: calculatedDueDate,
       installment_months: selectedMonths as 1 | 3 | 6 | 12,
+      tax_type: taxType,
+      tax_rate: taxRate,
     };
 
     setSaving(true);
@@ -347,6 +395,8 @@ export default function InvoicePanel() {
       setOrderId("");
       setInvoiceDate(today);
       setInstallmentMonths("1");
+      setTaxType("VAT");
+      setCustomTaxRate("0");
       setShowForm(false);
 
       await loadData();
@@ -361,6 +411,379 @@ export default function InvoicePanel() {
     }
   }
 
+  async function handlePrintInvoice(invoice: SalesInvoice) {
+    if (printingInvoiceId !== null) return;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+
+    if (!printWindow) {
+      setError("Please allow pop-ups to print the invoice.");
+      return;
+    }
+
+    setPrintingInvoiceId(invoice.invoice_id);
+    setError("");
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invoice SI-${String(invoice.invoice_id).padStart(4, "0")}</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; padding: 30px;">
+          <p>Preparing invoice...</p>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+
+    try {
+      const [order, catalogItems] = await Promise.all([
+        salesOrderAPI.getById(invoice.order_id),
+        salesOrderAPI.getItems(),
+      ]);
+
+      const itemMap = new Map<number, SalesOrderItem>(
+        catalogItems.map((item) => [item.IM_ID, item])
+      );
+
+      const orderDetails = order.details ?? [];
+
+      const lineItemsHtml = orderDetails.length
+        ? orderDetails
+            .map((detail) => {
+              const product = itemMap.get(detail.IM_ID);
+
+              return `
+                <tr>
+                  <td>${escapeHtml(product?.SKU ?? `Item ${detail.IM_ID}`)}</td>
+                  <td>${escapeHtml(product?.Item_Name ?? `Item ${detail.IM_ID}`)}</td>
+                  <td class="center">${escapeHtml(detail.quantity)}</td>
+                  <td class="right">${escapeHtml(money(detail.unit_price))}</td>
+                  <td class="right">${escapeHtml(money(detail.discount))}</td>
+                  <td class="right">${escapeHtml(money(detail.line_total))}</td>
+                </tr>
+              `;
+            })
+            .join("")
+        : `
+          <tr>
+            <td colspan="6" class="center">No order item details available.</td>
+          </tr>
+        `;
+
+      const installmentLabel =
+        invoice.installment_months === 12
+          ? "1 Year"
+          : `${invoice.installment_months} Month${invoice.installment_months > 1 ? "s" : ""}`;
+
+      const subtotal = Number(order.total_amount) || 0;
+      const interest = Number(invoice.interest_amount) || 0;
+      const invoiceTax = Number(invoice.tax_amount ?? 0);
+      const invoiceTaxRate = Number(invoice.tax_rate ?? 0);
+      const invoiceTaxType = invoice.tax_type ?? "Non-VAT";
+      const total = Number(invoice.total_due) || 0;
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Invoice SI-${String(invoice.invoice_id).padStart(4, "0")}</title>
+
+            <style>
+              * { box-sizing: border-box; }
+
+              body {
+                margin: 0;
+                padding: 35px;
+                font-family: Arial, Helvetica, sans-serif;
+                color: #24363B;
+                font-size: 13px;
+              }
+
+              .invoice {
+                max-width: 850px;
+                margin: 0 auto;
+              }
+
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                padding-bottom: 25px;
+                border-bottom: 3px solid #315F68;
+              }
+
+              .company {
+                font-size: 23px;
+                font-weight: bold;
+                color: #315F68;
+              }
+
+              .subtitle {
+                margin-top: 5px;
+                color: #64748b;
+                font-size: 12px;
+              }
+
+              .invoice-title { text-align: right; }
+
+              .invoice-title h1 {
+                margin: 0;
+                font-size: 28px;
+                letter-spacing: 2px;
+              }
+
+              .invoice-number {
+                margin-top: 8px;
+                font-weight: bold;
+                color: #315F68;
+              }
+
+              .details {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin: 30px 0;
+              }
+
+              .section-title {
+                margin-bottom: 12px;
+                font-size: 11px;
+                font-weight: bold;
+                letter-spacing: 1px;
+                color: #64748b;
+                text-transform: uppercase;
+              }
+
+              .detail-row, .total-row {
+                display: flex;
+                justify-content: space-between;
+                gap: 15px;
+                margin: 8px 0;
+              }
+
+              .detail-row strong { text-align: right; }
+
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 25px;
+              }
+
+              thead {
+                background: #315F68;
+                color: white;
+              }
+
+              th, td {
+                padding: 11px 9px;
+                border-bottom: 1px solid #dce7ea;
+                text-align: left;
+              }
+
+              th { font-size: 11px; }
+
+              .center { text-align: center; }
+              .right { text-align: right; }
+
+              .totals {
+                width: 350px;
+                margin: 25px 0 0 auto;
+              }
+
+              .grand-total {
+                margin-top: 8px;
+                padding: 14px;
+                background: #e6f0f0;
+                border-top: 2px solid #315F68;
+                font-size: 17px;
+                font-weight: bold;
+              }
+
+              .footer {
+                margin-top: 60px;
+                padding-top: 18px;
+                border-top: 1px solid #dce7ea;
+                text-align: center;
+                color: #64748b;
+                font-size: 11px;
+              }
+
+              .print-actions {
+                display: flex;
+                justify-content: center;
+                gap: 10px;
+                margin-bottom: 25px;
+              }
+
+              .print-actions button {
+                padding: 10px 22px;
+                border: none;
+                border-radius: 6px;
+                background: #315F68;
+                color: white;
+                font-weight: bold;
+                cursor: pointer;
+              }
+
+              .print-actions button:last-child {
+                background: #64748b;
+              }
+
+              @media print {
+                body { padding: 0; }
+                .print-actions { display: none; }
+                .invoice { max-width: none; }
+              }
+
+              @page {
+                size: A4;
+                margin: 15mm;
+              }
+            </style>
+          </head>
+
+          <body>
+            <div class="print-actions">
+              <button onclick="window.print()">Print Invoice</button>
+              <button onclick="window.close()">Close</button>
+            </div>
+
+            <main class="invoice">
+              <header class="header">
+                <div>
+                  <div class="company">SALES ERP</div>
+                  <div class="subtitle">Sales Management System</div>
+                </div>
+
+                <div class="invoice-title">
+                  <h1>INVOICE</h1>
+                  <div class="invoice-number">
+                    SI-${String(invoice.invoice_id).padStart(4, "0")}
+                  </div>
+                </div>
+              </header>
+
+              <section class="details">
+                <div>
+                  <div class="section-title">Customer Information</div>
+
+                  <div class="detail-row">
+                    <span>Customer ID</span>
+                    <strong>${escapeHtml(order.customer_id)}</strong>
+                  </div>
+
+                  <div class="detail-row">
+                    <span>Sales Order</span>
+                    <strong>SO-${String(order.order_id).padStart(4, "0")}</strong>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="section-title">Invoice Information</div>
+
+                  <div class="detail-row">
+                    <span>Invoice Date</span>
+                    <strong>${escapeHtml(formatDate(invoice.invoice_date))}</strong>
+                  </div>
+
+                  <div class="detail-row">
+                    <span>Due Date</span>
+                    <strong>${escapeHtml(formatDate(invoice.due_date))}</strong>
+                  </div>
+
+                  <div class="detail-row">
+                    <span>Installment</span>
+                    <strong>${escapeHtml(installmentLabel)}</strong>
+                  </div>
+                </div>
+              </section>
+
+              <div class="section-title">Invoice Items</div>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Product</th>
+                    <th class="center">Qty</th>
+                    <th class="right">Unit Price</th>
+                    <th class="right">Discount</th>
+                    <th class="right">Line Total</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  ${lineItemsHtml}
+                </tbody>
+              </table>
+
+              <section class="totals">
+                <div class="total-row">
+                  <span>Sales Order Amount</span>
+                  <strong>${escapeHtml(money(subtotal))}</strong>
+                </div>
+
+                <div class="total-row">
+                  <span>Tax Type</span>
+                  <strong>${escapeHtml(invoiceTaxType)}</strong>
+                </div>
+
+                <div class="total-row">
+                  <span>Tax Rate</span>
+                  <strong>${escapeHtml(invoiceTaxRate.toFixed(2))}%</strong>
+                </div>
+
+                <div class="total-row">
+                  <span>Tax Amount</span>
+                  <strong>${escapeHtml(money(invoiceTax))}</strong>
+                </div>
+
+                <div class="total-row">
+                  <span>Interest Rate</span>
+                  <strong>${escapeHtml(Number(invoice.interest_rate).toFixed(2))}%</strong>
+                </div>
+
+                <div class="total-row">
+                  <span>Interest Amount</span>
+                  <strong>${escapeHtml(money(interest))}</strong>
+                </div>
+
+                <div class="total-row grand-total">
+                  <span>Total Due</span>
+                  <span>${escapeHtml(money(total))}</span>
+                </div>
+              </section>
+
+              <footer class="footer">
+                <p>Thank you for your purchase!</p>
+                <p>This document was generated by Sales ERP.</p>
+              </footer>
+            </main>
+          </body>
+        </html>
+      `;
+
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.focus();
+    } catch (err) {
+      printWindow.close();
+
+      setError(
+        err instanceof Error
+          ? `Unable to prepare invoice for printing: ${err.message}`
+          : "Unable to prepare invoice for printing."
+      );
+    } finally {
+      setPrintingInvoiceId(null);
+    }
+  }
+
   return (
     <div className="min-h-full space-y-5 bg-green-50 text-slate-800">
       {error && (
@@ -372,7 +795,7 @@ export default function InvoicePanel() {
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           label="Total Invoices"
           value={invoices.length}
@@ -382,7 +805,13 @@ export default function InvoicePanel() {
         <SummaryCard
           label="Total Invoiced Amount"
           value={money(totalInvoiced)}
-          description="Combined invoice value including interest"
+          description="Combined invoice value including tax and interest"
+        />
+
+        <SummaryCard
+          label="Total Tax Amount"
+          value={money(totalTax)}
+          description="Tax recorded on sales invoices"
         />
 
         <SummaryCard
@@ -419,7 +848,7 @@ export default function InvoicePanel() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
+          <table className="w-full min-w-[1050px] text-sm">
             <thead className="bg-[#D1D5DB] text-slate-700">
               <tr>
                 <th className="px-4 py-4 text-center font-semibold">
@@ -434,17 +863,14 @@ export default function InvoicePanel() {
                 <th className="px-4 py-4 text-center font-semibold">
                   Due Date
                 </th>
-                <th className="px-4 py-4 text-center font-semibold">
-                  Installment
-                </th>
-                <th className="px-4 py-4 text-center font-semibold">
-                  Interest
-                </th>
                 <th className="px-4 py-4 text-right font-semibold">
                   Total Due
                 </th>
                 <th className="px-4 py-4 text-center font-semibold">
                   Status
+                </th>
+                <th className="px-4 py-4 text-center font-semibold">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -452,13 +878,13 @@ export default function InvoicePanel() {
             <tbody className="divide-y divide-[#D1D5DB]">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-600">
+                  <td colSpan={7} className="px-5 py-12 text-center text-slate-600">
                     Loading invoices...
                   </td>
                 </tr>
               ) : paginatedInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-slate-600">
+                  <td colSpan={7} className="px-5 py-12 text-center text-slate-600">
                     No sales invoices found.
                   </td>
                 </tr>
@@ -487,21 +913,6 @@ export default function InvoicePanel() {
                         {formatDate(invoice.due_date)}
                       </td>
 
-                      <td className="whitespace-nowrap px-4 py-4 text-center text-slate-700">
-                        {invoice.installment_months === 12
-                          ? "1 Year"
-                          : `${invoice.installment_months} Month${invoice.installment_months > 1 ? "s" : ""}`}
-                      </td>
-
-                      <td className="whitespace-nowrap px-4 py-4 text-center">
-                        <p className="font-semibold text-slate-800">
-                          {Number(invoice.interest_rate).toFixed(2)}%
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          {money(invoice.interest_amount)}
-                        </p>
-                      </td>
-
                       <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-slate-900">
                         {money(invoice.total_due)}
                       </td>
@@ -515,6 +926,20 @@ export default function InvoicePanel() {
                         >
                           {invoiceStatus}
                         </span>
+                      </td>
+
+                      <td className="px-4 py-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => void handlePrintInvoice(invoice)}
+                          disabled={printingInvoiceId !== null}
+                          className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-[#315F68] bg-white px-3 py-2 text-xs font-semibold text-[#315F68] transition hover:bg-[#315F68] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span aria-hidden="true">▤</span>
+                          {printingInvoiceId === invoice.invoice_id
+                            ? "Preparing..."
+                            : "Print"}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -663,6 +1088,50 @@ export default function InvoicePanel() {
                 </p>
               </div>
 
+              <div>
+                <label className="mb-2 block text-sm font-semibold text-slate-700">
+                  Tax Type
+                </label>
+
+                <select
+                  value={taxType}
+                  onChange={(event) =>
+                    setTaxType(event.target.value as InvoiceTaxType)
+                  }
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                >
+                  <option value="VAT">VAT — 12%</option>
+                  <option value="Non-VAT">Non-VAT — 0%</option>
+                  <option value="Tax-Exempt">Tax-Exempt — 0%</option>
+                  <option value="Custom">Custom Tax Rate</option>
+                </select>
+              </div>
+
+              {taxType === "Custom" && (
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Custom Tax Rate (%)
+                  </label>
+
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={customTaxRate}
+                    onChange={(event) =>
+                      setCustomTaxRate(event.target.value)
+                    }
+                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    placeholder="Enter tax rate"
+                  />
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Enter a rate from 0% to 100%.
+                  </p>
+                </div>
+              )}
+
               {orderId && (
                 <div className="rounded-xl border border-[#D1D5DB] bg-white p-4">
                   <h3 className="mb-3 text-sm font-bold text-slate-800">
@@ -676,6 +1145,35 @@ export default function InvoicePanel() {
                       </span>
                       <span className="font-medium text-slate-800">
                         {money(orderAmount)}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Tax Type
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {taxType}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Tax Rate
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {Number.isFinite(taxRate)
+                          ? `${taxRate.toFixed(2)}%`
+                          : "Invalid rate"}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between gap-4">
+                      <span className="text-slate-600">
+                        Tax Amount
+                      </span>
+                      <span className="font-medium text-slate-800">
+                        {money(taxAmount)}
                       </span>
                     </div>
 
@@ -729,7 +1227,15 @@ export default function InvoicePanel() {
                   saving ||
                   availableOrders.length === 0 ||
                   !orderId ||
-                  !invoiceDate
+                  !invoiceDate ||
+                  (
+                    taxType === "Custom" &&
+                    (
+                      !Number.isFinite(taxRate) ||
+                      taxRate < 0 ||
+                      taxRate > 100
+                    )
+                  )
                 }
                 className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               >

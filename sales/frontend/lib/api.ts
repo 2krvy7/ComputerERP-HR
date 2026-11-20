@@ -4,6 +4,7 @@ import type {
   SalesOrderCreate,
   SalesOrderStatus,
   SalesOrderItem,
+  FinishedGoodItem,
 } from "../types/order";
 
 import type {
@@ -185,13 +186,36 @@ export const salesOrderAPI = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+
+  // FINISHED GOODS
+
+  getFinishedGoods: (search = "") =>
+    request<FinishedGoodItem[]>(
+      `/api/orders/finished-goods?search=${encodeURIComponent(search)}`
+    ),
+
+  // SELLING PRICE MANAGEMENT
+
+  updateSellingPrice: (
+    itemId: number,
+    markupPercentage: number
+  ) =>
+    request<FinishedGoodItem>(
+      `/api/orders/items/${itemId}/selling-price`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          markup_percentage: markupPercentage,
+        }),
+      }
+    ),
 };
 
 // DELIVERIES
 
+
 export const deliveryAPI = {
-  getAll: () =>
-    request<Delivery[]>("/api/deliveries"),
+  getAll: () => request<Delivery[]>("/api/deliveries"),
 
   getById: (id: number) =>
     request<Delivery>(`/api/deliveries/${id}`),
@@ -205,12 +229,20 @@ export const deliveryAPI = {
       body: JSON.stringify(data),
     }),
 
-  updateStatus: (id: number, status: DeliveryStatus) =>
+  updateStatus: (
+    id: number,
+    status: DeliveryStatus,
+    receivedBy?: string
+  ) =>
     request<Delivery>(`/api/deliveries/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        received_by: receivedBy,
+      }),
     }),
 };
+
 
 // SALES INVOICES
 

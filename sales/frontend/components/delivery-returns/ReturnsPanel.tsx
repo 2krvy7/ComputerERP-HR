@@ -433,7 +433,7 @@ export default function ReturnsPanel() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1050px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="bg-[#D1D5DB] text-slate-700">
               <tr>
                 <th className="px-5 py-4 text-center font-semibold">
@@ -441,9 +441,6 @@ export default function ReturnsPanel() {
                 </th>
                 <th className="px-5 py-4 text-center font-semibold">
                   Order No.
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Invoice No.
                 </th>
                 <th className="px-5 py-4 text-center font-semibold">
                   Customer
@@ -467,7 +464,7 @@ export default function ReturnsPanel() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-5 py-12 text-center text-slate-600"
                   >
                     Loading sales returns...
@@ -476,7 +473,7 @@ export default function ReturnsPanel() {
               ) : paginatedReturns.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-5 py-12 text-center text-slate-600"
                   >
                     No sales returns found.
@@ -509,10 +506,6 @@ export default function ReturnsPanel() {
                         {relatedOrder
                           ? `SO-${String(relatedOrder.order_id).padStart(4, "0")}`
                           : "—"}
-                      </td>
-
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        SI-{String(record.invoice_id).padStart(4, "0")}
                       </td>
 
                       <td className="px-5 py-4 text-slate-700">
@@ -754,7 +747,7 @@ export default function ReturnsPanel() {
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-lg border border-[#D1D5DB] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
+                  className="rounded-lg border border-[#D1D5D1] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
                 >
                   Cancel
                 </button>

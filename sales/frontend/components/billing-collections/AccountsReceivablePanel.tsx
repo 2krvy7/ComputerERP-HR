@@ -26,6 +26,7 @@ type ARRow = {
 };
 
 const PAGE_SIZE = 10;
+const DUE_SOON_DAYS = 7;
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-PH", {
@@ -59,11 +60,51 @@ const formatDate = (value: string | null) => {
   });
 };
 
+const getDaysUntilDue = (
+  dueDate: string | null,
+  today: string
+): number | null => {
+  if (!dueDate || !today) return null;
+
+  const dueTimestamp = Date.parse(
+    `${dueDate.slice(0, 10)}T00:00:00Z`
+  );
+
+  const todayTimestamp = Date.parse(
+    `${today}T00:00:00Z`
+  );
+
+  if (
+    Number.isNaN(dueTimestamp) ||
+    Number.isNaN(todayTimestamp)
+  ) {
+    return null;
+  }
+
+  return Math.round(
+    (dueTimestamp - todayTimestamp) / 86400000
+  );
+};
+
 const isOverdue = (record: ARRow, today: string) => {
   return (
     record.balance > 0 &&
-    Boolean(record.due_date) &&
-    record.due_date!.slice(0, 10) < today
+    (getDaysUntilDue(record.due_date, today) ?? 0) < 0 &&
+    getDaysUntilDue(record.due_date, today) !== null
+  );
+};
+
+const isDueSoon = (record: ARRow, today: string) => {
+  const daysUntilDue = getDaysUntilDue(
+    record.due_date,
+    today
+  );
+
+  return (
+    record.balance > 0 &&
+    daysUntilDue !== null &&
+    daysUntilDue >= 0 &&
+    daysUntilDue <= DUE_SOON_DAYS
   );
 };
 
@@ -160,6 +201,7 @@ export default function AccountsReceivablePanel() {
 
     return records.filter((record) => {
       const overdue = isOverdue(record, today);
+      const dueSoon = isDueSoon(record, today);
 
       return (
         String(record.AR_ID).includes(keyword) ||
@@ -167,6 +209,7 @@ export default function AccountsReceivablePanel() {
         record.customer_name.toLowerCase().includes(keyword) ||
         record.status.toLowerCase().includes(keyword) ||
         (overdue && "overdue".includes(keyword)) ||
+        (dueSoon && "due soon".includes(keyword)) ||
         (record.due_date ?? "").toLowerCase().includes(keyword)
       );
     });
@@ -196,6 +239,24 @@ export default function AccountsReceivablePanel() {
     [records, today]
   );
 
+  const paymentAlerts = useMemo(() => {
+    return records
+      .filter(
+        (record) =>
+          isOverdue(record, today) ||
+          isDueSoon(record, today)
+      )
+      .sort((a, b) => {
+        return (a.due_date ?? "").localeCompare(
+          b.due_date ?? ""
+        );
+      });
+  }, [records, today]);
+
+  const dueSoonCount = paymentAlerts.filter(
+    (record) => isDueSoon(record, today)
+  ).length;
+
   const totalPages = Math.max(
     1,
     Math.ceil(filteredRecords.length / PAGE_SIZE)
@@ -203,14 +264,14 @@ export default function AccountsReceivablePanel() {
 
   const currentPage = Math.min(page, totalPages);
 
-  const paginatedRecords = useMemo(() => {
-    const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
 
+  const paginatedRecords = useMemo(() => {
     return filteredRecords.slice(
       startIndex,
       startIndex + PAGE_SIZE
     );
-  }, [filteredRecords, currentPage]);
+  }, [filteredRecords, startIndex]);
 
   const statusStyle = (status: string, overdue: boolean) => {
     if (overdue) {
@@ -232,13 +293,24 @@ export default function AccountsReceivablePanel() {
     return record.status;
   };
 
+  const getAlertLabel = (record: ARRow) => {
+    const daysUntilDue = getDaysUntilDue(
+      record.due_date,
+      today
+    );
+
+    if (daysUntilDue === null) return "Due date unavailable";
+    if (daysUntilDue < 0) return "Overdue";
+    if (daysUntilDue === 0) return "Due today";
+
+    return `Due in ${daysUntilDue} day${daysUntilDue === 1 ? "" : "s"}`;
+  };
+
   const startRecord =
-    filteredRecords.length === 0
-      ? 0
-      : (currentPage - 1) * PAGE_SIZE + 1;
+    filteredRecords.length === 0 ? 0 : startIndex + 1;
 
   const endRecord = Math.min(
-    currentPage * PAGE_SIZE,
+    startIndex + PAGE_SIZE,
     filteredRecords.length
   );
 
@@ -253,6 +325,7 @@ export default function AccountsReceivablePanel() {
         </div>
       )}
 
+      {/* Summary Cards */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           title="Total Receivables"
@@ -285,6 +358,95 @@ export default function AccountsReceivablePanel() {
         />
       </section>
 
+      {/* Payment Due Alerts */}
+      {!loading && (
+        <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">
+                Payment Due Alerts
+              </h3>
+
+              <p className="mt-1 text-xs text-slate-600">
+                Unpaid invoices that are overdue or due within the next 7 days.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <span className="rounded-full bg-red-100 px-3 py-1 text-red-700">
+                {totals.overdue} Overdue
+              </span>
+
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">
+                {dueSoonCount} Due Soon
+              </span>
+            </div>
+          </div>
+
+          {paymentAlerts.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm font-medium text-slate-700">
+                No payment due alerts.
+              </p>
+
+              <p className="mt-1 text-xs text-slate-500">
+                There are no overdue invoices or unpaid invoices due within the next 7 days.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#D1D5DB]">
+              {paymentAlerts.map((record) => {
+                const overdue = isOverdue(record, today);
+
+                return (
+                  <div
+                    key={record.AR_ID}
+                    className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-900">
+                          INV-{record.invoice_id}
+                        </span>
+
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            overdue
+                              ? "bg-red-100 text-red-700"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {getAlertLabel(record)}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-sm text-slate-700">
+                        {record.customer_name}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-500">
+                        Due date: {formatDate(record.due_date)}
+                      </p>
+                    </div>
+
+                    <div className="sm:text-right">
+                      <p className="text-xs text-slate-500">
+                        Outstanding Balance
+                      </p>
+
+                      <p className="mt-1 font-bold tabular-nums text-slate-900">
+                        {money(record.balance)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Receivable Records */}
       <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
         <div className="flex flex-col gap-3 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -397,44 +559,43 @@ export default function AccountsReceivablePanel() {
               </table>
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-600">
+            {/* Pagination */}
+            <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-gray px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">
                 Showing{" "}
-                <span className="font-semibold text-slate-800">
-                  {startRecord}-{endRecord}
-                </span>{" "}
-                of{" "}
-                <span className="font-semibold text-slate-800">
+                <span className="font-semibold text-slate-700">
+                  {startRecord}
+                </span>
+                {" "}to{" "}
+                <span className="font-semibold text-slate-700">
+                  {endRecord}
+                </span>
+                {" "}of{" "}
+                <span className="font-semibold text-slate-700">
                   {filteredRecords.length}
-                </span>{" "}
-                records
+                </span>
+                {" "}records
               </p>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    setPage((current) => Math.max(1, current - 1))
-                  }
                   disabled={currentPage === 1}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setPage(currentPage - 1)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Previous
                 </button>
 
-                <span className="min-w-20 text-center text-sm font-medium text-slate-700">
+                <span className="px-2 text-sm font-medium text-slate-600">
                   Page {currentPage} of {totalPages}
                 </span>
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setPage((current) =>
-                      Math.min(totalPages, current + 1)
-                    )
-                  }
                   disabled={currentPage === totalPages}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setPage(currentPage + 1)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Next
                 </button>
@@ -458,7 +619,9 @@ function SummaryCard({
 }) {
   return (
     <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-600">{title}</p>
+      <p className="text-sm font-medium text-slate-600">
+        {title}
+      </p>
 
       <p className={`mt-2 text-xl font-bold ${color}`}>
         {value}

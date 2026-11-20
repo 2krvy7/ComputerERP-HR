@@ -1,3 +1,4 @@
+
 from decimal import Decimal
 
 from sqlalchemy import ForeignKey, Integer, Numeric
@@ -22,10 +23,10 @@ class SalesQuotationDetail(Base):
     )
 
     IM_ID: Mapped[int] = mapped_column(
-    Integer,
-    ForeignKey("ITEM_MASTER.IM_ID"),
-    nullable=False,
-)
+        Integer,
+        ForeignKey("ITEM_MASTER.IM_ID"),
+        nullable=False,
+    )
 
     quantity: Mapped[int] = mapped_column(
         Integer,
@@ -52,3 +53,12 @@ class SalesQuotationDetail(Base):
         "SalesQuotation",
         back_populates="details",
     )
+
+    item_master = relationship(
+        "ItemMaster",
+        lazy="select",
+    )
+
+    @property
+    def Item_Name(self) -> str:
+        return self.item_master.Item_Name

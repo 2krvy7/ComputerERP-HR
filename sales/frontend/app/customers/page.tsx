@@ -135,7 +135,7 @@ export default function CustomersPage() {
     }`;
 
   return (
-    <main className="min-h-screen bg-green-50 p-6 text-slate-900 md:p-10">
+    <main className="min-h-screen bg-[#F3F4F6] p-6 text-slate-900 md:p-10">
       <div className="mx-auto max-w-7xl space-y-6">
 
         {/* Customer Tabs */}

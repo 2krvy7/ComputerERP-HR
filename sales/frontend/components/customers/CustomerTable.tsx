@@ -247,7 +247,7 @@ export default function CustomerTable({
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t border-slate-200 bg-gray px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-500">
           Showing{" "}
           <span className="font-semibold text-slate-700">
