@@ -365,7 +365,7 @@ export default function OrdersPage() {
       setActiveSection(departmentSections[tab][0]);
     }
   };
-
+  
   // Send Restock Request
   const handleSendRestockRequest = async (item: UpcomingStock) => {
     const quantityInput = requestQuantities[item.STOCK_ID];
@@ -390,8 +390,15 @@ export default function OrdersPage() {
     try {
       setSubmittingStock(item.STOCK_ID);
 
-      const response = await apiFetch(
-        "/orders/restock-requests",
+      console.log("Selected item:", {
+        STOCK_ID: item.STOCK_ID,
+        IM_ID: item.IM_ID,
+        Item_Name: item.Item_Name,
+        ItemType: item.ItemType,
+        quantity: quantity,
+      });
+
+      const response = await apiFetch("/orders/restock-requests",
         {
           method: "POST",
           headers: {

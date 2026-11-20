@@ -37,6 +37,7 @@ class RestockRequestCreate(BaseModel):
 # ADMIN + STAFF
 # ==========================================
 
+
 @router.get("/upcoming-requests")
 def get_upcoming_requests(
     user: dict = Depends(require_inventory_user)
@@ -65,12 +66,12 @@ def get_upcoming_requests(
                         ELSE 'Approaching Reorder'
                     END AS "stock_status",
 
-                    pending."RR_ID",
-                    pending."Quantity" AS "RequestedQuantity",
+                    active_request."RR_ID",
+                    active_request."Quantity" AS "RequestedQuantity",
 
                     CASE
-                        WHEN pending."RR_ID" IS NOT NULL
-                            THEN 'Pending'
+                        WHEN active_request."RR_ID" IS NOT NULL
+                            THEN COALESCE(active_request."status", 'Pending')
                         ELSE 'Not Requested'
                     END AS "RequestStatus"
 
@@ -85,52 +86,23 @@ def get_upcoming_requests(
                 LEFT JOIN LATERAL (
                     SELECT
                         rr."RR_ID",
-                        rr."Quantity"
+                        rr."Quantity",
+                        rr."status"
                     FROM "RestockRequest" rr
                     WHERE rr."IM_ID" = s."IM_ID"
                       AND rr."WH_ID" = s."WH_ID"
                       AND (
-                          rr."status" = 'Pending'
+                          rr."status" IN ('Pending', 'Approved')
                           OR rr."status" IS NULL
                       )
-                    ORDER BY rr."issued" DESC NULLS LAST
+                    ORDER BY rr."RR_ID" DESC
                     LIMIT 1
-                ) pending ON TRUE
+                ) active_request ON TRUE
 
                 WHERE im."ItemType" IN ('Raw', 'Finished')
                   AND s."reorder_level" > 0
                   AND s."quantity_on_hand" <= CEIL(
                       s."reorder_level" * 1.2
-                  )
-
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM "RestockRequest" approved
-                      WHERE approved."IM_ID" = s."IM_ID"
-                        AND approved."WH_ID" = s."WH_ID"
-                        AND approved."status" = 'Approved'
-
-                        AND NOT EXISTS (
-                            SELECT 1
-                            FROM "PurchaseRequest" pr
-
-                            JOIN "RequestQuotation" rq
-                                ON rq."PR_ID" = pr."PR_ID"
-
-                            JOIN "PurchaseOrder" po
-                                ON po."RFQ_ID" = rq."RFQ_ID"
-
-                            JOIN "GoodsReceived" gr
-                                ON gr."PO_ID" = po."PO_ID"
-
-                            JOIN "STOCK_LEDGER" sl
-                                ON sl."ReferenceNo" =
-                                    'GR-' || gr."GR_ID"::text
-                               AND sl."TransactionType" = 'STOCK_IN'
-
-                            WHERE pr."RestockRequestID" =
-                                approved."RR_ID"
-                        )
                   )
 
                 ORDER BY
@@ -150,11 +122,11 @@ def get_upcoming_requests(
         if conn is not None:
             conn.close()
 
-
 # ==========================================
 # CREATE RESTOCK REQUEST
 # ADMIN + STAFF
 # ==========================================
+
 
 @router.post("/restock-requests")
 def create_restock_request(
@@ -197,46 +169,18 @@ def create_restock_request(
                     detail="Inactive items cannot be requested."
                 )
 
+            # Check if an active request already exists
             cur.execute("""
                 SELECT
                     rr."RR_ID",
                     rr."status"
                 FROM "RestockRequest" rr
-
                 WHERE rr."IM_ID" = %s
                   AND rr."WH_ID" = %s
-
                   AND (
-                      rr."status" = 'Pending'
+                      rr."status" IN ('Pending', 'Approved')
                       OR rr."status" IS NULL
-
-                      OR (
-                          rr."status" = 'Approved'
-
-                          AND NOT EXISTS (
-                              SELECT 1
-                              FROM "PurchaseRequest" pr
-
-                              JOIN "RequestQuotation" rq
-                                  ON rq."PR_ID" = pr."PR_ID"
-
-                              JOIN "PurchaseOrder" po
-                                  ON po."RFQ_ID" = rq."RFQ_ID"
-
-                              JOIN "GoodsReceived" gr
-                                  ON gr."PO_ID" = po."PO_ID"
-
-                              JOIN "STOCK_LEDGER" sl
-                                  ON sl."ReferenceNo" =
-                                      'GR-' || gr."GR_ID"::text
-                                 AND sl."TransactionType" = 'STOCK_IN'
-
-                              WHERE pr."RestockRequestID" =
-                                  rr."RR_ID"
-                          )
-                      )
                   )
-
                 LIMIT 1
             """, (
                 stock["IM_ID"],
@@ -254,20 +198,23 @@ def create_restock_request(
                     )
                 )
 
+            # Automatically approve the request
             cur.execute("""
                 INSERT INTO "RestockRequest" (
                     "IM_ID",
                     "WH_ID",
                     "Quantity",
                     "issued",
-                    "status"
+                    "status",
+                    "approved_date"
                 )
                 VALUES (
                     %s,
                     %s,
                     %s,
                     CURRENT_TIMESTAMP,
-                    'Pending'
+                    'Approved',
+                    CURRENT_TIMESTAMP
                 )
                 RETURNING
                     "RR_ID",
@@ -275,20 +222,21 @@ def create_restock_request(
                     "WH_ID",
                     "Quantity",
                     "issued",
-                    "status"
+                    "status",
+                    "approved_date"
             """, (
                 stock["IM_ID"],
                 stock["WH_ID"],
                 request.quantity
             ))
-
+            print("RESTOCK REQUEST RECEIVED:")  
             result = cur.fetchone()
 
         conn.commit()
 
         return {
             "message": "Restock request created successfully.",
-            "request": result
+            "request": result   
         }
 
     except HTTPException:
@@ -308,7 +256,6 @@ def create_restock_request(
     finally:
         if conn is not None:
             conn.close()
-
 
 # ==========================================
 # UPDATE REORDER LEVEL
@@ -411,6 +358,7 @@ def get_incoming_requests(
                 JOIN "WAREHOUSE" w
                     ON rr."WH_ID" = w."WH_ID"
                 WHERE rr."status" = 'Approved'
+                AND im."ItemType" = 'Raw'
                 ORDER BY rr."issued" DESC
             """)
 
@@ -437,80 +385,6 @@ def get_incoming_requests(
 # APPROVE RESTOCK REQUEST
 # ADMIN ONLY
 # ==========================================
-
-@router.put("/upcoming-requests/{rr_id}/approve")
-def approve_restock_request(
-    rr_id: int,
-    user: dict = Depends(require_inventory_admin)
-):
-    conn = None
-
-    try:
-        conn = get_db_connection()
-
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute("""
-                UPDATE "RestockRequest"
-                SET
-                    "status" = 'Approved',
-                    "approved_by" = %s,
-                    "approved_date" = CURRENT_TIMESTAMP
-                WHERE "RR_ID" = %s
-                  AND (
-                      "status" IS NULL
-                      OR "status" = 'Pending'
-                  )
-                RETURNING
-                    "RR_ID",
-                    "IM_ID",
-                    "Quantity",
-                    "WH_ID",
-                    "status",
-                    "approved_by",
-                    "approved_date"
-            """, (
-                user["sub"],
-                rr_id
-            ))
-
-            result = cur.fetchone()
-
-            if result is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=(
-                        "Request not found or it has "
-                        "already been approved."
-                    )
-                )
-
-        conn.commit()
-
-        return {
-            "message": (
-                "Restock Request approved successfully."
-            ),
-            "request": result
-        }
-
-    except HTTPException:
-        if conn is not None:
-            conn.rollback()
-        raise
-
-    except Exception as e:
-        if conn is not None:
-            conn.rollback()
-
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-
-    finally:
-        if conn is not None:
-            conn.close()
-
 
 # ==========================================
 # PURCHASE REQUESTS

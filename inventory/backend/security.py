@@ -2,11 +2,13 @@
 import os
 import jwt
 
-from dotenv import load_dotenv
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pathlib import Path
+from dotenv import load_dotenv
 
-load_dotenv()
+ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(ENV_PATH, override=True)
 
 SECRET = os.environ["JWT_SECRET"]
 ALGORITHM = "HS256"

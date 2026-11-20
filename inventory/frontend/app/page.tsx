@@ -252,7 +252,7 @@ export default function Home() {
               </p>
 
               {stockDistribution.length > 0 ? (
-                <div className="mt-5 h-[280px] w-full">
+                <div className="mt-5 h-[280px] w-full min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={stockDistribution}
