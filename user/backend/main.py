@@ -9,10 +9,18 @@ app = FastAPI(title="User Service")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3010", "http://127.0.0.1:3010"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3010",
+        "http://127.0.0.1:3010",
+        "https://computer-erp-login.vercel.app",
+    ],
+    allow_origin_regex=r"https://computer-erp-f27o.*\.vercel\.app",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 app.include_router(auth.router)
 app.include_router(users.router)
