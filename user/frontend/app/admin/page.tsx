@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 
-const API = "http://127.0.0.1:8010";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8010";
 
 type Employee = {
   employee_id: number;
