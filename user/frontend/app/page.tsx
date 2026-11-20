@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-const API = "http://127.0.0.1:8010";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8010";
 
 // Where each department's frontend runs on the presentation machine (edit the ports to match yours)
 const DEPT_URLS: Record<string, string> = {
