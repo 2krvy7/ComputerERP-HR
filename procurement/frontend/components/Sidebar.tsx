@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getUser, logout } from "./AuthGate";
+import type { SessionUser } from "./AuthGate";
+
 import {
   LayoutDashboard,
   Contact,
@@ -28,21 +31,14 @@ const NAV = [
   { label: "Invoices", href: "/invoices", Icon: Receipt },
 ];
 
-type Props = {
-  username?: string;
-  userId?: string;
-  role?: string;
-  onLogout?: () => void;
-};
-
-export default function Sidebar({
-  username = "Jhonver",
-  userId = "PR-001",
-  role = "Admin",
-  onLogout,
-}: Props) {
+export default function Sidebar() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
+
+  useEffect(() => {
+    setUser(getUser());
+  }, []);
 
   return (
     <aside
@@ -145,16 +141,18 @@ export default function Sidebar({
       >
         <CircleUser style={{ width: "1.5vw", height: "1.5vw", flexShrink: 0 }} />
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
-          <span style={{ fontSize: "0.78vw", fontWeight: 600 }}>{username}</span>
-          <span style={{ fontSize: "0.5vw", opacity: 0.8 }}>{userId}</span>
-          <span style={{ fontSize: "0.5vw", opacity: 0.8 }}>{role}</span>
+            <span style={{ fontSize: "0.78vw", fontWeight: 600, color: "#ffffff" }}>{user?.username ?? "…"}</span>
+            <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>
+              {user ? `${user.sub} · ${user.department ?? "All departments"}` : ""}
+            </span>
+            <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>{user?.role ?? ""}</span>
         </div>
       </div>
 
       {/* Logout */}
       <button
         type="button"
-        onClick={onLogout}
+        onClick={logout}
         style={{
           marginTop: "0.65vw",
           height: "3vw",
