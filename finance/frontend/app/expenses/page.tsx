@@ -1,64 +1,53 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./expenses.css";
 
-export default function Expenses() {
+export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [productions, setProductions] = useState<any[]>([]);
   const [payrollTotal, setPayrollTotal] = useState<number>(0);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Tabs, Filters & Approvals
-  const [activeTab, setActiveTab] = useState<"ALL" | "Pending" | "Approved" | "Posted">("ALL");
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
-  const [approvedIds, setApprovedIds] = useState<number[]>([]);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [accountFilter, setAccountFilter] = useState("ALL");
 
-  // Add Expense Modal
+  // Multi-Select Checkboxes (Unique keys so check & uncheck always toggle cleanly)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
+  const [bulkSelectAction, setBulkSelectAction] = useState("");
+  const [approving, setApproving] = useState(false);
+
+  // Add Expense Modal States
   const [showAddModal, setShowAddModal] = useState(false);
   const [formAccountId, setFormAccountId] = useState("");
+  const [formDescription, setFormDescription] = useState("");
   const [formProductionId, setFormProductionId] = useState("");
-  const [formPostingId, setFormPostingId] = useState("");
   const [formAmount, setFormAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [formDescription, setFormDescription] = useState("");
-
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [expRes, optRes] = await Promise.all([
-
-        // FETCH 1: GET http://127.0.0.1:8000/api/expense/
-        // Backend File: finance/backend/routers/expense.py -> get_expenses()
-        // Database Tables: Auto-syncs Team 3 "PRODUCTION" & Team 6 "Payroll", then reads "Expense" joined with "ChartOfAccounts" & "ProductionOrder"
-        // Purpose: Loads all recorded production and operating expenses for the main table
-        fetch("http://127.0.0.1:8000/api/expense/"),
-
-        // FETCH 2: GET http://127.0.0
-        // Backend File: finance/backend/routers/expense.py -> get_expense_options()
-        // Database Tables: Reads "ChartOfAccounts", "ProductionOrder", and sums "PayrollExpense"
-        // Purpose: Populates modal dropdowns and displays the total HR Payroll card
+        // FETCH 1: GET http://127.0.0
+        fetch("http://127.0.0.1:8000/api/expense"),
+        // FETCH 2: GET http://127.0.0options
         fetch("http://127.0.0.1:8000/api/expense/options"),
       ]);
 
-      if (!expRes.ok) throw new Error(`Expense API error: ${expRes.status}`);
+      if (!expRes.ok) throw new Error(`Expenses API error: ${expRes.status}`);
       const expJson = await expRes.json();
       setExpenses(Array.isArray(expJson) ? expJson : []);
 
       if (optRes.ok) {
         const optJson = await optRes.json();
         setAccounts(Array.isArray(optJson.accounts) ? optJson.accounts : []);
-        setProductions(Array.isArray(optJson.productions) ? optJson.productions : []);
+        setProductions(
+          Array.isArray(optJson.productions) ? optJson.productions : []
+        );
         setPayrollTotal(Number(optJson.payrollTotal || 0));
       }
     } catch (err: any) {
@@ -68,305 +57,423 @@ export default function Expenses() {
     }
   }
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
     }).format(Number(val || 0));
 
-  const normalizedExpenses = useMemo(() => {
-    return expenses.map((row, idx) => {
-      const id = Number(row.expenseID ?? row.expenseid ?? idx + 1);
-      const displayId = `EXP-${String(id).padStart(4, "0")}`;
-      const prodId = row.productionID ?? row.productionid ?? "-";
-      const postingId = row.postingID ?? row.postingid ?? null;
-      const category = row.account_name
-        ? `${row.account_code ? `${row.account_code} - ` : ""}${row.account_name}`
-        : `Account #${row.accountID ?? row.accountid ?? "-"}`;
-      const amount = Number(row.amount ?? 0);
-
-      let approval = "Pending";
-      if (postingId) approval = "Posted";
-      else if (approvedIds.includes(id)) approval = "Approved";
+      const normalizedExpenses = useMemo(() => {
+    return expenses.map((e, idx) => {
+      const isPayroll =
+        e.source_type === "Payroll" ||
+        String(e.expenseID || "").startsWith("PR-");
+      const rawId = isPayroll
+        ? Number(
+            e.payrollExpenseID ??
+              String(e.expenseID).replace("PR-", "") ??
+              idx + 1
+          )
+        : Number(e.expenseID ?? idx + 1);
+      const rowKey = isPayroll ? `PR-${rawId}` : `EXP-${rawId}`;
+      const isPosted = e.postingID != null;
 
       return {
-        id,
-        displayId,
-        reference: `Production Order #${prodId}`,
-        category,
-        amount,
-        postingLabel: postingId ? `JE-${String(postingId).padStart(4, "0")}` : "Not Posted",
-        approval,
-        sourceType: prodId !== "-" ? "Production Cost" : "Operating Expense",
+        ...e,
+        rowKey,
+        rawId,
+        isPayroll,
+        isProduction: !isPayroll && e.productionID != null,
+        isPosted,
       };
     });
-  }, [expenses, approvedIds]);
+  }, [expenses]);
 
-  const stats = useMemo(() => {
-    const expenseSum = normalizedExpenses.reduce((s, e) => s + e.amount, 0);
-    const totalRecorded = expenseSum + payrollTotal;
-    const pendingRows = normalizedExpenses.filter((e) => e.approval === "Pending");
-    const approvedRows = normalizedExpenses.filter((e) => e.approval === "Approved");
+   const stats = useMemo(() => {
+    // 1. Operating & Production Expenses: includes Direct Overhead, Approved Production, AND Approved HR Payroll
+    const approvedOperatingAndProd = normalizedExpenses
+      .filter((e) => !e.isPayroll || e.isPosted)
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    // 2. Unapproved (Pending) HR Payroll runs not yet added into Operating & Production Expenses
+    const pendingPayroll = normalizedExpenses
+      .filter((e) => e.isPayroll && !e.isPosted)
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+
+    const postedCount = normalizedExpenses.filter((e) => e.isPosted).length;
+    const unpostedCount = normalizedExpenses.filter((e) => !e.isPosted).length;
 
     return {
-      totalRecorded,
-      expenseSum,
-      expenseCount: normalizedExpenses.length,
-      pendingTotal: pendingRows.reduce((s, e) => s + e.amount, 0),
-      pendingCount: pendingRows.length,
-      approvedTotal: approvedRows.reduce((s, e) => s + e.amount, 0),
-      approvedCount: approvedRows.length,
+      directExpenses: approvedOperatingAndProd,
       payrollTotal,
+      combinedTotal: approvedOperatingAndProd + pendingPayroll,
+      postedCount,
+      unpostedCount,
     };
   }, [normalizedExpenses, payrollTotal]);
 
   const filteredExpenses = useMemo(() => {
-    return normalizedExpenses.filter((item) => {
-      if (activeTab !== "ALL" && item.approval !== activeTab) return false;
-      if (categoryFilter !== "ALL" && item.category !== categoryFilter) return false;
-
-      if (search) {
-        const q = search.toLowerCase();
-        const match =
-          item.displayId.toLowerCase().includes(q) ||
-          item.reference.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q);
-        if (!match) return false;
+    return normalizedExpenses.filter((e) => {
+      if (
+        accountFilter !== "ALL" &&
+        String(e.accountID) !== String(accountFilter)
+      ) {
+        return false;
       }
-      return true;
+      const q = search.toLowerCase();
+      return (
+        e.rowKey.toLowerCase().includes(q) ||
+        String(e.account_name || "").toLowerCase().includes(q) ||
+        String(e.account_code || "").toLowerCase().includes(q) ||
+        String(e.description || "").toLowerCase().includes(q)
+      );
     });
-  }, [normalizedExpenses, activeTab, categoryFilter, search]);
+  }, [normalizedExpenses, search, accountFilter]);
 
-  function toggleSelect(id: number) {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+  function toggleSelectRow(rowKey: string) {
+    setSelectedKeys((prev) =>
+      prev.includes(rowKey)
+        ? prev.filter((k) => k !== rowKey)
+        : [...prev, rowKey]
     );
   }
 
-  function handleApproveSelected() {
-    if (selectedIds.length === 0) {
-      alert("Select at least one expense checkbox first.");
-      return;
+  function handleBulkDropdownChange(action: string) {
+    setBulkSelectAction(action);
+    if (action === "ALL_PRODUCTION") {
+      setSelectedKeys(
+        filteredExpenses
+          .filter((e) => !e.isPosted && e.isProduction)
+          .map((e) => e.rowKey)
+      );
+    } else if (action === "ALL_PAYROLL") {
+      setSelectedKeys(
+        filteredExpenses
+          .filter((e) => !e.isPosted && e.isPayroll)
+          .map((e) => e.rowKey)
+      );
+    } else if (action === "ALL_PENDING") {
+      setSelectedKeys(
+        filteredExpenses.filter((e) => !e.isPosted).map((e) => e.rowKey)
+      );
+    } else if (action === "CLEAR") {
+      setSelectedKeys([]);
     }
-    setApprovedIds((prev) => Array.from(new Set([...prev, ...selectedIds])));
-    setSelectedIds([]);
   }
 
-  async function handleCreateExpense(e: React.FormEvent) {
-    e.preventDefault();
-    if (!formAccountId || !formProductionId || !formAmount) return;
+  async function handleBatchApprove() {
+    if (selectedKeys.length === 0) return;
 
-    setSubmitting(true);
+    const expenseIds = selectedKeys
+      .filter((k) => k.startsWith("EXP-"))
+      .map((k) => Number(k.replace("EXP-", "")));
+    const payrollIds = selectedKeys
+      .filter((k) => k.startsWith("PR-"))
+      .map((k) => Number(k.replace("PR-", "")));
+
+    setApproving(true);
     try {
-      // FETCH: POST http://127.0.0
-      // Backend File: finance/backend/routers/expense.py -> create_expense()
-      // Database Tables: Inserts into "Expense" and auto-posts description + debit/credit lines to "JournalEntry", "JournalEntryLine", & "GeneralLedger"
-      // Purpose: Saves the expense, records its description in Journal Entries, and auto-links postingID
-      const res = await fetch("http://127.0.0", {
+      // FETCH 3: POST http://127.0.0
+      const res = await fetch("http://127.0.0.1:8000/api/expense/batch-approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountID: Number(formAccountId),
-          productionID: formProductionId ? Number(formProductionId) : null,
-          description: formDescription.trim(),
-          amount: Number(formAmount),
-        }),
+        body: JSON.stringify({ expenseIds, payrollIds }),
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Failed to save expense");
+        throw new Error(errData.detail || "Batch approval failed");
       }
 
-      setShowAddModal(false);
-      setFormAccountId("");
-      setFormDescription("");
-      setFormProductionId("");
-      setFormAmount("");
+      const result = await res.json();
+      alert(result.message || "Approved and posted to Journal Entries!");
+      setSelectedKeys([]);
+      setBulkSelectAction("");
       await fetchData();
     } catch (err: any) {
-      alert(err.message || "Error creating expense");
+      alert(err.message || "Error approving expenses");
     } finally {
-      setSubmitting(false);
+      setApproving(false);
     }
   }
 
+  async function handleCreateExpense(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formAccountId || !formDescription.trim() || Number(formAmount) <= 0) {
+    alert("Please fill in Account, Description, and Amount.");
+    return;
+  }
+
+  setSubmitting(true);
+  try {
+
+    // EXACT FETCH PATH: POST http://127.0.0
+      // FRONTEND FILE: finance/frontend/app/expenses/page.tsx -> handleCreateExpense()
+      // BACKEND ROUTE: finance/backend/routers/expense.py -> create_expense()
+    const res = await fetch("http://127.0.0.1:8000/api/expense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountID: Number(formAccountId),
+        productionID: formProductionId ? Number(formProductionId) : null,
+        description: formDescription.trim(),
+        amount: Number(formAmount),
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || "Failed to save expense");
+    }
+
+    setShowAddModal(false);
+    setFormAccountId("");
+    setFormDescription("");
+    setFormProductionId("");
+    setFormAmount("");
+    await fetchData();
+  } catch (err: any) {
+    alert(err.message);
+  } finally {
+    setSubmitting(false);
+  }
+}
+
+
+    const pendingFiltered = filteredExpenses.filter((e) => !e.isPosted);
+  const allPendingChecked =
+    pendingFiltered.length > 0 &&
+    pendingFiltered.every((e) => selectedKeys.includes(e.rowKey));
+
   return (
     <div className="expenses-page">
-      {/* Header */}
       <div className="page-header">
         <div>
-          <h1>Expenses</h1>
+          <h1>Expenses &amp; Production Costing</h1>
           <p>
-            Capture production and operating costs, review claims and keep business spending organized.
+            Approve production costs for ledger posting, release HR payroll to BPI Payroll, and record direct expenses.
           </p>
         </div>
 
-        <div className="header-actions">
-          <button className="btn-light" onClick={() => window.print()}>
-            Export
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="btn-secondary" onClick={fetchData}>
+            Sync &amp; Refresh
           </button>
           <button className="btn-primary" onClick={() => setShowAddModal(true)}>
-            Add expense
+            Add Expense
           </button>
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card">
-          <p>Total recorded costs</p>
-          <h2>{loading ? "..." : formatCurrency(stats.totalRecorded)}</h2>
-          <span>Includes {formatCurrency(stats.payrollTotal)} payroll</span>
+          <span>Operating &amp; Production Expenses</span>
+          <h2>{loading ? "..." : formatCurrency(stats.directExpenses)}</h2>
+          <small>Production &amp; overhead items</small>
         </div>
 
         <div className="summary-card">
-          <p>Production & OpEx</p>
-          <h2>{loading ? "..." : formatCurrency(stats.expenseSum)}</h2>
-          <span>
-            {stats.expenseCount} {stats.expenseCount === 1 ? "item" : "items"} recorded
-          </span>
+          <span>HR Payroll Expenses</span>
+          <h2>{loading ? "..." : formatCurrency(stats.payrollTotal)}</h2>
+          <small>Disbursed directly to BPI Payroll</small>
         </div>
 
         <div className="summary-card">
-          <p>Awaiting approval</p>
-          <h2>{loading ? "..." : formatCurrency(stats.pendingTotal)}</h2>
-          <span>
-            {stats.pendingCount} {stats.pendingCount === 1 ? "item" : "items"} - Not yet posted
-          </span>
+          <span>Combined Total Outflow</span>
+          <h2>{loading ? "..." : formatCurrency(stats.combinedTotal)}</h2>
+          <small>Expenses + Payroll combined</small>
         </div>
 
         <div className="summary-card">
-          <p>Approved for posting</p>
-          <h2>{loading ? "..." : formatCurrency(stats.approvedTotal)}</h2>
-          <span>
-            {stats.approvedCount} approved {stats.approvedCount === 1 ? "expense" : "expenses"}
-          </span>
+          <span>Journal Posting Status</span>
+          <h2>
+            {loading ? "..." : `${stats.postedCount} / ${normalizedExpenses.length}`}
+          </h2>
+          <small>
+            {stats.unpostedCount === 0
+              ? "All expenses posted to ledger"
+              : `${stats.unpostedCount} awaiting approval`}
+          </small>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="tabs">
-        {(
-          [
-            { key: "ALL", label: "All expenses" },
-            { key: "Pending", label: "Pending approval" },
-            { key: "Approved", label: "Approved" },
-            { key: "Posted", label: "Posted" },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.key}
-            className={activeTab === t.key ? "active" : ""}
-            onClick={() => setActiveTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Filters */}
-      <div className="filters">
+      <div
+        className="filter-bar"
+        style={{ margin: "1rem 0", display: "flex", gap: "0.65rem", flexWrap: "wrap", alignItems: "center" }}
+      >
         <input
           type="text"
-          placeholder="Search expense, production order, or account..."
+          placeholder="Search ID, description, or account..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: "200px",
+            padding: "0.55rem 0.75rem",
+            borderRadius: "6px",
+            border: "1px solid #d1d5db",
+          }}
         />
 
         <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-        >
-          <option value="ALL">All categories</option>
-          {Array.from(new Set(normalizedExpenses.map((e) => e.category))).map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
-            </option>
-          ))}
-        </select>
-
-        <button
-          className="btn-light"
-          onClick={() => {
-            setSearch("");
-            setCategoryFilter("ALL");
-            setActiveTab("ALL");
+          value={accountFilter}
+          onChange={(e) => setAccountFilter(e.target.value)}
+          style={{
+            padding: "0.55rem 0.75rem",
+            borderRadius: "6px",
+            border: "1px solid #d1d5db",
+            backgroundColor: "#fff",
           }}
         >
-          Reset filters
-        </button>
+          <option value="ALL">All Accounts ({accounts.length})</option>
+          {accounts.map((acc, idx) => {
+            const id = acc.accountID ?? acc.accountid ?? idx;
+            const code = acc.accountCode ?? acc.accountcode ?? "";
+            const name = acc.accountName ?? acc.accountname ?? `Account #${id}`;
+            return (
+              <option key={id} value={id}>
+                {code ? `${code} - ` : ""}{name}
+              </option>
+            );
+          })}
+        </select>
+
+        <select
+          value={bulkSelectAction}
+          onChange={(e) => handleBulkDropdownChange(e.target.value)}
+          style={{
+            padding: "0.55rem 0.75rem",
+            borderRadius: "6px",
+            border: "1px solid #93c5fd",
+            backgroundColor: "#eff6ff",
+            color: "#1e40af",
+            fontWeight: 500,
+          }}
+        >
+          <option value="">-- Select Category to Check --</option>
+          <option value="ALL_PRODUCTION">Check All Pending Production</option>
+          <option value="ALL_PAYROLL">Check All Pending Payroll</option>
+          <option value="ALL_PENDING">Check All Pending Items</option>
+          <option value="CLEAR">Uncheck All</option>
+        </select>
+
+        {selectedKeys.length > 0 && (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={approving}
+            onClick={handleBatchApprove}
+            style={{ backgroundColor: "#16a34a" }}
+          >
+            {approving ? "Posting..." : `Approve & Post Selected (${selectedKeys.length})`}
+          </button>
+        )}
       </div>
 
-       {/* Table */}
       <div className="table-card">
         <div className="table-header">
           <div>
-            <h3>Expense register</h3>
-            <p>Linked to Chart of Accounts and Production Orders.</p>
+            <h3>Expense Register</h3>
+            <p>Check pending items to approve for Journal Posting or Payroll Transfer</p>
           </div>
-
-          <button className="btn-light" onClick={handleApproveSelected}>
-            Approve selected ({selectedIds.length})
-          </button>
         </div>
 
         {loading ? (
           <p style={{ padding: "1rem" }}>Loading expenses...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+          <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Select</th>
+                <th style={{ width: "40px" }}>
+                  <input
+                    type="checkbox"
+                    checked={allPendingChecked}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedKeys(pendingFiltered.map((x) => x.rowKey));
+                      } else {
+                        setSelectedKeys([]);
+                      }
+                    }}
+                  />
+                </th>
                 <th>Expense ID</th>
-                <th>Reference</th>
-                <th>Account Category</th>
-                <th>Amount</th>
+                <th>Account</th>
+                <th>Description</th>
+                <th>Category</th>
                 <th>Journal Posting</th>
-                <th>Approval</th>
-                <th>Source</th>
+                <th>Amount</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
                     No expenses recorded yet.
                   </td>
                 </tr>
               ) : (
-                filteredExpenses.map((item) => (
-                  <tr key={item.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(item.id)}
-                        onChange={() => toggleSelect(item.id)}
-                      />
-                    </td>
-                    <td>{item.displayId}</td>
-                    <td>{item.reference}</td>
-                    <td>{item.category}</td>
-                    <td>{formatCurrency(item.amount)}</td>
-                    <td>{item.postingLabel}</td>
-                    <td>
-                      <span className={`badge ${item.approval.toLowerCase()}`}>
-                        {item.approval}
-                      </span>
-                    </td>
-                    <td>{item.sourceType}</td>
-                  </tr>
-                ))
+                filteredExpenses.map((exp) => {
+                  const isChecked = selectedKeys.includes(exp.rowKey);
+                  return (
+                    <tr
+                      key={exp.rowKey}
+                      style={{ backgroundColor: isChecked ? "#f0fdf4" : undefined }}
+                    >
+                      <td>
+                        <input
+                          type="checkbox"
+                          disabled={exp.isPosted}
+                          checked={isChecked}
+                          onChange={() => toggleSelectRow(exp.rowKey)}
+                        />
+                      </td>
+                      <td><strong>{exp.rowKey}</strong></td>
+                      <td>
+                        {exp.account_code ? `${exp.account_code} - ` : ""}
+                        {exp.account_name || `Account #${exp.accountID}`}
+                      </td>
+                      <td>
+                        {exp.description ||
+                          (exp.productionID
+                            ? `Production Batch #${exp.productionID} Cost`
+                            : "Operating Expense")}
+                      </td>
+                      <td>
+                        {exp.isPayroll ? (
+                          <span className="badge">HR Payroll → BPI Payroll</span>
+                        ) : exp.isProduction ? (
+                          <span>Production #{exp.productionID}</span>
+                        ) : (
+                          <span style={{ color: "#6b7280" }}>Direct Overhead</span>
+                        )}
+                      </td>
+                      <td>
+                        {exp.isPosted ? (
+                          <span className="status posted">
+                            {exp.reference_no || `JE-${String(exp.postingID).padStart(4, "0")}`}
+                          </span>
+                        ) : (
+                          <span className="status pending">Pending Approval</span>
+                        )}
+                      </td>
+                      <td><strong>{formatCurrency(exp.amount)}</strong></td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         )}
       </div>
 
-     {/* Add Expense Modal */}
       {showAddModal && (
         <div
           style={{
@@ -391,7 +498,7 @@ export default function Expenses() {
               gap: "0.75rem",
             }}
           >
-            <h3>Add Expense</h3>
+            <h3>Add Direct Expense</h3>
 
             <label>Expense Account (Chart of Accounts) *</label>
             <select
@@ -403,12 +510,10 @@ export default function Expenses() {
               {accounts.map((acc, idx) => {
                 const id = acc.accountID ?? acc.accountid ?? idx;
                 const code = acc.accountCode ?? acc.accountcode ?? "";
-                const name =
-                  acc.accountName ?? acc.accountname ?? `Account #${id}`;
+                const name = acc.accountName ?? acc.accountname ?? `Account #${id}`;
                 return (
                   <option key={id} value={id}>
-                    {code ? `${code} - ` : ""}
-                    {name}
+                    {code ? `${code} - ` : ""}{name}
                   </option>
                 );
               })}
@@ -462,8 +567,8 @@ export default function Expenses() {
             />
 
             <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
-              Note: Journal Entry &amp; General Ledger posting are generated
-              automatically when you save.
+              Note: Saving automatically marks this expense paid and posts it
+              directly to Journal Entries &amp; General Ledger.
             </p>
 
             <div
@@ -482,7 +587,7 @@ export default function Expenses() {
                 className="btn-primary"
                 disabled={submitting}
               >
-                {submitting ? "Saving..." : "Save Expense"}
+                {submitting ? "Saving..." : "Save & Post Expense"}
               </button>
             </div>
           </form>
@@ -491,3 +596,4 @@ export default function Expenses() {
     </div>
   );
 }
+

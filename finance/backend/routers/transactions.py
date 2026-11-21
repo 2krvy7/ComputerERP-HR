@@ -25,83 +25,145 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     row = cur.fetchone()
     return row["table_name"] if row else None
 
-def pad_id(val) -> str:
-    return str(val).zfill(4) if val is not None else "0000"
-
 @router.get("/")
-def get_all_transactions():
+def get_bank_transactions():
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
             txs = []
 
-            # 1. Map bank accounts
+            # Map bankAccountID -> bank label + locate BDO Corporate Checking & BPI Payroll
+            bank_map = {}
+            bdo_bank = None
+            payroll_bank = None
             b_table = get_exact_table_name(cur, "BankAccount")
-            banks_map = {}
             if b_table:
                 b_cols = get_exact_cols(cur, b_table)
                 b_pk = b_cols.get("bankaccountid", "bankAccountID")
                 b_name = b_cols.get("bankname", "bankName")
                 b_num = b_cols.get("accountnumber", "accountNumber")
-                cur.execute(f'SELECT * FROM "{b_table}"')
+                cur.execute(f'SELECT "{b_pk}" AS id, "{b_name}" AS name, "{b_num}" AS num FROM "{b_table}" ORDER BY "{b_pk}" ASC')
                 for b in cur.fetchall():
-                    banks_map[b[b_pk]] = f"{b[b_name]} - {b[b_num]}"
+                    label = f"{b['name']} ({b['num']})"
+                    bank_map[b["id"]] = label
+                    low = str(b["name"] or "").lower()
+                    if "bdo" in low and not bdo_bank:
+                        bdo_bank = {"id": b["id"], "label": label}
+                    elif "payroll" in low and not payroll_bank:
+                        payroll_bank = {"id": b["id"], "label": label}
 
-            # 2. Cash Inflows from ARReceipt
+            # 1. Customer Collections (ARReceipt)
             rec_table = get_exact_table_name(cur, "ARReceipt")
             if rec_table:
                 r_cols = get_exact_cols(cur, rec_table)
-                r_pk = r_cols.get("receiptid", "receiptID")
-                r_inv = r_cols.get("arinvoiceid", "arInvoiceID")
-                r_bank = r_cols.get("bankaccountid", "bankAccountID")
-                r_date = r_cols.get("paymentdate", "paymentDate")
-                r_amt = r_cols.get("amount", "amount")
-
-                cur.execute(f'SELECT * FROM "{rec_table}" ORDER BY "{r_date}" DESC, "{r_pk}" DESC')
+                cur.execute(f"""
+                    SELECT 
+                        "{r_cols.get('receiptid', 'receiptID')}" AS id,
+                        "{r_cols.get('bankaccountid', 'bankAccountID')}" AS bank_id,
+                        "{r_cols.get('arinvoiceid', 'arInvoiceID')}" AS ref_id,
+                        "{r_cols.get('paymentdate', 'paymentDate')}" AS tx_date,
+                        "{r_cols.get('amount', 'amount')}" AS amount
+                    FROM "{rec_table}"
+                """)
                 for r in cur.fetchall():
-                    inv_id = r.get(r_inv)
-                    bank_id = r.get(r_bank)
+                    bid = r["bank_id"]
                     txs.append({
-                        "id": f"REC-{r[r_pk]}",
-                        "rawId": r[r_pk],
-                        "sourceType": "ARReceipt",
-                        "bankAccountID": bank_id,
-                        "bankAccountLabel": banks_map.get(bank_id, f"Account #{bank_id}"),
-                        "date": r.get(r_date),
-                        "description": f"Customer Receipt (AR Invoice #{inv_id})",
-                        "reference": f"INV-{pad_id(inv_id)}",
-                        "amount": float(r.get(r_amt) or 0),
+                        "id": f"REC-{r['id']}",
+                        "bankAccountID": bid,
+                        "bankAccountLabel": bank_map.get(bid, f"Bank #{bid}"),
+                        "date": r["tx_date"],
+                        "description": f"Customer Collection (AR Invoice #{r['ref_id']})",
+                        "reference": f"INV-{str(r['ref_id']).zfill(4)}",
+                        "amount": float(r["amount"] or 0),
                         "category": "Accounts Receivable",
                         "status": "Matched",
                     })
 
-            # 3. Cash Outflows from APPayment
+            # 2. Supplier Payments (APPayment)
             pay_table = get_exact_table_name(cur, "APPayment")
             if pay_table:
                 p_cols = get_exact_cols(cur, pay_table)
-                p_pk = p_cols.get("paymentid", "paymentID")
-                p_inv = p_cols.get("apinvoiceid", "apInvoiceID")
-                p_bank = p_cols.get("bankaccountid", "bankAccountID")
-                p_date = p_cols.get("paymentdate", "paymentDate")
-                p_amt = p_cols.get("amount", "amount")
-
-                cur.execute(f'SELECT * FROM "{pay_table}" ORDER BY "{p_date}" DESC, "{p_pk}" DESC')
+                cur.execute(f"""
+                    SELECT 
+                        "{p_cols.get('paymentid', 'paymentID')}" AS id,
+                        "{p_cols.get('bankaccountid', 'bankAccountID')}" AS bank_id,
+                        "{p_cols.get('apinvoiceid', 'apInvoiceID')}" AS ref_id,
+                        "{p_cols.get('paymentdate', 'paymentDate')}" AS tx_date,
+                        "{p_cols.get('amount', 'amount')}" AS amount
+                    FROM "{pay_table}"
+                """)
                 for p in cur.fetchall():
-                    inv_id = p.get(p_inv)
-                    bank_id = p.get(p_bank)
+                    bid = p["bank_id"]
                     txs.append({
-                        "id": f"PAY-{p[p_pk]}",
-                        "rawId": p[p_pk],
-                        "sourceType": "APPayment",
-                        "bankAccountID": bank_id,
-                        "bankAccountLabel": banks_map.get(bank_id, f"Account #{bank_id}"),
-                        "date": p.get(p_date),
-                        "description": f"Supplier Payment (AP Bill #{inv_id})",
-                        "reference": f"BILL-{pad_id(inv_id)}",
-                        "amount": -abs(float(p.get(p_amt) or 0)),
+                        "id": f"PAY-{p['id']}",
+                        "bankAccountID": bid,
+                        "bankAccountLabel": bank_map.get(bid, f"Bank #{bid}"),
+                        "date": p["tx_date"],
+                        "description": f"Supplier Payment (AP Bill #{p['ref_id']})",
+                        "reference": f"BILL-{str(p['ref_id']).zfill(4)}",
+                        "amount": -abs(float(p["amount"] or 0)),
                         "category": "Accounts Payable",
                         "status": "Matched",
                     })
+
+            # 3. Approved HR Payroll Disbursements & Direct Operating Expenses (from JournalEntry)
+            je_table = get_exact_table_name(cur, "JournalEntry")
+            jel_table = get_exact_table_name(cur, "JournalEntryLine")
+            if je_table and jel_table:
+                cur.execute(f"""
+                    SELECT 
+                        j."journalID" AS id,
+                        j."referenceNo" AS ref,
+                        j."sourceModule" AS mod,
+                        j."description" AS descr,
+                        j."journalDate" AS tx_date,
+                        COALESCE(SUM(l."debit"), 0) AS amt
+                    FROM "{je_table}" j
+                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                    WHERE j."sourceModule" IN ('Payroll', 'Expenses')
+                      AND COALESCE(l."debit", 0) > 0
+                    GROUP BY j."journalID", j."referenceNo", j."sourceModule", j."description", j."journalDate"
+                """)
+                for je in cur.fetchall():
+                    amt = float(je["amt"] or 0)
+                    ref_code = je["ref"] or f"JE-{str(je['id']).zfill(4)}"
+                    if je["mod"] == "Payroll":
+                        if bdo_bank:
+                            txs.append({
+                                "id": f"JE-OUT-{je['id']}",
+                                "bankAccountID": bdo_bank["id"],
+                                "bankAccountLabel": bdo_bank["label"],
+                                "date": je["tx_date"],
+                                "description": je["descr"] or "HR Payroll Disbursement",
+                                "reference": ref_code,
+                                "amount": -abs(amt),
+                                "category": "Payroll Expense",
+                                "status": "Matched",
+                            })
+                        if payroll_bank:
+                            txs.append({
+                                "id": f"JE-IN-{je['id']}",
+                                "bankAccountID": payroll_bank["id"],
+                                "bankAccountLabel": payroll_bank["label"],
+                                "date": je["tx_date"],
+                                "description": f"Payroll Funding Received ({ref_code})",
+                                "reference": ref_code,
+                                "amount": abs(amt),
+                                "category": "Payroll Expense",
+                                "status": "Matched",
+                            })
+                    elif je["mod"] == "Expenses" and bdo_bank:
+                        txs.append({
+                            "id": f"JE-EXP-{je['id']}",
+                            "bankAccountID": bdo_bank["id"],
+                            "bankAccountLabel": bdo_bank["label"],
+                            "date": je["tx_date"],
+                            "description": je["descr"] or "Direct Operating Expense",
+                            "reference": ref_code,
+                            "amount": -abs(amt),
+                            "category": "Operating Expense",
+                            "status": "Matched",
+                        })
 
             txs.sort(key=lambda x: str(x["date"] or ""), reverse=True)
             return txs

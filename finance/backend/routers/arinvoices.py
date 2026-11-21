@@ -39,22 +39,114 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     row = cur.fetchone()
     return row["table_name"] if row else None
 
+def auto_sync_sales_invoices(cur):
+    """Safely pulls valid customer invoices from Team 4's Sales table into Finance ARInvoice."""
+    ar_table = get_exact_table_name(cur, "ARInvoice")
+    sales_table = (
+        get_exact_table_name(cur, "sales_invoice")
+        or get_exact_table_name(cur, "Sales Invoice")
+        or get_exact_table_name(cur, "SalesInvoice")
+        or get_exact_table_name(cur, "SALES_INVOICE")
+    )
+    if not (ar_table and sales_table):
+        return 0
+
+    ar_cols = get_exact_cols(cur, ar_table)
+    s_cols = get_exact_cols(cur, sales_table)
+
+    s_pk = (
+        s_cols.get("salesinvoice_id")
+        or s_cols.get("sales_invoice_id")
+        or s_cols.get("salesinvoiceid")
+        or s_cols.get("si_id")
+        or s_cols.get("invoice_id")
+        or s_cols.get("id")
+    )
+    s_cust = next((orig for low, orig in s_cols.items() if "cust" in low and "id" in low), None)
+    s_amt = (
+        s_cols.get("totalamount")
+        or s_cols.get("total_amount")
+        or s_cols.get("grand_total")
+        or s_cols.get("amount")
+        or s_cols.get("total")
+    )
+    s_date = next((orig for low, orig in s_cols.items() if "date" in low and "due" not in low), None)
+    s_due = next((orig for low, orig in s_cols.items() if "due" in low), None)
+
+    ar_si = ar_cols.get("salesinvoiceid")
+    ar_cust = ar_cols.get("customerid")
+    ar_amt = ar_cols.get("amount")
+    ar_paid = ar_cols.get("totalpaid")
+    ar_rem = ar_cols.get("remainingbalance")
+    ar_stat = ar_cols.get("status")
+    ar_due = ar_cols.get("duedate")
+
+    # Require both salesInvoiceID and customerID so NOT NULL constraints never fail
+    if not (s_pk and s_cust and s_amt and ar_si and ar_cust and ar_amt):
+        return 0
+
+    if s_due:
+        due_expr = f'COALESCE(si."{s_due}"::date, CURRENT_DATE + INTERVAL \'30 days\')'
+    elif s_date:
+        due_expr = f'COALESCE(si."{s_date}"::date, CURRENT_DATE) + INTERVAL \'30 days\''
+    else:
+        due_expr = "CURRENT_DATE + INTERVAL '30 days'"
+
+    ins_cols = [f'"{ar_si}"', f'"{ar_cust}"', f'"{ar_amt}"']
+    sel_cols = [f'si."{s_pk}"', f'si."{s_cust}"', f'si."{s_amt}"']
+
+    if ar_paid:
+        ins_cols.append(f'"{ar_paid}"')
+        sel_cols.append("0")
+    if ar_rem:
+        ins_cols.append(f'"{ar_rem}"')
+        sel_cols.append(f'si."{s_amt}"')
+    if ar_stat:
+        ins_cols.append(f'"{ar_stat}"')
+        sel_cols.append("'Sent'")
+    if ar_due:
+        ins_cols.append(f'"{ar_due}"')
+        sel_cols.append(due_expr)
+
+    cur.execute(f"""
+        INSERT INTO "{ar_table}" ({", ".join(ins_cols)})
+        SELECT {", ".join(sel_cols)}
+        FROM "{sales_table}" si
+        WHERE COALESCE(si."{s_amt}", 0) > 0
+          AND si."{s_pk}" IS NOT NULL
+          AND si."{s_cust}" IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM "{ar_table}" ar WHERE ar."{ar_si}" = si."{s_pk}"
+          )
+        RETURNING 1
+    """)
+    return len(cur.fetchall())
+
+
 @router.get("/")
 def get_ar_invoices():
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
+            # Protect auto-sync with a SAVEPOINT so GET /api/arinvoices/ never fails
+            try:
+                cur.execute("SAVEPOINT sync_sales_sp")
+                auto_sync_sales_invoices(cur)
+                cur.execute("RELEASE SAVEPOINT sync_sales_sp")
+                conn.commit()
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT sync_sales_sp")
+
             ar_table = get_exact_table_name(cur, "ARInvoice")
             if not ar_table:
                 return []
 
             ar_cols = get_exact_cols(cur, ar_table)
+            ar_pk = ar_cols.get("arinvoiceid", "arInvoiceID")
             rec_table = get_exact_table_name(cur, "ARReceipt")
 
-            # Auto-sync ARInvoice totalPaid, remainingBalance, and status from ARReceipt
             if rec_table:
                 r_cols = get_exact_cols(cur, rec_table)
-                ar_pk = ar_cols.get("arinvoiceid", "arInvoiceID")
                 ar_amt = ar_cols.get("amount", "amount")
                 ar_paid = ar_cols.get("totalpaid", "totalPaid")
                 ar_rem = ar_cols.get("remainingbalance", "remainingBalance")
@@ -85,15 +177,10 @@ def get_ar_invoices():
                 c_cols = get_exact_cols(cur, cust_table)
                 ar_cust = ar_cols.get("customerid")
                 c_pk = c_cols.get("customerid") or c_cols.get("cust_id") or c_cols.get("id")
-                c_name = next(
-                    (orig for low, orig in c_cols.items() if "name" in low),
-                    None,
-                )
+                c_name = next((orig for low, orig in c_cols.items() if "name" in low), None)
                 if ar_cust and c_pk and c_name:
                     cur.execute(f"""
-                        SELECT 
-                            a.*,
-                            c."{c_name}" AS customer_name
+                        SELECT a.*, c."{c_name}" AS customer_name
                         FROM "{ar_table}" a
                         LEFT JOIN "{cust_table}" c ON a."{ar_cust}" = c."{c_pk}"
                         ORDER BY 1 DESC
@@ -104,7 +191,6 @@ def get_ar_invoices():
             return cur.fetchall()
     finally:
         conn.close()
-
 
 @router.get("/customers")
 def get_customers():
@@ -121,25 +207,70 @@ def get_customers():
 
 @router.get("/receipts-summary")
 def get_receipts_summary():
+    """Calculates Collected Total strictly from money received by BPI Sales (excluding 5M BDO seed deposit)."""
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
             rec_table = get_exact_table_name(cur, "ARReceipt")
+            bank_table = get_exact_table_name(cur, "BankAccount")
             if not rec_table:
                 return {"totalCollected": 0, "receiptCount": 0}
+
             r_cols = get_exact_cols(cur, rec_table)
             amt_col = r_cols.get("amount") or "amount"
-            cur.execute(f"""
-                SELECT 
-                    COALESCE(SUM("{amt_col}"), 0) AS total_collected,
-                    COUNT(*) AS receipt_count
-                FROM "{rec_table}"
-            """)
+            inv_col = r_cols.get("arinvoiceid") or "arInvoiceID"
+            rbank_col = r_cols.get("bankaccountid") or "bankAccountID"
+
+            if bank_table:
+                b_cols = get_exact_cols(cur, bank_table)
+                b_pk = b_cols.get("bankaccountid") or "bankAccountID"
+                b_name = b_cols.get("bankname") or "bankName"
+                b_rec = b_cols.get("isreceiver")
+
+                role_filter = (
+                    f'(b."{b_name}" ILIKE \'%BPI Sales%\' OR COALESCE(b."{b_rec}", FALSE) = TRUE)'
+                    if b_rec
+                    else f'b."{b_name}" ILIKE \'%BPI Sales%\''
+                )
+
+                cur.execute(f"""
+                    SELECT 
+                        COALESCE(SUM(r."{amt_col}"), 0) AS total_collected,
+                        COUNT(*) AS receipt_count
+                    FROM "{rec_table}" r
+                    JOIN "{bank_table}" b ON r."{rbank_col}" = b."{b_pk}"
+                    WHERE r."{inv_col}" != 1
+                      AND {role_filter}
+                """)
+            else:
+                cur.execute(f"""
+                    SELECT 
+                        COALESCE(SUM("{amt_col}"), 0) AS total_collected,
+                        COUNT(*) AS receipt_count
+                    FROM "{rec_table}"
+                    WHERE "{inv_col}" != 1
+                """)
+
             row = cur.fetchone()
             return {
-                "totalCollected": float(row["total_collected"]),
-                "receiptCount": row["receipt_count"]
+                "totalCollected": float(row["total_collected"] or 0),
+                "receiptCount": int(row["receipt_count"] or 0),
             }
+    finally:
+        conn.close()
+
+@router.post("/sync-sales")
+def trigger_sales_sync():
+    """Manual trigger endpoint for the 'Sync from Sales' button on the AR Invoices page."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            count = auto_sync_sales_invoices(cur)
+            conn.commit()
+            return {"message": f"Synced {count} invoice(s) from Sales", "syncedCount": count}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
     finally:
         conn.close()
 
@@ -202,6 +333,14 @@ def update_ar_status(invoice_id: int, status: str = "Sent"):
             amt_col = cols.get("amount") or "amount"
 
             if status.lower() == "paid":
+                # Check remaining balance before marking Paid
+                cur.execute(f'SELECT "{amt_col}" AS amt, COALESCE("{rem_col}", "{amt_col}") AS rem FROM "{ar_table}" WHERE "{pk_col}" = %s', (invoice_id,))
+                inv = cur.fetchone()
+                if not inv:
+                    raise HTTPException(status_code=404, detail="AR Invoice not found")
+
+                unpaid_amt = float(inv["rem"] or 0)
+
                 cur.execute(f"""
                     UPDATE "{ar_table}"
                     SET "{stat_col}" = 'Paid',
@@ -210,6 +349,30 @@ def update_ar_status(invoice_id: int, status: str = "Sent"):
                     WHERE "{pk_col}" = %s
                     RETURNING *
                 """, (invoice_id,))
+                updated = cur.fetchone()
+
+                # Automatically deposit the unpaid balance into BPI Sales (isReceiver = TRUE)
+                rec_table = get_exact_table_name(cur, "ARReceipt")
+                bank_table = get_exact_table_name(cur, "BankAccount")
+                if rec_table and bank_table and unpaid_amt > 0:
+                    b_cols = get_exact_cols(cur, bank_table)
+                    b_pk = b_cols.get("bankaccountid", "bankAccountID")
+                    b_rec = b_cols.get("isreceiver")
+                    where_rec = f'WHERE COALESCE("{b_rec}", TRUE) = TRUE' if b_rec else ""
+                    cur.execute(f'SELECT "{b_pk}" AS id FROM "{bank_table}" {where_rec} ORDER BY "{b_pk}" ASC LIMIT 1')
+                    rec_bank = cur.fetchone()
+
+                    if rec_bank:
+                        r_cols = get_exact_cols(cur, rec_table)
+                        cur.execute(f"""
+                            INSERT INTO "{rec_table}" (
+                                "{r_cols.get('arinvoiceid', 'arInvoiceID')}",
+                                "{r_cols.get('bankaccountid', 'bankAccountID')}",
+                                "{r_cols.get('paymentdate', 'paymentDate')}",
+                                "{r_cols.get('amount', 'amount')}"
+                            )
+                            VALUES (%s, %s, CURRENT_DATE, %s)
+                        """, (invoice_id, rec_bank["id"], unpaid_amt))
             else:
                 cur.execute(f"""
                     UPDATE "{ar_table}"
@@ -217,10 +380,10 @@ def update_ar_status(invoice_id: int, status: str = "Sent"):
                     WHERE "{pk_col}" = %s
                     RETURNING *
                 """, (status, invoice_id))
+                updated = cur.fetchone()
+                if not updated:
+                    raise HTTPException(status_code=404, detail="AR Invoice not found")
 
-            updated = cur.fetchone()
-            if not updated:
-                raise HTTPException(status_code=404, detail="AR Invoice not found")
             conn.commit()
             return updated
     except HTTPException:
@@ -277,71 +440,6 @@ def receive_sales_invoice(payload: SalesInvoiceWebhookPayload):
             created = cur.fetchone()
             conn.commit()
             return {"message": "Sales Invoice synced to Accounts Receivable", "arInvoice": created}
-    except HTTPException:
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        conn.close()
-
-@router.post("/sync-sales")
-def sync_from_sales_table():
-    """Pulls unimported rows from Team 4's Sales Invoice table into Finance's ARInvoice table."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor(row_factory=dict_row) as cur:
-            ar_table = get_exact_table_name(cur, "ARInvoice") or "ARInvoice"
-            sales_table = (
-                get_exact_table_name(cur, "Sales Invoice")
-                or get_exact_table_name(cur, "SalesInvoice")
-                or get_exact_table_name(cur, "SALES_INVOICE")
-            )
-            if not sales_table:
-                return {"syncedCount": 0, "message": "Sales Invoice table not found in database"}
-
-            ar_cols = get_exact_cols(cur, ar_table)
-            s_cols = get_exact_cols(cur, sales_table)
-
-            s_pk = s_cols.get("salesinvoice_id") or s_cols.get("salesinvoiceid") or s_cols.get("si_id") or s_cols.get("id")
-            s_cust = s_cols.get("customerid") or s_cols.get("customer_id")
-            s_amt = s_cols.get("totalamount") or s_cols.get("total_amount") or s_cols.get("amount") or s_cols.get("totaldue")
-            s_date = s_cols.get("invoicedate") or s_cols.get("invoice_date")
-
-            if not (s_pk and s_cust and s_amt):
-                raise HTTPException(status_code=400, detail="Could not match columns on Sales Invoice table.")
-
-            date_expr = f'COALESCE(si."{s_date}", CURRENT_DATE) + INTERVAL \'30 days\'' if s_date else "CURRENT_DATE + INTERVAL '30 days'"
-
-            cur.execute(f"""
-                INSERT INTO "{ar_table}" (
-                    "{ar_cols.get('salesinvoiceid', 'salesInvoiceID')}",
-                    "{ar_cols.get('customerid', 'customerID')}",
-                    "{ar_cols.get('amount', 'amount')}",
-                    "{ar_cols.get('totalpaid', 'totalPaid')}",
-                    "{ar_cols.get('remainingbalance', 'remainingBalance')}",
-                    "{ar_cols.get('status', 'status')}",
-                    "{ar_cols.get('duedate', 'dueDate')}"
-                )
-                SELECT 
-                    si."{s_pk}",
-                    si."{s_cust}",
-                    si."{s_amt}",
-                    0,
-                    si."{s_amt}",
-                    'Sent',
-                    {date_expr}
-                FROM "{sales_table}" si
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM "{ar_table}" ar
-                    WHERE ar."{ar_cols.get('salesinvoiceid', 'salesInvoiceID')}" = si."{s_pk}"
-                )
-                RETURNING *
-            """)
-            synced = cur.fetchall()
-            conn.commit()
-            return {"syncedCount": len(synced), "invoices": synced}
     except HTTPException:
         conn.rollback()
         raise

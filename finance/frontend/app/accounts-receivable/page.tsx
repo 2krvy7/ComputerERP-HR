@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import "./invoices.css";
+import "./arreceivable.css";
 
 export default function ARInvoices() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [receiptStats, setReceiptStats] = useState({ totalCollected: 0, receiptCount: 0 });
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [todayStr, setTodayStr] = useState("");
 
@@ -30,7 +31,7 @@ export default function ARInvoices() {
   const [formStatus, setFormStatus] = useState("Sent");
 
   useEffect(() => {
-    setTodayStr(new Date().toISOString().split("T"));
+    setTodayStr(new Date().toISOString().split("T")[0]);
     fetchData();
   }, []);
 
@@ -41,7 +42,7 @@ export default function ARInvoices() {
       const [invRes, custRes, recRes] = await Promise.all([
         // FETCH 1: GET http://127.0.0
         // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
-        // Database Tables: Reads "ARInvoice" joined with Team 4 "Customer" (auto-syncs Paid status from "ARReceipt")
+        // Database Tables: Auto-syncs Team 4 Sales Invoices & ARReceipts, then reads "ARInvoice" joined with "Customer"
         // Purpose: Loads all customer receivables for the AR Invoices table and KPI cards
         fetch("http://127.0.0.1:8000/api/arinvoices"),
 
@@ -55,14 +56,20 @@ export default function ARInvoices() {
         // Backend File: finance/backend/routers/arinvoices.py -> get_receipts_summary()
         // Database Table: Aggregates "ARReceipt" (totalCollected and receiptCount)
         // Purpose: Displays total collections received on the AR Invoices summary card
-        fetch("http://127.0.0.1:8000/api/arinvoices/receipts-summary"),
+        fetch("http://127.0.01:8000/api/arinvoices/receipts-summary"),
       ]);
 
       if (!invRes.ok) throw new Error(`AR API error: ${invRes.status}`);
-      setInvoices(await invRes.json());
+      const invJson = await invRes.json();
+      setInvoices(Array.isArray(invJson) ? invJson : []);
 
-      if (custRes.ok) setCustomers(await custRes.json());
-      if (recRes.ok) setReceiptStats(await recRes.json());
+      if (custRes.ok) {
+        const custJson = await custRes.json();
+        setCustomers(Array.isArray(custJson) ? custJson : []);
+      }
+      if (recRes.ok) {
+        setReceiptStats(await recRes.json());
+      }
     } catch (err: any) {
       setError(err.message || "Failed to load AR invoices");
     } finally {
@@ -90,18 +97,32 @@ export default function ARInvoices() {
       const rawId = row.arInvoiceID ?? row.arinvoiceid ?? row.id ?? idx + 1;
       const displayId = `INV-${String(rawId).padStart(4, "0")}`;
       const custId = row.customerID ?? row.customerid ?? "";
-      const customer = row.customer_name ?? row.customerName ?? (custId ? `Customer #${custId}` : "Walk-in Customer");
+      const customer =
+        row.customer_name ??
+        row.customerName ??
+        (custId ? `Customer #${custId}` : "Walk-in Customer");
       const salesRef = row.salesInvoiceID ?? row.salesinvoiceid;
-      const description = salesRef ? `Sales Invoice #${salesRef}` : "Customer Receivable";
+      const description = salesRef
+        ? `Sales Invoice #${salesRef}`
+        : "Customer Receivable";
       const dueDateRaw = row.dueDate ?? row.duedate ?? "";
-      const isoDue = dueDateRaw ? new Date(dueDateRaw).toISOString().split("T") : "";
+      const isoDue = dueDateRaw
+        ? new Date(dueDateRaw).toISOString().split("T")[0]
+        : "";
       const amount = Number(row.amount ?? 0);
-      const balance = Number(row.remainingBalance ?? row.remainingbalance ?? amount);
+      const balance = Number(
+        row.remainingBalance ?? row.remainingbalance ?? amount
+      );
 
       let status = row.status ?? "Sent";
       if (balance <= 0 || status.toLowerCase() === "paid") {
         status = "Paid";
-      } else if (status.toLowerCase() !== "draft" && todayStr && isoDue && isoDue < todayStr) {
+      } else if (
+        status.toLowerCase() !== "draft" &&
+        todayStr &&
+        isoDue &&
+        isoDue < todayStr
+      ) {
         status = "Overdue";
       }
 
@@ -119,16 +140,15 @@ export default function ARInvoices() {
     });
   }, [invoices, todayStr]);
 
-  const stats = useMemo(() => {
-    const unpaid = normalizedInvoices.filter((i) => i.status !== "Paid" && i.status !== "Draft");
+    const stats = useMemo(() => {
+    const unpaid = normalizedInvoices.filter(
+      (i) => i.status !== "Paid" && i.status !== "Draft"
+    );
     const overdue = unpaid.filter((i) => i.status === "Overdue");
     const current = unpaid.filter((i) => i.status !== "Overdue");
-    const paidInvoices = normalizedInvoices.filter((i) => i.status === "Paid");
 
-    const collected =
-      receiptStats.totalCollected > 0
-        ? receiptStats.totalCollected
-        : paidInvoices.reduce((s, i) => s + i.amount, 0);
+    const collected = Number(receiptStats.totalCollected || 0);
+    const receiptCount = Number(receiptStats.receiptCount || 0);
 
     return {
       outstandingTotal: unpaid.reduce((s, i) => s + i.balance, 0),
@@ -137,9 +157,10 @@ export default function ARInvoices() {
       overdueTotal: overdue.reduce((s, i) => s + i.balance, 0),
       overdueCount: overdue.length,
       collectedTotal: collected,
-      receiptCount: receiptStats.receiptCount || paidInvoices.length,
+      receiptCount,
     };
   }, [normalizedInvoices, receiptStats]);
+
 
   const filteredInvoices = useMemo(() => {
     return normalizedInvoices.filter((inv) => {
@@ -171,8 +192,7 @@ export default function ARInvoices() {
 
     setSubmitting(true);
     try {
-
-       // FETCH 4: POST http://127.0.0
+      // FETCH 4: POST http://127.0.0
       // Backend File: finance/backend/routers/arinvoices.py -> create_ar_invoice()
       // Database Table: Inserts a new customer invoice into "ARInvoice"
       // Purpose: Creates a new receivable record in PostgreSQL
@@ -188,7 +208,7 @@ export default function ARInvoices() {
         }),
       });
       if (!res.ok) {
-        const errData = await res.json();
+        const errData = await res.json().catch(() => ({}));
         throw new Error(errData.detail || "Failed to create invoice");
       }
       setShowCreateModal(false);
@@ -204,8 +224,12 @@ export default function ARInvoices() {
 
   async function handleStatusUpdate(rawId: number, newStatus: string) {
     try {
+      // FETCH 5: PATCH http://127.0.0{rawId}/status?status={newStatus}
+      // Backend File: finance/backend/routers/arinvoices.py -> update_ar_status()
+      // Database Table: Updates "ARInvoice" status ('Sent' or 'Paid') and sets remainingBalance = 0 when Paid
+      // Purpose: Updates invoice status from the View Invoice modal
       const res = await fetch(
-        `http://127.0.0/${rawId}/status?status=${newStatus}`,
+        `http://127.0.01:8000/api/arinvoices/${rawId}/status?status=${newStatus}`,
         { method: "PATCH" }
       );
       if (!res.ok) throw new Error("Failed to update invoice status");
@@ -216,7 +240,27 @@ export default function ARInvoices() {
     }
   }
 
-    return (
+  async function handleSyncFromSales() {
+    setSyncing(true);
+    try {
+      // FETCH 6: POST http://127.0.0sync-sales
+      // Backend File: finance/backend/routers/arinvoices.py -> trigger_sales_sync()
+      // Database Tables: Copies unimported rows from Team 4 "Sales Invoice" into Finance "ARInvoice"
+      // Purpose: Pulls new customer invoices from Sales on demand
+      const res = await fetch("http://127.0.0.1:8000/api/arinvoices/sync-sales", {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Failed to sync from Sales");
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message || "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+
+  return (
     <div className="ar-page">
       <div className="page-header">
         <div>
@@ -226,9 +270,19 @@ export default function ARInvoices() {
           </p>
         </div>
 
-        <button className="create-btn" onClick={() => setShowCreateModal(true)}>
-          Create Invoice
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={handleSyncFromSales}
+            disabled={syncing}
+          >
+            {syncing ? "Syncing Sales..." : "Sync from Sales"}
+          </button>
+          <button className="create-btn" onClick={() => setShowCreateModal(true)}>
+            Create Invoice
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -237,7 +291,8 @@ export default function ARInvoices() {
           <span>Outstanding Receivables</span>
           <h2>{loading ? "..." : formatCurrency(stats.outstandingTotal)}</h2>
           <small>
-            {stats.unpaidCount} unpaid customer {stats.unpaidCount === 1 ? "invoice" : "invoices"}
+            {stats.unpaidCount} unpaid customer{" "}
+            {stats.unpaidCount === 1 ? "invoice" : "invoices"}
           </small>
         </div>
 
@@ -253,7 +308,9 @@ export default function ARInvoices() {
           <small className={stats.overdueCount > 0 ? "warning" : ""}>
             {stats.overdueCount === 0
               ? "No overdue invoices"
-              : `${stats.overdueCount} ${stats.overdueCount === 1 ? "invoice needs" : "invoices need"} follow-up`}
+              : `${stats.overdueCount} ${
+                  stats.overdueCount === 1 ? "invoice needs" : "invoices need"
+                } follow-up`}
           </small>
         </div>
 
@@ -261,7 +318,8 @@ export default function ARInvoices() {
           <span>Collected Total</span>
           <h2>{loading ? "..." : formatCurrency(stats.collectedTotal)}</h2>
           <small className="success">
-            {stats.receiptCount} customer {stats.receiptCount === 1 ? "receipt" : "receipts"}
+            {stats.receiptCount} customer{" "}
+            {stats.receiptCount === 1 ? "receipt" : "receipts"}
           </small>
         </div>
       </div>
@@ -301,11 +359,13 @@ export default function ARInvoices() {
           onChange={(e) => setCustomerFilter(e.target.value)}
         >
           <option value="ALL">All Customers</option>
-          {Array.from(new Set(normalizedInvoices.map((i) => i.customer))).map((cust) => (
-            <option key={cust} value={cust}>
-              {cust}
-            </option>
-          ))}
+          {Array.from(new Set(normalizedInvoices.map((i) => i.customer))).map(
+            (cust) => (
+              <option key={cust} value={cust}>
+                {cust}
+              </option>
+            )
+          )}
         </select>
 
         <select
@@ -441,7 +501,11 @@ export default function ARInvoices() {
                 <option value="">-- Select Customer --</option>
                 {customers.map((c, idx) => {
                   const id = c.customerID ?? c.customerid ?? c.id ?? idx;
-                  const name = c.customerName ?? c.customername ?? c.name ?? `Customer #${id}`;
+                  const name =
+                    c.customerName ??
+                    c.customername ??
+                    c.name ??
+                    `Customer #${id}`;
                   return (
                     <option key={id} value={id}>
                       {name}
@@ -486,16 +550,30 @@ export default function ARInvoices() {
             />
 
             <label>Initial Status</label>
-            <select value={formStatus} onChange={(e) => setFormStatus(e.target.value)}>
+            <select
+              value={formStatus}
+              onChange={(e) => setFormStatus(e.target.value)}
+            >
               <option value="Sent">Sent</option>
               <option value="Draft">Draft</option>
             </select>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
               <button type="button" onClick={() => setShowCreateModal(false)}>
                 Cancel
               </button>
-              <button type="submit" className="create-btn" disabled={submitting}>
+              <button
+                type="submit"
+                className="create-btn"
+                disabled={submitting}
+              >
                 {submitting ? "Saving..." : "Save Invoice"}
               </button>
             </div>
@@ -528,19 +606,42 @@ export default function ARInvoices() {
             }}
           >
             <h3>{viewingInvoice.displayId}</h3>
-            <p><strong>Customer:</strong> {viewingInvoice.customer}</p>
-            <p><strong>Description:</strong> {viewingInvoice.description}</p>
-            <p><strong>Due Date:</strong> {viewingInvoice.dueDateFormatted}</p>
-            <p><strong>Invoice Amount:</strong> {formatCurrency(viewingInvoice.amount)}</p>
-            <p><strong>Balance Due:</strong> {formatCurrency(viewingInvoice.balance)}</p>
-            <p><strong>Status:</strong> {viewingInvoice.status}</p>
+            <p>
+              <strong>Customer:</strong> {viewingInvoice.customer}
+            </p>
+            <p>
+              <strong>Description:</strong> {viewingInvoice.description}
+            </p>
+            <p>
+              <strong>Due Date:</strong> {viewingInvoice.dueDateFormatted}
+            </p>
+            <p>
+              <strong>Invoice Amount:</strong>{" "}
+              {formatCurrency(viewingInvoice.amount)}
+            </p>
+            <p>
+              <strong>Balance Due:</strong>{" "}
+              {formatCurrency(viewingInvoice.balance)}
+            </p>
+            <p>
+              <strong>Status:</strong> {viewingInvoice.status}
+            </p>
 
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
               <button onClick={() => setViewingInvoice(null)}>Close</button>
               {viewingInvoice.status === "Draft" && (
                 <button
                   className="secondary-btn"
-                  onClick={() => handleStatusUpdate(viewingInvoice.rawId, "Sent")}
+                  onClick={() =>
+                    handleStatusUpdate(viewingInvoice.rawId, "Sent")
+                  }
                 >
                   Mark as Sent
                 </button>
@@ -548,7 +649,9 @@ export default function ARInvoices() {
               {viewingInvoice.status !== "Paid" && (
                 <button
                   className="create-btn"
-                  onClick={() => handleStatusUpdate(viewingInvoice.rawId, "Paid")}
+                  onClick={() =>
+                    handleStatusUpdate(viewingInvoice.rawId, "Paid")
+                  }
                 >
                   Mark as Paid
                 </button>
