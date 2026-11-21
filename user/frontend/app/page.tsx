@@ -4,16 +4,16 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-const API = "http://127.0.0.1:8010";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8010";
 
 // Where each department's frontend runs on the presentation machine (edit the ports to match yours)
 const DEPT_URLS: Record<string, string> = {
-  PR: "http://localhost:3000",
-  HR: "http://localhost:3001",
-  IN: "http://localhost:3002",
-  PD: "http://localhost:3003",
-  SL: "http://localhost:3004",
-  FN: "http://localhost:3005",
+  PR: process.env.NEXT_PUBLIC_PR_URL || "http://localhost:3000",
+  HR: process.env.NEXT_PUBLIC_HR_URL || "http://localhost:3001",
+  IN: process.env.NEXT_PUBLIC_IN_URL || "http://localhost:3002",
+  PD: process.env.NEXT_PUBLIC_PD_URL || "http://localhost:3003",
+  SL: process.env.NEXT_PUBLIC_SL_URL || "http://localhost:3004",
+  FN: process.env.NEXT_PUBLIC_FN_URL || "http://localhost:3005",
 };
 
 type AppUser = { UserID: string; Username: string; role: string; department: string | null };

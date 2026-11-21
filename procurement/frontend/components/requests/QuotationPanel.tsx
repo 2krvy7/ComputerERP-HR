@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { getUser } from "@/components/AuthGate";
 
 const API = "http://127.0.0.1:8000";
 
@@ -67,7 +68,7 @@ const field = {
   color: "#24363b",
   backgroundColor: "#ffffff",
 };
-const btn = (primary: boolean) => ({    
+const btn = (primary: boolean) => ({
   padding: "0.45vw 1.1vw",
   borderRadius: "99vw",
   fontSize: "0.8vw",
@@ -91,6 +92,7 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
 
   // "Add bid" form fields
   const [supplierId, setSupplierId] = useState("");
+  const [supplierSearch, setSupplierSearch] = useState("");
   const [amount, setAmount] = useState("");
   const [terms, setTerms] = useState("");
 
@@ -103,7 +105,7 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Load the request, its bids, and the supplier list (for the dropdown) in parallel
+  // Load the request, its bids, and the supplier list (for the picker) in parallel
   useEffect(() => {
     async function load() {
       try {
@@ -168,6 +170,7 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
         }),
       () => {
         setSupplierId("");
+        setSupplierSearch("");
         setAmount("");
         setTerms("");
       }
@@ -194,8 +197,14 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
   }
 
   const isOpen = request?.Status === "Open";
+  const canManage = ["Admin", "SuperAdmin"].includes(getUser()?.role ?? "");
   const alreadyBid = new Set(quotations.map((q) => q.SupplierID));
   const availableSuppliers = suppliers.filter((s) => !alreadyBid.has(s.SupplierID));
+  const filteredSuppliers = availableSuppliers.filter((s) =>
+    s.SupplierName.toLowerCase().includes(supplierSearch.trim().toLowerCase())
+  );
+  const selectedSupplier = availableSuppliers.find((s) => String(s.SupplierID) === supplierId);
+  const canAdd = !busy && !!supplierId && Number(amount) > 0;
   const winner = quotations.find((q) => q.is_winner);
 
   return (
@@ -348,22 +357,58 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
                   {availableSuppliers.length === 0 ? (
                     <p style={{ color: "#888", margin: 0 }}>Every supplier has already bid on this request.</p>
                   ) : (
-                    <div style={{ display: "flex", gap: "0.7vw", alignItems: "center", flexWrap: "wrap" }}>
-                      <select
-                        value={supplierId}
-                        onChange={(e) => setSupplierId(e.target.value)}
-                        style={{ ...field, minWidth: "14vw" }}
-                      >
-                        <option value="">Choose supplier...</option>
-                        {availableSuppliers.map((s) => (
-                          <option key={s.SupplierID} value={s.SupplierID}>
-                            {s.SupplierName}
-                          </option>
-                        ))}
-                      </select>
+                    <div style={{ display: "flex", gap: "0.7vw", alignItems: "flex-start", flexWrap: "wrap" }}>
+                      {/* Supplier picker: search + scrollable list + clear "Selected" line */}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4vw", width: "18vw" }}>
+                        <input
+                          value={supplierSearch}
+                          onChange={(e) => setSupplierSearch(e.target.value)}
+                          placeholder="Search supplier..."
+                          style={field}
+                        />
+                        <div
+                          style={{
+                            maxHeight: "9vw",
+                            overflowY: "auto",
+                            border: "1px solid #c9d6d9",
+                            borderRadius: "0.6vw",
+                          }}
+                        >
+                          {filteredSuppliers.length === 0 ? (
+                            <div style={{ padding: "0.6vw 0.9vw", color: "#888888" }}>No supplier found</div>
+                          ) : (
+                            filteredSuppliers.map((s) => {
+                              const picked = String(s.SupplierID) === supplierId;
+                              return (
+                                <div
+                                  key={s.SupplierID}
+                                  onClick={() => setSupplierId(String(s.SupplierID))}
+                                  style={{
+                                    padding: "0.55vw 0.9vw",
+                                    cursor: "pointer",
+                                    color: picked ? "#ffffff" : "#24363b",
+                                    backgroundColor: picked ? "#365f68" : "transparent",
+                                  }}
+                                >
+                                  {s.SupplierName}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: "0.75vw",
+                            fontWeight: 600,
+                            color: selectedSupplier ? "#2a7a66" : "#888888",
+                          }}
+                        >
+                          {selectedSupplier ? `Selected: ${selectedSupplier.SupplierName}` : "No supplier selected"}
+                        </span>
+                      </div>
                       <input
                         type="number"
-                        step="0.01"
+                        step="any"
                         min="0"
                         value={amount}
                         onChange={(e) => setAmount(e.target.value)}
@@ -376,7 +421,11 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
                         placeholder="Delivery terms (optional)"
                         style={{ ...field, flex: 1, minWidth: "12vw" }}
                       />
-                      <button type="submit" disabled={busy} style={{ ...btn(true), opacity: busy ? 0.5 : 1 }}>
+                      <button
+                        type="submit"
+                        disabled={!canAdd}
+                        style={{ ...btn(true), opacity: canAdd ? 1 : 0.5 }}
+                      >
                         Add bid
                       </button>
                     </div>
@@ -389,7 +438,7 @@ export default function QuotationPanel({ prId, onClose, onChanged }: Props) {
               )}
 
               {/* Cancel (only while Open) */}
-              {isOpen && (
+              {isOpen && canManage && (
                 <div style={{ marginTop: "1.6vw", textAlign: "right" }}>
                   <button
                     onClick={handleCancel}
