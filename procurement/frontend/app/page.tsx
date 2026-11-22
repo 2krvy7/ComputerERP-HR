@@ -10,7 +10,7 @@ export default function Home() {
   useEffect(() => {
     // Animate the progress bar smoothly over 4 seconds
     const start = Date.now();
-    const duration = 10000;
+    const duration = 5000;
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - start;

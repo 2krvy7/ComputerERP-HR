@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-const API = "http://127.0.0.1:8000";
+const LOCAL = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL ?? LOCAL;
 const LOGIN_URL = "https://computer-erp-login.vercel.app";
 const DEPT = "PR";
 const KEY = "erp_token";
@@ -43,15 +44,16 @@ export function logout() {
 let patched = false;
 if (typeof window !== "undefined" && !patched) {
   patched = true;
-  const original = window.fetch.bind(window);
-  window.fetch = async (input, init = {}) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    if (!url.startsWith(API)) return original(input, init);
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${readToken()}`);
-    const res = await original(input, { ...init, headers });
-    if (res.status === 401) logout();
-    return res;
+  const original = window.fetch;
+    window.fetch = (input, init = {}) => {
+    let url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith(LOCAL)) {
+      url = API + url.slice(LOCAL.length);
+      const headers = new Headers(init.headers);
+      headers.set("Authorization", `Bearer ${localStorage.getItem("erp_token")}`);
+      return original(url, { ...init, headers });
+    }
+    return original(input, init);
   };
 }
 
