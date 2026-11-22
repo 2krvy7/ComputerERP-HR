@@ -1,11 +1,10 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 from database import get_db_connection
 from psycopg.rows import dict_row
 from security import require_inventory_user, require_inventory_admin
-
 
 router = APIRouter(
     prefix="/orders",
@@ -16,12 +15,11 @@ router = APIRouter(
 # ==========================================
 # REQUEST MODELS
 # ==========================================
-
-class GoodsReceivedInspection(BaseModel):
+class GoodsReceivedConfirmation(BaseModel):
     quantity_received: int = Field(..., ge=0)
+    item_condition: Literal["Good", "Partial", "Damaged"]
     remarks: Optional[str] = None
     reorder_level: Optional[int] = Field(default=None, ge=0)
-
 
 class StockReorderLevelUpdate(BaseModel):
     reorder_level: int = Field(..., ge=0)
@@ -31,6 +29,11 @@ class RestockRequestCreate(BaseModel):
     stock_id: int = Field(..., gt=0)
     quantity: int = Field(..., gt=0)
 
+class GoodsReceivedCreate(BaseModel):
+    po_id: int = Field(..., gt=0)
+    quantity_received: int = Field(..., ge=0)
+    item_condition: str
+    remarks: Optional[str] = None
 
 # ==========================================
 # UPCOMING REQUESTS
@@ -501,6 +504,7 @@ def get_purchase_orders(
 # ADMIN + STAFF
 # ==========================================
 
+
 @router.get("/goods-received")
 def get_goods_received(
     user: dict = Depends(require_inventory_user)
@@ -510,7 +514,21 @@ def get_goods_received(
     try:
         conn = get_db_connection()
 
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # 1. Automatically create pending Goods Received
+            # records for Purchase Orders that do not have one.
+            cur.execute("""
+                INSERT INTO public."GoodsReceived" ("PO_ID")
+                SELECT po."PO_ID"
+                FROM public."PurchaseOrder" po
+                LEFT JOIN public."GoodsReceived" gr
+                    ON gr."PO_ID" = po."PO_ID"
+                WHERE gr."PO_ID" IS NULL
+                ON CONFLICT ("PO_ID") DO NOTHING
+            """)
+
+            # 2. Retrieve all Goods Received records.
             cur.execute("""
                 SELECT
                     gr."GR_ID",
@@ -521,44 +539,54 @@ def get_goods_received(
                     gr."ReceivedBy",
                     gr."ReceivedDate",
                     gr."ItemCondition",
-                    gr."QuantityReceived" AS "DeliveredQuantity",
-                    sl."ActualQuantity" AS "AcceptedQuantity",
+                    rr."Quantity" AS "RequestedQuantity",
+                    gr."QuantityReceived",
                     gr."Remarks",
 
                     CASE
                         WHEN sl."LogID" IS NULL
-                            THEN 'Pending Inspection'
-                        ELSE 'Inspected'
+                            THEN 'Pending Stock Confirmation'
+                        ELSE 'Stock Confirmed'
                     END AS "InspectionStatus"
 
-                FROM "GoodsReceived" gr
+                FROM public."GoodsReceived" gr
 
-                LEFT JOIN "STOCK_LEDGER" sl
+                LEFT JOIN public."STOCK_LEDGER" sl
                     ON sl."ReferenceNo" =
                         'GR-' || gr."GR_ID"::text
                     AND sl."TransactionType" = 'STOCK_IN'
 
-                JOIN "PurchaseOrder" po
+                JOIN public."PurchaseOrder" po
                     ON gr."PO_ID" = po."PO_ID"
 
-                JOIN "RequestQuotation" rq
+                JOIN public."RequestQuotation" rq
                     ON po."RFQ_ID" = rq."RFQ_ID"
 
-                JOIN "Supplier" s
+                JOIN public."PurchaseRequest" pr
+                    ON rq."PR_ID" = pr."PR_ID"
+
+                JOIN public."RestockRequest" rr
+                    ON pr."RestockRequestID" = rr."RR_ID"
+
+                JOIN public."Supplier" s
                     ON rq."SupplierID" = s."SupplierID"
 
-                ORDER BY gr."ReceivedDate" DESC
+                ORDER BY
+                    gr."ReceivedDate" DESC NULLS LAST,
+                    gr."GR_ID" DESC
             """)
 
             rows = cur.fetchall()
-            columns = [desc[0] for desc in cur.description]
 
-            return [
-                dict(zip(columns, row))
-                for row in rows
-            ]
+        # 3. Save the automatically created pending records.
+        conn.commit()
+
+        return rows
 
     except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -569,16 +597,23 @@ def get_goods_received(
             conn.close()
 
 
+
 # ==========================================
 # CONFIRM GOODS RECEIVED
 # ADMIN + STAFF
 # PROCUREMENT INSPECTION WORKFLOW
 # ==========================================
+# ==========================================
+# CONFIRM GOODS RECEIVED
+# ADMIN + STAFF
+# ==========================================
+
+
 
 @router.put("/goods-received/{gr_id}/confirm-count")
 def confirm_goods_received(
     gr_id: int,
-    inspection: GoodsReceivedInspection,
+    confirmation: GoodsReceivedConfirmation,
     user: dict = Depends(require_inventory_user)
 ):
     conn = None
@@ -586,150 +621,117 @@ def confirm_goods_received(
     try:
         conn = get_db_connection()
 
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
 
-            # Find the item, warehouse, and original request.
-            # Lock the Goods Received record during inspection.
+            # 1. Get and lock the Goods Received record.
             cur.execute("""
                 SELECT
+                    gr."GR_ID",
+                    gr."PO_ID",
                     rr."RR_ID",
                     rr."IM_ID",
                     rr."WH_ID",
-                    gr."QuantityReceived"
+                    rr."Quantity" AS "RequestedQuantity"
                 FROM "GoodsReceived" gr
-
                 JOIN "PurchaseOrder" po
                     ON gr."PO_ID" = po."PO_ID"
-
                 JOIN "RequestQuotation" rq
                     ON po."RFQ_ID" = rq."RFQ_ID"
-
                 JOIN "PurchaseRequest" pr
                     ON rq."PR_ID" = pr."PR_ID"
-
                 JOIN "RestockRequest" rr
                     ON pr."RestockRequestID" = rr."RR_ID"
-
                 WHERE gr."GR_ID" = %s
                 FOR UPDATE OF gr
             """, (gr_id,))
 
-            stock_info = cur.fetchone()
+            gr = cur.fetchone()
 
-            if stock_info is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=(
-                        "Goods Received record or its linked "
-                        "item and warehouse was not found."
-                    )
-                )
-
-            rr_id = stock_info[0]
-            im_id = stock_info[1]
-            wh_id = stock_info[2]
-            original_quantity = stock_info[3]
-
-            accepted_quantity = inspection.quantity_received
-
-            if accepted_quantity > original_quantity:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Accepted quantity cannot be greater "
-                        "than the original delivered quantity."
-                    )
-                )
-
-            # Determine the item condition.
-            if accepted_quantity == original_quantity:
-                item_condition = "Good"
-            elif accepted_quantity == 0:
-                item_condition = "Damaged"
-            else:
-                item_condition = "Partial"
-
-            reference_no = f"GR-{gr_id}"
-
-            # Prevent duplicate stock-in transactions.
-            cur.execute("""
-                SELECT "LogID"
-                FROM "STOCK_LEDGER"
-                WHERE "ReferenceNo" = %s
-                  AND "TransactionType" = 'STOCK_IN'
-                FOR UPDATE
-            """, (reference_no,))
-
-            existing_transaction = cur.fetchone()
-
-            if existing_transaction is not None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "This Goods Received record "
-                        "has already been processed."
-                    )
-                )
-
-            # Update inspection information.
-            cur.execute("""
-                UPDATE "GoodsReceived"
-                SET
-                    "ItemCondition" = %s,
-                    "Remarks" = %s
-                WHERE "GR_ID" = %s
-                RETURNING
-                    "GR_ID",
-                    "PO_ID",
-                    "QuantityReceived",
-                    "ItemCondition",
-                    "Remarks"
-            """, (
-                item_condition,
-                inspection.remarks,
-                gr_id
-            ))
-
-            result = cur.fetchone()
-
-            if result is None:
+            if gr is None:
                 raise HTTPException(
                     status_code=404,
                     detail="Goods Received record not found."
                 )
 
+            requested_quantity = gr["RequestedQuantity"]
+            actual_quantity = confirmation.quantity_received
+            item_condition = confirmation.item_condition
+            remarks = (
+                confirmation.remarks.strip()
+                if confirmation.remarks
+                else None
+            )
+
+            # 2. Validate received quantity and inspection.
+            if actual_quantity > requested_quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Received quantity cannot exceed ordered quantity."
+                )
+
+            if actual_quantity < requested_quantity and not remarks:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please provide a reason for the shortage."
+                )
+
+            if item_condition in ["Partial", "Damaged"] and not remarks:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Remarks are required for Partial or Damaged items."
+                )
+
+            rr_id = gr["RR_ID"]
+            im_id = gr["IM_ID"]
+            wh_id = gr["WH_ID"]
+
+            # 3. Prevent duplicate stock confirmation.
+            reference_no = f"GR-{gr_id}"
+
+            cur.execute("""
+                SELECT "LogID"
+                FROM "STOCK_LEDGER"
+                WHERE "ReferenceNo" = %s
+                  AND "TransactionType" = 'STOCK_IN'
+                LIMIT 1
+            """, (reference_no,))
+
+            if cur.fetchone() is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This Goods Received record has already been confirmed."
+                )
+
+            # 4. Find and lock existing stock.
+            cur.execute("""
+                SELECT
+                    "STOCK_ID",
+                    "quantity_on_hand",
+                    "reorder_level"
+                FROM "STOCK"
+                WHERE "IM_ID" = %s
+                  AND "WH_ID" = %s
+                FOR UPDATE
+            """, (im_id, wh_id))
+
+            stock_row = cur.fetchone()
+
+            # 5. Increase STOCK using actual received quantity.
             updated_stock = None
 
-            # Add accepted quantity to stock.
-            if accepted_quantity > 0:
-
-                cur.execute("""
-                    SELECT
-                        "STOCK_ID",
-                        "quantity_on_hand",
-                        "reorder_level"
-                    FROM "STOCK"
-                    WHERE "IM_ID" = %s
-                      AND "WH_ID" = %s
-                    FOR UPDATE
-                """, (im_id, wh_id))
-
-                stock_row = cur.fetchone()
+            if actual_quantity > 0:
 
                 if stock_row is None:
-                    if inspection.reorder_level is None:
+                    if confirmation.reorder_level is None:
                         raise HTTPException(
                             status_code=400,
-                            detail=(
-                                "Reorder level is required when "
-                                "creating a new stock record."
-                            )
+                            detail="Reorder level is required because this item has no existing stock record."
                         )
 
-                    stock_reorder_level = inspection.reorder_level
+                    stock_reorder_level = confirmation.reorder_level
 
                 else:
-                    stock_reorder_level = stock_row[2]
+                    stock_reorder_level = stock_row["reorder_level"]
 
                 cur.execute("""
                     INSERT INTO "STOCK" (
@@ -753,15 +755,42 @@ def confirm_goods_received(
                 """, (
                     im_id,
                     wh_id,
-                    accepted_quantity,
+                    actual_quantity,
                     stock_reorder_level
                 ))
 
                 updated_stock = cur.fetchone()
 
-            # Record the stock movement.
-            # Even when accepted quantity is zero,
-            # this records that inspection was completed.
+                actual_stock_balance = updated_stock["quantity_on_hand"]
+
+            else:
+                actual_stock_balance = (
+                    stock_row["quantity_on_hand"]
+                    if stock_row is not None
+                    else 0
+                )
+
+            # 6. Save Goods Received inspection details.
+            cur.execute("""
+                UPDATE "GoodsReceived"
+                SET
+                    "QuantityReceived" = %s,
+                    "ItemCondition" = %s,
+                    "Remarks" = %s,
+                    "ReceivedDate" = CURRENT_TIMESTAMP,
+                    "ReceivedBy" = %s
+                WHERE "GR_ID" = %s
+            """, (
+                actual_quantity,
+                item_condition,
+                remarks,
+                user["sub"],
+                gr_id
+            ))
+
+            # 7. Record the stock movement.
+            # Quantity = ordered quantity.
+            # ActualQuantity = actual quantity received.
             cur.execute("""
                 INSERT INTO "STOCK_LEDGER" (
                     "IM_ID",
@@ -789,51 +818,47 @@ def confirm_goods_received(
             """, (
                 im_id,
                 wh_id,
-                original_quantity,
-                accepted_quantity,
+                requested_quantity,
+                actual_quantity,
                 reference_no,
                 user["sub"],
-                inspection.remarks
+                remarks
             ))
 
             ledger_result = cur.fetchone()
 
-            # Mark the original Restock Request completed.
-            cur.execute("""
-                UPDATE "RestockRequest"
-                SET "status" = 'Completed'
-                WHERE "RR_ID" = %s
-                RETURNING "RR_ID", "status"
-            """, (rr_id,))
+            # 8. Update Restock Request status.
+            if actual_quantity > 0:
+                cur.execute("""
+                    UPDATE "RestockRequest"
+                    SET "status" = 'Completed'
+                    WHERE "RR_ID" = %s
+                    RETURNING "RR_ID", "status"
+                """, (rr_id,))
+            else:
+                cur.execute("""
+                    SELECT "RR_ID", "status"
+                    FROM "RestockRequest"
+                    WHERE "RR_ID" = %s
+                """, (rr_id,))
 
             completed_request = cur.fetchone()
-
-            if completed_request is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        "Inspection was recorded, but the "
-                        "Restock Request could not be completed."
-                    )
-                )
 
             conn.commit()
 
             return {
-                "message": (
-                    "Inspection confirmed and Restock Request "
-                    "completed successfully."
-                ),
-                "GR_ID": result[0],
-                "PO_ID": result[1],
-                "RR_ID": completed_request[0],
-                "RequestStatus": completed_request[1],
-                "DeliveredQuantity": original_quantity,
-                "AcceptedQuantity": accepted_quantity,
-                "ItemCondition": result[3],
-                "Remarks": result[4],
+                "message": "Goods Received inspection and stock confirmation completed successfully.",
+                "GR_ID": gr_id,
+                "PO_ID": gr["PO_ID"],
+                "RR_ID": completed_request["RR_ID"],
+                "RequestStatus": completed_request["status"],
+                "OrderedQuantity": requested_quantity,
+                "QuantityReceived": actual_quantity,
+                "ItemCondition": item_condition,
+                "Remarks": remarks,
                 "Stock": updated_stock,
-                "LogID": ledger_result[0] if ledger_result else None
+                "ActualStockBalance": actual_stock_balance,
+                "LogID": ledger_result["LogID"]
             }
 
     except HTTPException:
@@ -853,3 +878,262 @@ def confirm_goods_received(
     finally:
         if conn is not None:
             conn.close()
+
+
+# ==========================================
+# CREATE GOODS RECEIVED
+# INVENTORY ADMIN + STAFF
+# ==========================================
+
+@router.post("/goods-received")
+def create_goods_received(
+    request: GoodsReceivedCreate,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # Get the PO and its requested quantity
+            cur.execute("""
+                SELECT
+                    po."PO_ID",
+                    rr."RR_ID",
+                    rr."Quantity" AS "RequestedQuantity",
+                    rr."IM_ID",
+                    rr."WH_ID",
+                    s."SupplierName"
+                FROM "PurchaseOrder" po
+                JOIN "RequestQuotation" rq
+                    ON po."RFQ_ID" = rq."RFQ_ID"
+                JOIN "PurchaseRequest" pr
+                    ON rq."PR_ID" = pr."PR_ID"
+                JOIN "RestockRequest" rr
+                    ON pr."RestockRequestID" = rr."RR_ID"
+                JOIN "Supplier" s
+                    ON rq."SupplierID" = s."SupplierID"
+                WHERE po."PO_ID" = %s
+                FOR UPDATE OF po
+            """, (request.po_id,))
+
+            po = cur.fetchone()
+
+            if po is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Purchase Order not found."
+                )
+
+            # Check if a Goods Received record already exists
+            cur.execute("""
+                SELECT "GR_ID"
+                FROM "GoodsReceived"
+                WHERE "PO_ID" = %s
+            """, (request.po_id,))
+
+            existing_gr = cur.fetchone()
+
+            if existing_gr is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A Goods Received record already exists for this Purchase Order."
+                )
+
+            # Validate accepted quantity
+            if request.quantity_received > po["RequestedQuantity"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Accepted quantity cannot exceed the requested quantity."
+                )
+
+            if request.item_condition not in ("Good", "Partial", "Damaged"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid item condition."
+                )
+
+            if request.item_condition in ("Partial", "Damaged") and not request.remarks:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Remarks are required for Partial or Damaged items."
+                )
+
+            # Create Goods Received record
+            cur.execute("""
+                INSERT INTO "GoodsReceived" (
+                    "PO_ID",
+                    "ReceivedBy",
+                    "ReceivedDate",
+                    "ItemCondition",
+                    "QuantityReceived",
+                    "Remarks"
+                )
+                VALUES (%s, %s, CURRENT_TIMESTAMP, %s, %s, %s)
+                RETURNING
+                    "GR_ID",
+                    "PO_ID",
+                    "ReceivedBy",
+                    "ReceivedDate",
+                    "ItemCondition",
+                    "QuantityReceived",
+                    "Remarks"
+            """, (
+                request.po_id,
+                user["sub"],
+                request.item_condition,
+                request.quantity_received,
+                request.remarks
+            ))
+
+            result = cur.fetchone()
+
+        conn.commit()
+
+        return {
+            "message": "Goods Received record created successfully.",
+            "goods_received": result,
+            "requested_quantity": po["RequestedQuantity"],
+            "supplier_name": po["SupplierName"]
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@router.get("/material-requests")
+def get_material_request_availability(
+    user: dict = Depends(require_inventory_user)
+):
+    query = '''
+        SELECT
+            mr."MR_ID",
+            mr."productionID",
+            mr."DateRequested",
+            mr."RequiredDate",
+            mr."Status",
+
+            mrd."IM_ID",
+            i."SKU",
+            i."Item_Name",
+            mrd."QuantityRequested",
+
+            w."WH_ID",
+            w."Warehouse_Name",
+            COALESCE(s.quantity_on_hand, 0) AS quantity_on_hand
+
+        FROM public."MaterialRequest" AS mr
+
+        INNER JOIN public."MaterialRequestDetail" AS mrd
+            ON mr."MR_ID" = mrd."MR_ID"
+
+        INNER JOIN public."ITEM_MASTER" AS i
+            ON mrd."IM_ID" = i."IM_ID"
+
+        CROSS JOIN public."WAREHOUSE" AS w
+
+        LEFT JOIN public."STOCK" AS s
+            ON s."IM_ID" = mrd."IM_ID"
+            AND s."WH_ID" = w."WH_ID"
+
+        WHERE mr."Status" = 'Pending'
+
+        ORDER BY mr."MR_ID", mrd."IM_ID", w."WH_ID"
+    '''
+
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(query)
+            rows = cur.fetchall()
+
+    requests = {}
+
+    for row in rows:
+        mr_id = row["MR_ID"]
+
+        if mr_id not in requests:
+            requests[mr_id] = {
+                "MR_ID": mr_id,
+                "productionID": row["productionID"],
+                "DateRequested": row["DateRequested"],
+                "RequiredDate": row["RequiredDate"],
+                "Status": row["Status"],
+                "materials": {}
+            }
+
+        im_id = row["IM_ID"]
+
+        if im_id not in requests[mr_id]["materials"]:
+            requests[mr_id]["materials"][im_id] = {
+                "IM_ID": im_id,
+                "SKU": row["SKU"],
+                "Item_Name": row["Item_Name"],
+                "QuantityRequested": row["QuantityRequested"],
+                "total_available": 0,
+                "warehouses": []
+            }
+
+        material = requests[mr_id]["materials"][im_id]
+
+        available = int(row["quantity_on_hand"] or 0)
+
+        material["total_available"] += available
+
+        material["warehouses"].append({
+            "WH_ID": row["WH_ID"],
+            "Warehouse_Name": row["Warehouse_Name"],
+            "quantity_on_hand": available
+        })
+
+    result = []
+
+    for request in requests.values():
+        materials = []
+
+        for material in request["materials"].values():
+            requested = material["QuantityRequested"]
+            total = material["total_available"]
+
+            best_warehouse_stock = max(
+                (w["quantity_on_hand"] for w in material["warehouses"]),
+                default=0
+            )
+
+            if total < requested:
+                status = "Insufficient Stock"
+            elif best_warehouse_stock >= requested:
+                status = "Ready to Release"
+            else:
+                status = "Transfer Required"
+
+            material["missing_quantity"] = max(0, requested - total)
+
+            material["transfer_quantity"] = max(
+                0, requested - best_warehouse_stock
+            )
+
+            material["availability_status"] = status
+
+            materials.append(material)
+
+        request["materials"] = materials
+        result.append(request)
+
+    return result
