@@ -94,13 +94,50 @@ type GoodsReceived = {
   RFQ_ID: number;
   PR_ID: number;
   SupplierName: string;
-  ReceivedBy: string;
+  ReceivedBy: string | null;
   ReceivedDate: string | null;
   ItemCondition: string | null;
-  DeliveredQuantity: number;
-  AcceptedQuantity: number | null;
+  RequestedQuantity: number;
+  QuantityReceived: number | null;
   Remarks: string | null;
   InspectionStatus: string;
+};
+
+
+type MaterialWarehouseStock = {
+  WH_ID: number;
+  Warehouse_Name: string;
+  quantity_on_hand: number;
+};
+
+type RequestedMaterial = {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  QuantityRequested: number;
+  total_available: number;
+  missing_quantity: number;
+  transfer_quantity: number;
+  availability_status:
+    | "Ready to Release"
+    | "Transfer Required"
+    | "Insufficient Stock";
+  warehouses: MaterialWarehouseStock[];
+};
+
+type MaterialRequest = {
+  MR_ID: number;
+  productionID: number;
+  DateRequested: string;
+  RequiredDate: string;
+  Status: string;
+  materials: RequestedMaterial[];
+};
+
+type InspectionInput = {
+  quantityReceived: string;
+  itemCondition: "Good" | "Partial" | "Damaged" | "";
+  remarks: string;
 };
 
 const sectionDescriptions: Record<string, string> = {
@@ -198,8 +235,7 @@ export default function OrdersPage() {
     useState("");
 
   // Goods Received
-  const [goodsReceived, setGoodsReceived] =
-    useState<GoodsReceived[]>([]);
+  const [goodsReceived, setGoodsReceived] = useState<GoodsReceived[]>([]);
 
   const [goodsReceivedLoading, setGoodsReceivedLoading] =
     useState(true);
@@ -207,10 +243,24 @@ export default function OrdersPage() {
   const [goodsReceivedError, setGoodsReceivedError] =
     useState("");
 
+const [inspectionInputs, setInspectionInputs] = useState<
+  Record<number, InspectionInput>
+>({});
+
+
+  // Material Requests
+  const [materialRequests, setMaterialRequests] =
+    useState<MaterialRequest[]>([]);
+
+  const [materialRequestsLoading, setMaterialRequestsLoading] =
+    useState(true);
+
+  const [materialRequestsError, setMaterialRequestsError] =
+    useState("");
+
+
+
   // Inspection inputs
-  const [inspectionInputs, setInspectionInputs] = useState<
-    Record<number, { acceptedQuantity: string; remarks: string }>
-  >({});
 
   const [confirmingGR, setConfirmingGR] =
     useState<number | null>(null);
@@ -355,6 +405,41 @@ export default function OrdersPage() {
     fetchGoodsReceived();
   }, []);
 
+
+  // Fetch Production Material Requests
+  useEffect(() => {
+    const fetchMaterialRequests = async () => {
+      try {
+        const response = await apiFetch(
+          "/orders/material-requests"
+        );
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+
+          throw new Error(
+            data?.detail || "Failed to load material requests."
+          );
+        }
+
+        const data: MaterialRequest[] = await response.json();
+
+        setMaterialRequests(data);
+      } catch (error) {
+        setMaterialRequestsError(
+          error instanceof Error
+            ? error.message
+            : "Something went wrong."
+        );
+      } finally {
+        setMaterialRequestsLoading(false);
+      }
+    };
+
+    fetchMaterialRequests();
+  }, []);
+
+
   // Change Main Tab
   const handleDepartmentChange = (tab: MainTab) => {
     setActiveDepartment(tab);
@@ -451,143 +536,112 @@ export default function OrdersPage() {
   };
 
   // Calculate Inspection Details
-  const getInspectionDetails = (record: GoodsReceived) => {
-    const acceptedQuantityInput =
-      inspectionInputs[record.GR_ID]?.acceptedQuantity ??
-      (record.AcceptedQuantity !== null &&
-      record.AcceptedQuantity !== undefined
-        ? String(record.AcceptedQuantity)
-        : "");
-
-    const acceptedQuantity = Number(acceptedQuantityInput);
-    const deliveredQuantity = Number(record.DeliveredQuantity);
-
-    const isValid =
-      acceptedQuantityInput !== "" &&
-      Number.isInteger(acceptedQuantity) &&
-      acceptedQuantity >= 0 &&
-      acceptedQuantity <= deliveredQuantity;
-
-    const damagedQuantity = isValid
-      ? deliveredQuantity - acceptedQuantity
-      : 0;
-
-    let itemCondition = "";
-
-    if (isValid) {
-      if (acceptedQuantity === deliveredQuantity) {
-        itemCondition = "Good";
-      } else if (acceptedQuantity === 0) {
-        itemCondition = "Damaged";
-      } else {
-        itemCondition = "Partial";
-      }
-    }
-
-    return {
-      acceptedQuantity,
-      damagedQuantity,
-      itemCondition,
-      isValid,
-    };
-  };
+  const updateInspectionInput = (
+  grId: number,
+  field: keyof InspectionInput,
+  value: string
+) => {
+  setInspectionInputs((previous) => ({
+    ...previous,
+    [grId]: {
+      quantityReceived: previous[grId]?.quantityReceived ?? "",
+      acceptedQuantity: previous[grId]?.acceptedQuantity ?? "",
+      itemCondition: previous[grId]?.itemCondition ?? "",
+      remarks: previous[grId]?.remarks ?? "",
+      [field]: value,
+    },
+  }));
+};
 
   // Confirm Goods Received
-  const handleConfirmStock = async (record: GoodsReceived) => {
-    const details = getInspectionDetails(record);
+  
+const handleConfirmStock = async (record: GoodsReceived) => {
+  const inspection = inspectionInputs[record.GR_ID];
 
-    if (!details.isValid) {
-      alert("Please enter a valid accepted quantity.");
-      return;
+  if (!inspection) {
+    alert("Please complete the inspection details.");
+    return;
+  }
+
+  const quantityReceived = Number(inspection.quantityReceived);
+
+  if (
+    inspection.quantityReceived.trim() === "" ||
+    !Number.isInteger(quantityReceived) ||
+    quantityReceived < 0 ||
+    quantityReceived > record.RequestedQuantity
+  ) {
+    alert("Please enter a valid received quantity.");
+    return;
+  }
+
+  if (!inspection.itemCondition) {
+    alert("Please select the item condition.");
+    return;
+  }
+
+  if (
+    ["Partial", "Damaged"].includes(inspection.itemCondition) &&
+    !inspection.remarks.trim()
+  ) {
+    alert("Remarks are required for Partial or Damaged items.");
+    return;
+  }
+
+  try {
+    setConfirmingGR(record.GR_ID);
+
+    const response = await apiFetch(
+      `/orders/goods-received/${record.GR_ID}/confirm-count`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quantity_received: quantityReceived,
+          item_condition: inspection.itemCondition,
+          remarks: inspection.remarks.trim() || null,
+        }),
+      }
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(data?.detail || "Failed to confirm received stock.");
     }
 
-    try {
-      setConfirmingGR(record.GR_ID);
+    alert("Goods Received and stock confirmation completed successfully.");
 
-      const response = await apiFetch(
-        `/orders/goods-received/${record.GR_ID}/confirm-count`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            quantity_received: details.acceptedQuantity,
-            remarks:
-              inspectionInputs[record.GR_ID]?.remarks ??
-              record.Remarks ??
-              null,
-          }),
-        }
-      );
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail || "Failed to confirm received stock."
-        );
-      }
-
-      alert("Goods received successfully confirmed.");
-
-      // Refresh Goods Received records
-      const refreshResponse = await apiFetch(
-        "/orders/goods-received"
-      );
-
-      if (refreshResponse.ok) {
-        const refreshedData = await refreshResponse.json();
-        setGoodsReceived(refreshedData);
-      }
-
-      // Refresh Upcoming Requests
-      const upcomingResponse = await apiFetch(
-        "/orders/upcoming-requests"
-      );
-
-      if (upcomingResponse.ok) {
-        const upcomingData = await upcomingResponse.json();
-        setUpcomingRequests(upcomingData);
-      }
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
-      );
-    } finally {
-      setConfirmingGR(null);
+    const refreshResponse = await apiFetch("/orders/goods-received");
+    if (refreshResponse.ok) {
+      setGoodsReceived(await refreshResponse.json());
     }
-  };
+
+    const upcomingResponse = await apiFetch("/orders/upcoming-requests");
+    if (upcomingResponse.ok) {
+      setUpcomingRequests(await upcomingResponse.json());
+    }
+
+    setInspectionInputs((previous) => {
+      const updated = { ...previous };
+      delete updated[record.GR_ID];
+      return updated;
+    });
+  } catch (error) {
+    alert(
+      error instanceof Error ? error.message : "Something went wrong."
+    );
+  } finally {
+    setConfirmingGR(null);
+  }
+};
 
   const getInspectionStatusLabel = (record: GoodsReceived) => {
-    if (record.InspectionStatus === "Pending Inspection") {
-      return "Pending Inspection";
-    }
-
-    const condition = record.ItemCondition?.toLowerCase();
-
-    if (condition === "good") {
-      return "Inspected - Good";
-    }
-
-    if (
-      condition === "partial" ||
-      condition === "partiallydamaged"
-    ) {
-      return "Inspected - Partial";
-    }
-
-    if (condition === "damaged") {
-      return "Inspected - Damaged";
-    }
-
-    return "Inspected";
+  return record.InspectionStatus;
   };
 
   const isInspectionCompleted = (record: GoodsReceived) => {
-    return record.InspectionStatus === "Inspected";
+    return record.InspectionStatus === "Stock Confirmed";
   };
 
   // Only Raw Material requests belong in Procurement.
@@ -780,6 +834,173 @@ export default function OrdersPage() {
               )}
             </div>
           )}
+
+
+          {/* Production - Material Requests */}
+          {activeDepartment === "Production" &&
+            activeSection === "Material Requests" && (
+              <div className="space-y-5">
+
+                {materialRequestsLoading ? (
+                  <p className="p-8 text-center text-sm text-[#587176]">
+                    Loading Production material requests...
+                  </p>
+                ) : materialRequestsError ? (
+                  <p className="p-8 text-center text-sm text-red-600">
+                    {materialRequestsError}
+                  </p>
+                ) : materialRequests.length === 0 ? (
+                  <p className="p-8 text-center text-sm text-[#587176]">
+                    No pending material requests available.
+                  </p>
+                ) : (
+                  materialRequests.map((request) => (
+                    <div
+                      key={request.MR_ID}
+                      className="rounded-xl border border-[#DCE7EA] p-5"
+                    >
+                      {/* Request Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-bold text-[#1F3338]">
+                            Material Request #{request.MR_ID}
+                          </h3>
+
+                          <p className="mt-1 text-sm text-[#587176]">
+                            Production Order #{request.productionID}
+                          </p>
+                        </div>
+
+                        <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                          {request.Status}
+                        </span>
+                      </div>
+
+                      {/* Request Dates */}
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-[#587176]">
+                            Date Requested
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-[#1F3338]">
+                            {new Date(
+                              request.DateRequested
+                            ).toLocaleDateString()}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-[#587176]">
+                            Required Date
+                          </p>
+                          <p className="mt-1 text-sm font-medium text-[#1F3338]">
+                            {new Date(
+                              request.RequiredDate
+                            ).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Requested Materials */}
+                      <div className="mt-5 overflow-x-auto rounded-lg border border-[#DCE7EA]">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-[#F2F7F8] text-[#365f68]">
+                            <tr>
+                              <th className="p-3">Material</th>
+                              <th className="p-3">SKU</th>
+                              <th className="p-3">Requested</th>
+                              <th className="p-3">Total Available</th>
+                              <th className="p-3">Missing</th>
+                              <th className="p-3">Availability</th>
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {request.materials.map((material) => (
+                              <tr
+                                key={material.IM_ID}
+                                className="border-t border-[#DCE7EA] text-[#1F3338]"
+                              >
+                                <td className="p-3 font-medium">
+                                  {material.Item_Name}
+                                </td>
+
+                                <td className="p-3">
+                                  {material.SKU}
+                                </td>
+
+                                <td className="p-3">
+                                  {material.QuantityRequested}
+                                </td>
+
+                                <td className="p-3">
+                                  {material.total_available}
+                                </td>
+
+                                <td className="p-3">
+                                  {material.missing_quantity}
+                                </td>
+
+                                <td className="p-3">
+                                  <span
+                                    className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
+                                      material.availability_status ===
+                                      "Ready to Release"
+                                        ? "bg-green-100 text-green-700"
+                                        : material.availability_status ===
+                                          "Transfer Required"
+                                          ? "bg-yellow-100 text-yellow-700"
+                                          : "bg-red-100 text-red-700"
+                                    }`}
+                                  >
+                                    {material.availability_status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Warehouse Availability */}
+                      <div className="mt-5 space-y-4">
+                        <h4 className="text-sm font-bold text-[#365f68]">
+                          Warehouse Stock Details
+                        </h4>
+
+                        {request.materials.map((material) => (
+                          <div
+                            key={material.IM_ID}
+                            className="rounded-lg bg-[#F2F7F8] p-4"
+                          >
+                            <p className="text-sm font-semibold text-[#1F3338]">
+                              {material.Item_Name}
+                            </p>
+
+                            <div className="mt-3 space-y-2">
+                              {material.warehouses.map((warehouse) => (
+                                <div
+                                  key={warehouse.WH_ID}
+                                  className="flex justify-between gap-3 text-sm"
+                                >
+                                  <span className="text-[#587176]">
+                                    {warehouse.Warehouse_Name}
+                                  </span>
+
+                                  <span className="font-semibold text-[#1F3338]">
+                                    {warehouse.quantity_on_hand}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
 
           {/* Procurement - Purchase Requests */}
           {activeDepartment === "Procurement" &&
@@ -978,16 +1199,113 @@ export default function OrdersPage() {
                         </div>
                       </div>
 
-                      {/* Quantity Information */}
-                      <div className="mt-5 rounded-xl bg-[#F2F7F8] p-4">
-                        <p className="text-xs font-medium text-[#587176]">
-                          Delivered Quantity
-                        </p>
+{/* Quantity Information */}
+<div className="mt-5 rounded-xl bg-[#F2F7F8] p-4 space-y-4">
+  <div className="flex justify-between">
+    <p className="text-xs text-[#587176]">Requested Quantity</p>
+    <p className="text-sm font-semibold text-[#1F3338]">
+      {record.RequestedQuantity}
+    </p>
+  </div>
 
-                        <p className="mt-1 text-3xl font-bold text-[#365f68]">
-                          {record.DeliveredQuantity}
-                        </p>
-                      </div>
+  {!isInspectionCompleted(record) ? (
+    <>
+      <div>
+        <label className="mb-2 block text-xs font-medium text-[#587176]">
+          Quantity Received
+        </label>
+        <input
+          type="number"
+          min="0"
+          max={record.RequestedQuantity}
+          value={inspectionInputs[record.GR_ID]?.quantityReceived ?? ""}
+          onChange={(e) =>
+            updateInspectionInput(
+              record.GR_ID,
+              "quantityReceived",
+              e.target.value
+            )
+          }
+          className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2 text-sm outline-none focus:border-[#365f68]"
+          placeholder="Enter quantity received"
+        />
+      </div>
+
+      <div>
+        <label className="mb-2 block text-xs font-medium text-[#587176]">
+          Item Condition
+        </label>
+        <select
+          value={inspectionInputs[record.GR_ID]?.itemCondition ?? ""}
+          onChange={(e) =>
+            updateInspectionInput(
+              record.GR_ID,
+              "itemCondition",
+              e.target.value
+            )
+          }
+          className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2 text-sm outline-none focus:border-[#365f68]"
+        >
+          <option value="">Select condition</option>
+          <option value="Good">Good</option>
+          <option value="Partial">Partial</option>
+          <option value="Damaged">Damaged</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="mb-2 block text-xs font-medium text-[#587176]">
+          Remarks
+        </label>
+        <textarea
+          value={inspectionInputs[record.GR_ID]?.remarks ?? ""}
+          onChange={(e) =>
+            updateInspectionInput(
+              record.GR_ID,
+              "remarks",
+              e.target.value
+            )
+          }
+          rows={3}
+          className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2 text-sm outline-none focus:border-[#365f68]"
+          placeholder="Enter remarks if necessary"
+        />
+      </div>
+    </>
+  ) : (
+    <>
+      <div className="flex justify-between">
+        <p className="text-xs text-[#587176]">Quantity Received</p>
+        <p className="text-sm font-semibold text-[#365f68]">
+          {record.QuantityReceived ?? "-"}
+        </p>
+      </div>
+
+      <div className="flex justify-between">
+        <p className="text-xs text-[#587176]">Item Condition</p>
+        <p className="text-sm font-semibold text-[#1F3338]">
+          {record.ItemCondition ?? "-"}
+        </p>
+      </div>
+    </>
+  )}
+</div>
+
+                      {/* Confirm Stock */}
+                      {!isInspectionCompleted(record) && (
+                        <div className="mt-5 border-t border-[#DCE7EA] pt-5">
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmStock(record)}
+                            disabled={confirmingGR === record.GR_ID}
+                            className="w-full rounded-lg bg-[#365f68] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#24363B] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {confirmingGR === record.GR_ID
+                              ? "Processing..."
+                              : "Confirm Stock"}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Received Date */}
                       <div className="mt-4 flex items-center justify-between border-t border-[#DCE7EA] pt-4">
@@ -1002,113 +1320,6 @@ export default function OrdersPage() {
                               ).toLocaleDateString()
                             : "-"}
                         </p>
-                      </div>
-
-                      {/* Inspection Form */}
-                      <div className="mt-5 space-y-4 border-t border-[#DCE7EA] pt-5">
-
-                        {/* Accepted Quantity */}
-                        <div>
-                          <label className="text-xs font-semibold text-[#587176]">
-                            Accepted Quantity
-                          </label>
-
-                          <input
-                            type="number"
-                            disabled={isInspectionCompleted(record)}
-                            min="0"
-                            max={record.DeliveredQuantity}
-                            value={
-                              inspectionInputs[record.GR_ID]
-                                ?.acceptedQuantity ??
-                              (record.AcceptedQuantity !== null &&
-                              record.AcceptedQuantity !== undefined
-                                ? String(record.AcceptedQuantity)
-                                : "")
-                            }
-                            onChange={(e) =>
-                              setInspectionInputs((prev) => ({
-                                ...prev,
-                                [record.GR_ID]: {
-                                  acceptedQuantity: e.target.value,
-                                  remarks:
-                                    prev[record.GR_ID]?.remarks ?? "",
-                                },
-                              }))
-                            }
-                            placeholder="Enter accepted quantity"
-                            className="mt-1 w-full rounded-lg border border-[#DCE7EA] px-3 py-2.5 text-sm text-[#1F3338] outline-none focus:border-[#668d98] disabled:cursor-not-allowed disabled:bg-[#F2F7F8] disabled:opacity-70"
-                          />
-                        </div>
-
-                        {/* Calculated Inspection Details */}
-                        {getInspectionDetails(record).isValid && (
-                          <div className="space-y-2 rounded-lg bg-[#F2F7F8] p-3">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[#587176]">
-                                Damaged Quantity
-                              </span>
-                              <span className="font-semibold text-[#1F3338]">
-                                {getInspectionDetails(record).damagedQuantity}
-                              </span>
-                            </div>
-
-                            <div className="flex justify-between text-sm">
-                              <span className="text-[#587176]">
-                                Item Condition
-                              </span>
-                              <span className="font-semibold text-[#365f68]">
-                                {getInspectionDetails(record).itemCondition}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Remarks */}
-                        <div>
-                          <label className="text-xs font-semibold text-[#587176]">
-                            Inspection Remarks
-                          </label>
-
-                          <textarea
-                            disabled={isInspectionCompleted(record)}
-                            value={
-                              inspectionInputs[record.GR_ID]?.remarks ??
-                              record.Remarks ??
-                              ""
-                            }
-                            onChange={(e) =>
-                              setInspectionInputs((prev) => ({
-                                ...prev,
-                                [record.GR_ID]: {
-                                  acceptedQuantity:
-                                    prev[record.GR_ID]?.acceptedQuantity ??
-                                    "",
-                                  remarks: e.target.value,
-                                },
-                              }))
-                            }
-                            placeholder="Enter inspection remarks..."
-                            rows={2}
-                            className="mt-1 w-full resize-none rounded-lg border border-[#DCE7EA] px-3 py-2.5 text-sm text-[#1F3338] outline-none focus:border-[#668d98] disabled:cursor-not-allowed disabled:bg-[#F2F7F8] disabled:opacity-70"
-                          />
-                        </div>
-
-                        {/* Confirm Stock */}
-                        <button
-                          type="button"
-                          onClick={() => handleConfirmStock(record)}
-                          disabled={
-                            isInspectionCompleted(record) ||
-                            !getInspectionDetails(record).isValid ||
-                            confirmingGR === record.GR_ID
-                          }
-                          className="w-full rounded-lg bg-[#365f68] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#24363B] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {confirmingGR === record.GR_ID
-                            ? "Processing..."
-                            : "Confirm Stock"}
-                        </button>
                       </div>
                     </div>
                   ))
@@ -1178,15 +1389,19 @@ export default function OrdersPage() {
             )}
 
           {/* Other Sections */}
-          {activeDepartment !== "Upcoming Requests" &&
-            !(
-              activeDepartment === "Procurement" &&
-              (
-                activeSection === "Purchase Requests" ||
-                activeSection === "Purchase Orders" ||
-                activeSection === "Goods Received"
-              )
-            ) && (
+            {activeDepartment !== "Upcoming Requests" &&
+              !(
+                activeDepartment === "Procurement" &&
+                (
+                  activeSection === "Purchase Requests" ||
+                  activeSection === "Purchase Orders" ||
+                  activeSection === "Goods Received"
+                )
+              ) &&
+              !(
+                activeDepartment === "Production" &&
+                activeSection === "Material Requests"
+              ) && (
               <div className="flex min-h-[220px] flex-col items-center justify-center rounded-xl bg-[#F2F7F8] p-8 text-center">
                 <h3 className="font-bold text-[#1F3338]">
                   {activeSection}
