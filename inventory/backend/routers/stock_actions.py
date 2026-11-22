@@ -213,7 +213,7 @@ def stock_in(
                     data.im_id,
                     data.wh_id,
                     data.actual_quantity,
-                    data.actual_quantity,
+                    stock["quantity_on_hand"],
                     data.reference_no,
                     user["sub"],
                     data.remarks
@@ -336,7 +336,7 @@ def stock_out(
                     data.im_id,
                     data.wh_id,
                     -data.actual_quantity,
-                    data.actual_quantity,
+                    updated_stock["quantity_on_hand"],
                     data.reference_no,
                     user["sub"],
                     f"Purpose: {data.release_purpose}. {data.remarks or ''}".strip()
@@ -468,7 +468,7 @@ def stock_adjustment(
                     data.im_id,
                     data.wh_id,
                     adjustment_quantity,
-                    abs(adjustment_quantity),
+                    updated_stock["quantity_on_hand"],
                     data.reference_no,
                     user["sub"],
                     f"Reason: {data.reason}. {data.remarks or ''}".strip()
@@ -506,6 +506,13 @@ def stock_transfer(
 
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
+
+            # Validate transfer quantity
+            if data.transfer_quantity <= 0:
+                raise HTTPException(
+                status_code=400,
+                detail="Transfer quantity must be greater than zero"
+            )
 
             # 2. Check if item exists
             cur.execute(
@@ -564,12 +571,11 @@ def stock_transfer(
                     detail="No stock record found in the source warehouse"
                 )
 
-            # 5. Check available source quantity
             if source_stock["quantity_on_hand"] < data.transfer_quantity:
                 raise HTTPException(
-                    status_code=400,
-                    detail="Insufficient stock in the source warehouse"
-                )
+                status_code=400,
+                detail="Insufficient stock in the source warehouse"
+            )
 
             # 6. Deduct stock from source warehouse
             cur.execute(
@@ -638,7 +644,7 @@ def stock_transfer(
                     data.source_wh_id,
                     data.destination_wh_id,
                     -data.transfer_quantity,
-                    data.transfer_quantity,
+                    updated_source["quantity_on_hand"],
                     data.reference_no,
                     user["sub"],
                     data.remarks
@@ -674,7 +680,7 @@ def stock_transfer(
                     data.destination_wh_id,
                     data.source_wh_id,
                     data.transfer_quantity,
-                    data.transfer_quantity,
+                    updated_destination["quantity_on_hand"],
                     data.reference_no,
                     user["sub"],
                     data.remarks
@@ -699,3 +705,4 @@ def stock_transfer(
                     "transfer_in": transfer_in["LogID"]
                 }
             }
+            
