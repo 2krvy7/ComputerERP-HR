@@ -50,16 +50,18 @@ const formatDate = (value: string | null | undefined) => {
   });
 };
 
-const getMonthKey = (value: string) => value.split("T")[0].slice(0, 7);
+const getMonthKey = (value: string | null | undefined) => {
+  if (!value) return "";
+  return value.split("T")[0].slice(0, 7);
+};
 
-const getLastSixMonths = () => {
+const getLastSixMonths = (currentDate: Date) => {
   const months: { key: string; label: string }[] = [];
-  const today = new Date();
 
   for (let i = 5; i >= 0; i--) {
     const date = new Date(
-      today.getFullYear(),
-      today.getMonth() - i,
+      currentDate.getFullYear(),
+      currentDate.getMonth() - i,
       1
     );
 
@@ -90,6 +92,11 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentDate, setCurrentDate] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setCurrentDate(new Date());
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -188,7 +195,9 @@ export default function DashboardPage() {
   }, [orders, invoices, collections, receivables, returns]);
 
   const monthlyAnalytics = useMemo(() => {
-    const months = getLastSixMonths();
+    if (!currentDate) return [];
+
+    const months = getLastSixMonths(currentDate);
 
     return months.map((month) => {
       const monthlySales = invoices
@@ -218,7 +227,7 @@ export default function DashboardPage() {
         collections: monthlyCollections,
       };
     });
-  }, [invoices, collections]);
+  }, [currentDate, invoices, collections]);
 
   const topProducts = useMemo(() => {
     const productMap = new Map<
@@ -302,11 +311,15 @@ export default function DashboardPage() {
 
   const recentInvoices = useMemo(() => {
     return [...invoices]
-      .sort(
-        (a, b) =>
-          new Date(b.invoice_date).getTime() -
-          new Date(a.invoice_date).getTime()
-      )
+      .sort((a, b) => {
+        const dateA = Date.parse(a.invoice_date ?? "");
+        const dateB = Date.parse(b.invoice_date ?? "");
+
+        return (
+          (Number.isFinite(dateB) ? dateB : 0) -
+          (Number.isFinite(dateA) ? dateA : 0)
+        );
+      })
       .slice(0, 5);
   }, [invoices]);
 
@@ -394,7 +407,7 @@ export default function DashboardPage() {
             {loading ? "—" : analytics.totalOrders.toLocaleString()}
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            {analytics.activeOrders} non-cancelled orders
+            {loading ? "—" : analytics.activeOrders} non-cancelled orders
           </p>
         </div>
 
@@ -434,7 +447,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          {loading ? (
+          {loading || !currentDate ? (
             <p className="py-8 text-center text-sm text-slate-600">
               Loading sales performance...
             </p>
