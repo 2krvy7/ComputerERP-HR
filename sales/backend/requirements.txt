@@ -5,3 +5,4 @@ psycopg[binary,pool]
 python-dotenv
 pyjwt
 bcrypt
+argon2-cffi
