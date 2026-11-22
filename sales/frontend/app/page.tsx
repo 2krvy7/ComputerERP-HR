@@ -1,215 +1,656 @@
 
-const modules = [
-  { name: "Customer Management", description: "Manage customer records", icon: "♙", href: "/customers" },
-  { name: "Sales Quotation", description: "Prepare customer quotations", icon: "▤", href: "/quotations" },
-  { name: "Sales Order", description: "Manage confirmed orders", icon: "🛒", href: "/orders" },
-  { name: "Delivery", description: "Track product deliveries", icon: "▣", href: "/deliveries" },
-  { name: "Sales Invoice", description: "Manage customer invoices", icon: "▧", href: "/invoices" },
-  { name: "Accounts Receivable", description: "Track unpaid invoices", icon: "₱", href: "/accounts-receivable" },
-  { name: "Collection", description: "Record customer payments", icon: "⇩", href: "/collections" },
-  { name: "Sales Return", description: "Process returned products", icon: "↩", href: "/returns" },
-  { name: "Customer Balance", description: "View outstanding balances", icon: "◉", href: "/customer-balance" },
-  { name: "Sales Reports", description: "Review sales performance", icon: "▥", href: "/reports" },
-];
+"use client";
 
-const stats = [
-  { label: "Total Sales", value: "₱125,000.00", note: "Sample dashboard data", icon: "↗" },
-  { label: "Sales Orders", value: "48", note: "Sample order count", icon: "▤" },
-  { label: "Outstanding Balance", value: "₱32,500.00", note: "Sample receivables", icon: "₱" },
-  { label: "Collections", value: "₱92,500.00", note: "Sample payments", icon: "✓" },
-];
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  paymentCollectionAPI,
+  salesOrderAPI,
+  invoiceAPI,
+  accountsReceivableAPI,
+  salesReturnAPI,
+} from "../lib/api";
 
-const transactions = [
-  { id: "SO-2026-001", customer: "Juan Dela Cruz", date: "Oct 17, 2026", amount: "₱25,000.00", status: "Confirmed" },
-  { id: "SO-2026-002", customer: "Maria Santos", date: "Oct 16, 2026", amount: "₱18,500.00", status: "Processing" },
-  { id: "SO-2026-003", customer: "ABC Computer Shop", date: "Oct 15, 2026", amount: "₱42,000.00", status: "Pending" },
-  { id: "SO-2026-004", customer: "Pedro Reyes", date: "Oct 14, 2026", amount: "₱12,000.00", status: "Completed" },
-];
+import type { Collection } from "../types/payment";
+import type { SalesOrder, SalesOrderItem } from "../types/order";
+import type { SalesInvoice } from "../types/invoice";
+import type { AccountsReceivable } from "../types/accounts-receivable";
+import type { SalesReturn } from "../types/return";
 
-export default function Home() {
-    return (
-  <div className="min-h-screen bg-slate-50 text-slate-800">
+const PAGE_TITLE = "Sales Analytics";
 
-        {/* Main Content */}
-        <main className="min-w-0 flex-1">
-          {/* Header */}
-          <header className="flex flex-col gap-4 border-b border-slate-200 bg-white px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-            <div>
-              <p className="text-sm text-slate-500">Sales Management / Overview</p>
-              <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">
-                Dashboard
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Welcome! Here is your sales overview.
-              </p>
-            </div>
+const money = (value: string | number | null | undefined) => {
+  const amount = Number(value ?? 0);
 
-            <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-semibold text-slate-800">Sales Administrator</p>
-                <p className="text-xs text-slate-500">Administrator</p>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">
-                SA
-              </div>
-            </div>
-          </header>
+  return `₱${(Number.isFinite(amount) ? amount : 0).toLocaleString(
+    "en-PH",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }
+  )}`;
+};
 
-          <div className="space-y-8 p-5 sm:p-8">
-            {/* Page Title */}
-            <section className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Sales Overview</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Monitor sales, orders, and customer payments in one place.
-                </p>
-              </div>
-              <a
-                href="/quotations"
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-              >
-                + New Quotation
-              </a>
-            </section>
+const numberValue = (value: string | number | null | undefined) => {
+  const result = Number(value ?? 0);
+  return Number.isFinite(result) ? result : 0;
+};
 
-            {/* Summary Cards */}
-            <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              {stats.map((stat, index) => (
-                <div
-                  key={stat.label}
-                  className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-lg text-lg font-bold ${
-                        index === 0
-                          ? "bg-blue-50 text-blue-600"
-                          : index === 1
-                            ? "bg-violet-50 text-violet-600"
-                            : index === 2
-                              ? "bg-amber-50 text-amber-600"
-                              : "bg-emerald-50 text-emerald-600"
-                      }`}
-                    >
-                      {stat.icon}
-                    </span>
-                  </div>
-                  <p className="mt-4 text-2xl font-bold tracking-tight text-slate-900">
-                    {stat.value}
-                  </p>
-                  <p className="mt-2 text-xs text-slate-400">{stat.note}</p>
-                </div>
-              ))}
-            </section>
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return "—";
 
-            {/* Modules */}
-            <section>
-              <div className="mb-4">
-                <h3 className="text-lg font-bold text-slate-900">Sales Modules</h3>
-                <p className="mt-1 text-sm text-slate-500">
-                  Select a module to access its functions.
-                </p>
-              </div>
+  const datePart = value.split("T")[0];
+  const date = new Date(`${datePart}T00:00:00`);
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {modules.map((module) => (
-                  <a
-                    key={module.name}
-                    href={module.href}
-                    className="group rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-xl text-blue-700 transition group-hover:bg-blue-600 group-hover:text-white">
-                        {module.icon}
-                      </div>
-                      <span className="text-lg text-slate-300 transition group-hover:translate-x-1 group-hover:text-blue-600">
-                        →
-                      </span>
-                    </div>
-                    <h4 className="mt-4 font-semibold text-slate-900">{module.name}</h4>
-                    <p className="mt-1 text-sm text-slate-500">{module.description}</p>
-                  </a>
-                ))}
-              </div>
-            </section>
+  if (Number.isNaN(date.getTime())) return "—";
 
-            {/* Recent Transactions */}
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="font-bold text-slate-900">Recent Sales Orders</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    A quick view of recent customer orders.
-                  </p>
-                </div>
-                <a
-                  href="/orders"
-                  className="text-sm font-semibold text-blue-600 hover:text-blue-800"
-                >
-                  View all orders →
-                </a>
-              </div>
+  return date.toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[650px] text-left text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-                    <tr>
-                      <th className="px-5 py-4 font-semibold">Order ID</th>
-                      <th className="px-5 py-4 font-semibold">Customer</th>
-                      <th className="px-5 py-4 font-semibold">Date</th>
-                      <th className="px-5 py-4 font-semibold">Amount</th>
-                      <th className="px-5 py-4 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {transactions.map((transaction) => (
-                      <tr key={transaction.id} className="transition hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-5 py-4 font-semibold text-blue-700">
-                          {transaction.id}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                          {transaction.customer}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-4 text-slate-500">
-                          {transaction.date}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-4 font-medium text-slate-800">
-                          {transaction.amount}
-                        </td>
-                        <td className="whitespace-nowrap px-5 py-4">
-                          <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                              transaction.status === "Completed"
-                                ? "bg-emerald-50 text-emerald-700"
-                                : transaction.status === "Processing"
-                                  ? "bg-blue-50 text-blue-700"
-                                  : transaction.status === "Confirmed"
-                                    ? "bg-violet-50 text-violet-700"
-                                    : "bg-amber-50 text-amber-700"
-                            }`}
-                          >
-                            {transaction.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="border-t border-slate-100 px-5 py-3">
-                <p className="text-xs text-slate-400">
-                  Sample data only. Connect the FastAPI backend to display actual records.
-                </p>
-              </div>
-            </section>
+const getMonthKey = (value: string) => value.split("T")[0].slice(0, 7);
 
-            {/* Footer */}
-            <footer className="border-t border-slate-200 pt-5 text-center text-xs text-slate-400">
-              Sales Module ERP · Sales & Customer Management
-            </footer>
-          </div>
-        </main>
+const getLastSixMonths = () => {
+  const months: { key: string; label: string }[] = [];
+  const today = new Date();
+
+  for (let i = 5; i >= 0; i--) {
+    const date = new Date(
+      today.getFullYear(),
+      today.getMonth() - i,
+      1
+    );
+
+    months.push({
+      key: `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, "0")}`,
+      label: date.toLocaleDateString("en-PH", {
+        month: "short",
+        year: "2-digit",
+      }),
+    });
+  }
+
+  return months;
+};
+
+const cardClass =
+  "rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm";
+
+export default function DashboardPage() {
+  const [orders, setOrders] = useState<SalesOrder[]>([]);
+  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [receivables, setReceivables] = useState<AccountsReceivable[]>([]);
+  const [returns, setReturns] = useState<SalesReturn[]>([]);
+  const [items, setItems] = useState<SalesOrderItem[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [
+        orderData,
+        invoiceData,
+        collectionData,
+        receivableData,
+        returnData,
+        itemData,
+      ] = await Promise.all([
+        salesOrderAPI.getAll(),
+        invoiceAPI.getAll(),
+        paymentCollectionAPI.getAll(),
+        accountsReceivableAPI.getAll(),
+        salesReturnAPI.getAll(),
+        salesOrderAPI.getItems(""),
+      ]);
+
+      setOrders(orderData);
+      setInvoices(invoiceData);
+      setCollections(collectionData);
+      setReceivables(receivableData);
+      setReturns(returnData);
+      setItems(itemData);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load sales analytics."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  const analytics = useMemo(() => {
+    const totalSales = invoices.reduce(
+      (sum, invoice) => sum + numberValue(invoice.total_due),
+      0
+    );
+
+    const totalCollections = collections.reduce(
+      (sum, collection) => sum + numberValue(collection.amount_paid),
+      0
+    );
+
+    const outstandingBalance = receivables.reduce(
+      (sum, record) => sum + numberValue(record.balance),
+      0
+    );
+
+    const totalReturns = returns.reduce(
+      (sum, record) => sum + numberValue(record.return_amount),
+      0
+    );
+
+    const activeOrders = orders.filter(
+      (order) => order.status !== "Cancelled"
+    );
+
+    const orderStatuses = [
+      "Pending",
+      "Approved",
+      "Processing",
+      "Completed",
+      "Cancelled",
+    ].map((status) => ({
+      status,
+      count: orders.filter((order) => order.status === status).length,
+    }));
+
+    const overdueAccounts = receivables.filter(
+      (record) =>
+        numberValue(record.balance) > 0 &&
+        record.status?.toLowerCase() === "overdue"
+    ).length;
+
+    return {
+      totalSales,
+      totalCollections,
+      outstandingBalance,
+      totalReturns,
+      totalOrders: orders.length,
+      activeOrders: activeOrders.length,
+      orderStatuses,
+      overdueAccounts,
+    };
+  }, [orders, invoices, collections, receivables, returns]);
+
+  const monthlyAnalytics = useMemo(() => {
+    const months = getLastSixMonths();
+
+    return months.map((month) => {
+      const monthlySales = invoices
+        .filter(
+          (invoice) =>
+            getMonthKey(invoice.invoice_date) === month.key
+        )
+        .reduce(
+          (sum, invoice) => sum + numberValue(invoice.total_due),
+          0
+        );
+
+      const monthlyCollections = collections
+        .filter(
+          (collection) =>
+            getMonthKey(collection.payment_date) === month.key
+        )
+        .reduce(
+          (sum, collection) =>
+            sum + numberValue(collection.amount_paid),
+          0
+        );
+
+      return {
+        ...month,
+        sales: monthlySales,
+        collections: monthlyCollections,
+      };
+    });
+  }, [invoices, collections]);
+
+  const topProducts = useMemo(() => {
+    const productMap = new Map<
+      number,
+      {
+        IM_ID: number;
+        name: string;
+        quantity: number;
+        sales: number;
+      }
+    >();
+
+    const detailMap = new Map<
+      number,
+      { IM_ID: number; quantity: number; lineTotal: number }
+    >();
+
+    const itemMap = new Map(
+      items.map((item) => [item.IM_ID, item])
+    );
+
+    const returnedQuantities = new Map<number, number>();
+    const returnedAmounts = new Map<number, number>();
+
+    returns.forEach((record) => {
+      const detailId = record.Order_Detail_ID;
+
+      returnedQuantities.set(
+        detailId,
+        (returnedQuantities.get(detailId) ?? 0) +
+          numberValue(record.quantity)
+      );
+
+      returnedAmounts.set(
+        detailId,
+        (returnedAmounts.get(detailId) ?? 0) +
+          numberValue(record.return_amount)
+      );
+    });
+
+    orders
+      .filter((order) => order.status !== "Cancelled")
+      .forEach((order) => {
+        order.details?.forEach((detail) => {
+          detailMap.set(detail.order_detail_id, {
+            IM_ID: detail.IM_ID,
+            quantity: numberValue(detail.quantity),
+            lineTotal: numberValue(detail.line_total),
+          });
+        });
+      });
+
+    detailMap.forEach((detail, detailId) => {
+      const item = itemMap.get(detail.IM_ID);
+      const returnedQty = returnedQuantities.get(detailId) ?? 0;
+      const returnedAmount = returnedAmounts.get(detailId) ?? 0;
+
+      const netQuantity = Math.max(0, detail.quantity - returnedQty);
+      const netSales = Math.max(0, detail.lineTotal - returnedAmount);
+
+      const existing = productMap.get(detail.IM_ID);
+
+      if (existing) {
+        existing.quantity += netQuantity;
+        existing.sales += netSales;
+      } else {
+        productMap.set(detail.IM_ID, {
+          IM_ID: detail.IM_ID,
+          name: item?.Item_Name ?? `Item #${detail.IM_ID}`,
+          quantity: netQuantity,
+          sales: netSales,
+        });
+      }
+    });
+
+    return Array.from(productMap.values())
+      .filter((product) => product.quantity > 0)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 5);
+  }, [orders, items, returns]);
+
+  const recentInvoices = useMemo(() => {
+    return [...invoices]
+      .sort(
+        (a, b) =>
+          new Date(b.invoice_date).getTime() -
+          new Date(a.invoice_date).getTime()
+      )
+      .slice(0, 5);
+  }, [invoices]);
+
+  const chartWidth = 560;
+  const chartHeight = 160;
+
+  const chartPadding = {
+    top: 10,
+    right: 16,
+    bottom: 28,
+    left: 64,
+  };
+
+  const maxMonthlyValue = Math.max(
+    1,
+    ...monthlyAnalytics.flatMap((month) => [
+      month.sales,
+      month.collections,
+    ])
+  );
+
+  const chartX = (index: number) =>
+    chartPadding.left +
+    (index *
+      (chartWidth - chartPadding.left - chartPadding.right)) /
+      Math.max(monthlyAnalytics.length - 1, 1);
+
+  const chartY = (value: number) =>
+    chartHeight -
+    chartPadding.bottom -
+    (value / maxMonthlyValue) *
+      (chartHeight - chartPadding.top - chartPadding.bottom);
+
+  const salesLine = monthlyAnalytics
+    .map((month, index) => `${chartX(index)},${chartY(month.sales)}`)
+    .join(" ");
+
+  const collectionsLine = monthlyAnalytics
+    .map(
+      (month, index) =>
+        `${chartX(index)},${chartY(month.collections)}`
+    )
+    .join(" ");
+
+  const chartAxisLabels = [0, 0.25, 0.5, 0.75, 1];
+
+  return (
+    <div className="min-h-full space-y-6 bg-green-50 p-4 text-slate-900 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">
+            {PAGE_TITLE}
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Overview of sales performance and financial activities.
+          </p>
+        </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <p className="font-semibold">Unable to load dashboard data</p>
+          <p className="mt-1">{error}</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={cardClass}>
+          <p className="text-sm font-medium text-slate-600">
+            Total Sales
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {loading ? "—" : money(analytics.totalSales)}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Based on sales invoices
+          </p>
+        </div>
+
+        <div className={cardClass}>
+          <p className="text-sm font-medium text-slate-600">
+            Total Orders
+          </p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {loading ? "—" : analytics.totalOrders.toLocaleString()}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            {analytics.activeOrders} non-cancelled orders
+          </p>
+        </div>
+
+        <div className={cardClass}>
+          <p className="text-sm font-medium text-slate-600">
+            Outstanding Balance
+          </p>
+          <p className="mt-2 text-2xl font-bold text-amber-600">
+            {loading ? "—" : money(analytics.outstandingBalance)}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Remaining accounts receivable
+          </p>
+        </div>
+
+        <div className={cardClass}>
+          <p className="text-sm font-medium text-slate-600">
+            Total Collections
+          </p>
+          <p className="mt-2 text-2xl font-bold text-emerald-600">
+            {loading ? "—" : money(analytics.totalCollections)}
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Recorded customer payments
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <section className="w-full rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              Sales Performance
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Monthly sales and collections for the last six months.
+            </p>
+          </div>
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              Loading sales performance...
+            </p>
+          ) : monthlyAnalytics.every(
+              (month) => month.sales === 0 && month.collections === 0
+            ) ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              No sales or collection records available for this period.
+            </p>
+          ) : (
+            <>
+              <div className="mb-2 flex flex-wrap gap-4 text-xs">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                  Sales
+                </span>
+
+                <span className="flex items-center gap-2 text-slate-700">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  Collections
+                </span>
+              </div>
+
+              <div className="mx-auto w-full max-w-[560px]">
+                <svg
+                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  className="mx-auto h-auto w-full"
+                  role="img"
+                  aria-label="Line graph showing monthly sales and collections for the last six months"
+                >
+                  {chartAxisLabels.map((ratio) => {
+                    const value = maxMonthlyValue * ratio;
+                    const y = chartY(value);
+
+                    return (
+                      <g key={ratio}>
+                        <line
+                          x1={chartPadding.left}
+                          y1={y}
+                          x2={chartWidth - chartPadding.right}
+                          y2={y}
+                          stroke="#cbd5e1"
+                          strokeDasharray="4 4"
+                        />
+
+                        <text
+                          x={chartPadding.left - 10}
+                          y={y + 4}
+                          textAnchor="end"
+                          fontSize="11"
+                          fill="#475569"
+                        >
+                          {value >= 1000
+                            ? `₱${(value / 1000).toFixed(0)}k`
+                            : `₱${value.toFixed(0)}`}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  <polyline
+                    points={salesLine}
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  <polyline
+                    points={collectionsLine}
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {monthlyAnalytics.map((month, index) => (
+                    <g key={month.key}>
+                      <circle
+                        cx={chartX(index)}
+                        cy={chartY(month.sales)}
+                        r="4"
+                        fill="#2563eb"
+                        stroke="white"
+                        strokeWidth="1.5"
+                      >
+                        <title>
+                          {month.label} Sales: {money(month.sales)}
+                        </title>
+                      </circle>
+
+                      <circle
+                        cx={chartX(index)}
+                        cy={chartY(month.collections)}
+                        r="4"
+                        fill="#10b981"
+                        stroke="white"
+                        strokeWidth="1.5"
+                      >
+                        <title>
+                          {month.label} Collections: {money(month.collections)}
+                        </title>
+                      </circle>
+
+                      <text
+                        x={chartX(index)}
+                        y={chartHeight - 12}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fill="#475569"
+                      >
+                        {month.label}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 border-t border-[#D1D5DB] pt-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-600">
+                    Sales in displayed period
+                  </p>
+                  <p className="mt-1 font-semibold text-blue-700">
+                    {money(
+                      monthlyAnalytics.reduce(
+                        (sum, month) => sum + month.sales,
+                        0
+                      )
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-600">
+                    Collections in displayed period
+                  </p>
+                  <p className="mt-1 font-semibold text-emerald-700">
+                    {money(
+                      monthlyAnalytics.reduce(
+                        (sum, month) => sum + month.collections,
+                        0
+                      )
+                    )}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+
+        <section className={cardClass}>
+          <div className="mb-5">
+            <h2 className="text-lg font-bold text-slate-900">
+              Top Selling Products
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Products ranked by net quantity sold, after recorded returns.
+            </p>
+          </div>
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              Loading product analytics...
+            </p>
+          ) : topProducts.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              No product sales records available yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
+                    <th className="px-4 py-3 text-left">Rank</th>
+                    <th className="px-4 py-3 text-left">Product</th>
+                    <th className="px-4 py-3 text-center">
+                      Quantity Sold
+                    </th>
+                    <th className="px-4 py-3 text-center">
+                      Net Sales
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {topProducts.map((product, index) => (
+                    <tr
+                      key={product.IM_ID}
+                      className="border-b border-[#D1D5DB] last:border-0 hover:bg-[#DDE1E5]"
+                    >
+                      <td className="px-4 py-4 font-semibold text-slate-600">
+                        #{index + 1}
+                      </td>
+
+                      <td className="px-4 py-4 font-semibold text-slate-800">
+                        {product.name}
+                      </td>
+
+                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                        {product.quantity.toLocaleString()}
+                      </td>
+
+                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                        {money(product.sales)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }
