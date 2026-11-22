@@ -195,9 +195,12 @@ export default function Dashboard() {
         <StatCard
           label="Purchase Orders"
           value={summary?.purchase_orders ?? "–"}
+        />
+        <StatCard
+          label="Goods Received"
+          value={summary?.goods_received ?? "–"}
           note={summary ? `awaiting delivery : ${summary.purchase_orders - summary.goods_received}` : ""}
         />
-        <StatCard label="Goods Received" value={summary?.goods_received ?? "–"} />
         <StatCard
           label="Purchase Invoices"
           value={summary?.purchase_invoices ?? "–"}
