@@ -3,6 +3,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { customerAPI, salesOrderAPI } from "../../lib/api";
+import {
+  fetchFinanceFloorPrices,
+  validateSellingPrice,
+} from "../../lib/finance";
+
 import type { Customer } from "../../types/customer";
 import type {
   SalesOrder,
@@ -376,25 +381,68 @@ export default function OrdersPage() {
       return;
     }
 
-    const data: SalesOrderCreate = {
-      customer_id: Number(customerId),
-      details: lines.map((line) => ({
-        IM_ID: line.IM_ID,
-        quantity: line.quantity,
-        discount: line.discount,
-      })),
-    };
-
     setSaving(true);
 
     try {
+      const financeAlerts = await fetchFinanceFloorPrices(20);
+
+      for (const line of lines) {
+        const item = itemCatalog[line.IM_ID];
+
+        if (!item) {
+          setError(
+            `Unable to verify the selling price for item ID ${line.IM_ID}. Please select the item again.`
+          );
+          return;
+        }
+
+        const catalogPrice = Number(item.Price);
+
+        if (!Number.isFinite(catalogPrice) || catalogPrice < 0) {
+          setError(
+            `The catalog price for ${item.Item_Name} is invalid. Please check the item catalog.`
+          );
+          return;
+        }
+
+        const effectiveUnitPrice =
+          catalogPrice * (1 - line.discount / 100);
+
+        const validation = validateSellingPrice(
+          line.IM_ID,
+          effectiveUnitPrice,
+          financeAlerts
+        );
+
+        if (!validation.allowed) {
+          setError(
+            `${item.Item_Name}: ${
+              validation.message ??
+              "The selling price is below Finance's minimum selling price."
+            }`
+          );
+          return;
+        }
+      }
+
+      const data: SalesOrderCreate = {
+        customer_id: Number(customerId),
+        details: lines.map((line) => ({
+          IM_ID: line.IM_ID,
+          quantity: line.quantity,
+          discount: line.discount,
+        })),
+      };
+
       await salesOrderAPI.create(data);
       resetForm();
       setCurrentPage(1);
       await loadOrders();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Unable to create sales order."
+        err instanceof Error
+          ? err.message
+          : "Unable to verify Finance pricing or create the sales order."
       );
     } finally {
       setSaving(false);
@@ -1032,7 +1080,7 @@ export default function OrdersPage() {
                   }
                   className="rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving ? "Verifying and Creating..." : "Create Order"}
                 </button>
               </div>
             </div>

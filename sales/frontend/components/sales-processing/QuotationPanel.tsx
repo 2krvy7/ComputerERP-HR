@@ -3,6 +3,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { quotationAPI } from "@/lib/api";
+import {
+  fetchFinanceFloorPrices,
+  validateSellingPrice,
+} from "../../lib/finance";
 
 import type {
   SalesQuotation,

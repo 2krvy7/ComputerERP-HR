@@ -4,7 +4,7 @@ import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -29,6 +29,16 @@ COOKIE_SECURE = (
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    username: str | None = None
+    email: str | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def user_response(user: User):
@@ -127,3 +137,125 @@ def get_me(
     current_user: User = Depends(get_current_user),
 ):
     return user_response(current_user)
+
+
+@router.patch("/me")
+def update_profile(
+    data: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if data.username is None and data.email is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No profile changes were provided.",
+        )
+
+    if data.username is not None:
+        username = data.username.strip()
+
+        if not username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username cannot be empty.",
+            )
+
+        existing_username = db.scalar(
+            select(User).where(
+                func.lower(User.username) == username.lower(),
+                User.user_id != current_user.user_id,
+            )
+        )
+
+        if existing_username:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="That username is already in use.",
+            )
+
+        current_user.username = username
+
+    if data.email is not None:
+        email = data.email.strip().lower()
+
+        if not email or "@" not in email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Please enter a valid email address.",
+            )
+
+        existing_email = db.scalar(
+            select(User).where(
+                func.lower(User.email) == email,
+                User.user_id != current_user.user_id,
+            )
+        )
+
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="That email address is already in use.",
+            )
+
+        current_user.email = email
+
+    db.commit()
+    db.refresh(current_user)
+
+    return user_response(current_user)
+
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not data.current_password or not data.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please complete all password fields.",
+        )
+
+    if len(data.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long.",
+        )
+
+    stored_password = current_user.password
+
+    if stored_password.startswith("$argon2"):
+        try:
+            password_valid = verify_password(
+                data.current_password,
+                stored_password,
+            )
+        except Exception:
+            password_valid = False
+    else:
+        password_valid = hmac.compare_digest(
+            data.current_password,
+            stored_password,
+        )
+
+    if not password_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your current password is incorrect.",
+        )
+
+    if data.current_password == data.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your new password must be different from your current password.",
+        )
+
+    current_user.password = hash_password(data.new_password)
+
+    db.commit()
+    db.refresh(current_user)
+
+    return {
+        "message": "Your password has been changed successfully."
+    }

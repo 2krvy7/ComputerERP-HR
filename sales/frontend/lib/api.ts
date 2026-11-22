@@ -75,6 +75,16 @@ export interface AuthUser {
   dept_id: string | null;
 }
 
+export interface ProfileUpdate {
+  username?: string;
+  email?: string;
+}
+
+export interface ChangePassword {
+  current_password: string;
+  new_password: string;
+}
+
 export const authAPI = {
   login: (email: string, password: string) =>
     request<AuthUser>("/api/auth/login", {
@@ -89,6 +99,18 @@ export const authAPI = {
 
   getMe: () =>
     request<AuthUser>("/api/auth/me"),
+
+  updateProfile: (data: ProfileUpdate) =>
+    request<AuthUser>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  changePassword: (data: ChangePassword) =>
+    request<{ message: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
 
 // USER MANAGEMENT
@@ -187,14 +209,10 @@ export const salesOrderAPI = {
       body: JSON.stringify({ status }),
     }),
 
-  // FINISHED GOODS
-
   getFinishedGoods: (search = "") =>
     request<FinishedGoodItem[]>(
       `/api/orders/finished-goods?search=${encodeURIComponent(search)}`
     ),
-
-  // SELLING PRICE MANAGEMENT
 
   updateSellingPrice: (
     itemId: number,
@@ -213,9 +231,9 @@ export const salesOrderAPI = {
 
 // DELIVERIES
 
-
 export const deliveryAPI = {
-  getAll: () => request<Delivery[]>("/api/deliveries"),
+  getAll: () =>
+    request<Delivery[]>("/api/deliveries"),
 
   getById: (id: number) =>
     request<Delivery>(`/api/deliveries/${id}`),
@@ -242,7 +260,6 @@ export const deliveryAPI = {
       }),
     }),
 };
-
 
 // SALES INVOICES
 
