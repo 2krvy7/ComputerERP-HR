@@ -12,7 +12,7 @@ ORDER_SELECT = """
            s."SupplierID", s."SupplierName",
            pr."PR_ID", rr."Quantity",
            im."Item_Name", im."SKU", w."Warehouse_Name",
-           (gr."GR_ID" IS NOT NULL) AS goods_received,
+           (gr."QuantityReceived" IS NOT NULL) AS goods_received,
            gr."ReceivedDate", gr."ItemCondition", gr."QuantityReceived", gr."Remarks",
            (inv."PI_ID" IS NOT NULL) AS invoiced,
            inv."InvoiceDate", inv."TaxAmount", inv."TotalDue"
