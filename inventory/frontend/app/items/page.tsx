@@ -3,6 +3,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import DashboardLayout from "../../components/dashboardlayout";
+import { apiFetch } from "@/lib/api";
 
 interface Item {
   IM_ID: number;
@@ -37,15 +38,16 @@ export default function ItemsPage() {
   const [selectedType, setSelectedType] = useState<
     "All" | "Raw" | "Finished"
   >("All");
-  useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  const type = params.get("type");
 
-  if (type === "Raw" || type === "Finished") {
-    setSelectedType(type);
-  } else {
-    setSelectedType("All");
-  }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get("type");
+
+    if (type === "Raw" || type === "Finished") {
+      setSelectedType(type);
+    } else {
+      setSelectedType("All");
+    }
   }, []);
 
   const [loading, setLoading] = useState(true);
@@ -80,9 +82,7 @@ export default function ItemsPage() {
   useEffect(() => {
     const fetchItems = async () => {
       try {
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/item_master/`
-        );
+        const response = await apiFetch("/item_master/");
 
         if (!response.ok) {
           throw new Error("Failed to fetch items");
@@ -101,16 +101,16 @@ export default function ItemsPage() {
   }, []);
 
   // Open Add Item form
-   const handleOpenAddForm = () => {
-  setEditingId(null);
+  const handleOpenAddForm = () => {
+    setEditingId(null);
 
-  setFormData({
-    ...initialFormData,
-    item_type: selectedType === "All" ? "" : selectedType,
-  });
+    setFormData({
+      ...initialFormData,
+      item_type: selectedType === "All" ? "" : selectedType,
+    });
 
-  setFormError("");
-  setShowForm(true);
+    setFormError("");
+    setShowForm(true);
   };
 
   // Edit selected item
@@ -151,10 +151,10 @@ export default function ItemsPage() {
     const isEditing = editingId !== null;
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         isEditing
-          ? `${process.env.NEXT_PUBLIC_API_URL}/item_master/${editingId}`
-          : `${process.env.NEXT_PUBLIC_API_URL}/item_master/`,
+          ? `/item_master/${editingId}`
+          : "/item_master/",
         {
           method: isEditing ? "PATCH" : "POST",
           headers: {
@@ -209,8 +209,8 @@ export default function ItemsPage() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/item_master/${id}`,
+      const response = await apiFetch(
+        `/item_master/${id}`,
         {
           method: "DELETE",
         }
