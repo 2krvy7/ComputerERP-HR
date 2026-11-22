@@ -32,22 +32,29 @@ export async function fetchFinanceFloorPrices(
   return res.json();
 }
 
-
 export function validateSellingPrice(
   productId: number,
   enteredUnitPrice: number,
   alerts: PricingAlert[]
 ): { allowed: boolean; message?: string } {
   const rule = alerts.find(
-    (a) => Number(a.productID) === Number(productId)
+    (alert) => Number(alert.productID) === Number(productId)
   );
 
-  if (!rule) return { allowed: true };
+  if (!rule) {
+    return { allowed: true };
+  }
 
-  if (enteredUnitPrice < rule.minSellingPrice) {
+  if (enteredUnitPrice < Number(rule.minSellingPrice)) {
     return {
       allowed: false,
-      message: `Blocked by Finance Policy: Unit price (${enteredUnitPrice.toLocaleString()}) is below the minimum selling price of ${rule.minSellingPrice.toLocaleString()} (Unit Cost: ${rule.unitCost.toLocaleString()} + ${rule.marginPct}% margin).`,
+      message: `Blocked by Finance Policy: Unit price (${enteredUnitPrice.toLocaleString(
+        "en-PH"
+      )}) is below the minimum selling price of ${Number(
+        rule.minSellingPrice
+      ).toLocaleString("en-PH")} (Unit Cost: ${Number(
+        rule.unitCost
+      ).toLocaleString("en-PH")} + ${rule.marginPct}% margin).`,
     };
   }
 

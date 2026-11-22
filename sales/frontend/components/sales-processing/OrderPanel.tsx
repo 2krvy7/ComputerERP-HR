@@ -3,10 +3,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { customerAPI, salesOrderAPI } from "../../lib/api";
+
 import {
   fetchFinanceFloorPrices,
   validateSellingPrice,
 } from "../../lib/finance";
+
+import type { PricingAlert } from "../../lib/finance";
 
 import type { Customer } from "../../types/customer";
 import type {
@@ -28,6 +31,14 @@ interface StockIssue {
   itemName: string;
   requested: number;
   available: number;
+}
+
+interface PricingIssue {
+  IM_ID: number;
+  itemName: string;
+  sellingPrice: number;
+  minimumPrice: number;
+  message: string;
 }
 
 const PAGE_SIZE = 10;
@@ -89,6 +100,12 @@ export default function OrdersPage() {
   const [itemQueries, setItemQueries] = useState<Record<number, string>>({});
   const [activeItemLine, setActiveItemLine] = useState<number | null>(null);
 
+  // Finance pricing states
+  const [pricingAlerts, setPricingAlerts] = useState<PricingAlert[]>([]);
+  const [loadingPricing, setLoadingPricing] = useState(false);
+  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const [pricingError, setPricingError] = useState("");
+
   const customerSelected = customerId !== "";
 
   const loadOrders = useCallback(async () => {
@@ -149,6 +166,47 @@ export default function OrdersPage() {
     void loadCustomers();
     void loadItems();
   }, [loadOrders, loadCustomers, loadItems]);
+
+  // Fetch Finance minimum selling prices when the order form opens.
+  useEffect(() => {
+    if (!showForm) return;
+
+    let cancelled = false;
+
+    async function loadPricing() {
+      setLoadingPricing(true);
+      setPricingLoaded(false);
+      setPricingError("");
+
+      try {
+        const alerts = await fetchFinanceFloorPrices();
+
+        if (!cancelled) {
+          setPricingAlerts(alerts);
+          setPricingLoaded(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPricingAlerts([]);
+          setPricingError(
+            err instanceof Error
+              ? err.message
+              : "Unable to retrieve Finance pricing rules."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPricing(false);
+        }
+      }
+    }
+
+    void loadPricing();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showForm]);
 
   const customerMap = useMemo(
     () =>
@@ -247,6 +305,50 @@ export default function OrdersPage() {
   }, [requestedByItem, itemCatalog]);
 
   const hasStockIssues = stockIssues.length > 0;
+
+  // Validate each selected item's discounted unit price.
+  const pricingIssues = useMemo<PricingIssue[]>(() => {
+    if (!pricingLoaded) return [];
+
+    return lines.flatMap((line) => {
+      if (line.IM_ID <= 0) return [];
+
+      const item = itemCatalog[line.IM_ID];
+
+      if (!item) return [];
+
+      const originalPrice = Number(item.Price ?? 0);
+
+      const discountedPrice =
+        originalPrice * (1 - line.discount / 100);
+
+      const validation = validateSellingPrice(
+        line.IM_ID,
+        discountedPrice,
+        pricingAlerts
+      );
+
+      if (validation.allowed) return [];
+
+      const pricingRule = pricingAlerts.find(
+        (alert) => Number(alert.productID) === Number(line.IM_ID)
+      );
+
+      return [
+        {
+          IM_ID: line.IM_ID,
+          itemName: item.Item_Name,
+          sellingPrice: discountedPrice,
+          minimumPrice: Number(pricingRule?.minSellingPrice ?? 0),
+          message:
+            validation.message ??
+            "Selling price is below the Finance minimum.",
+        },
+      ];
+    });
+  }, [lines, itemCatalog, pricingAlerts, pricingLoaded]);
+
+  const hasPricingIssues = pricingIssues.length > 0;
 
   const selectItems = useMemo(() => {
     const combined = new Map<number, SalesOrderItem>();
@@ -371,6 +473,27 @@ export default function OrdersPage() {
       return;
     }
 
+    // Do not allow order creation until Finance rules are available.
+    if (loadingPricing || !pricingLoaded || pricingError) {
+      setError(
+        pricingError ||
+          "Please wait until Finance minimum selling prices have loaded."
+      );
+      return;
+    }
+
+    if (hasPricingIssues) {
+      setError(
+        `Finance minimum selling-price policy violation: ${pricingIssues
+          .map(
+            (issue) =>
+              `${issue.itemName}: ${issue.message}`
+          )
+          .join(" ")}`
+      );
+      return;
+    }
+
     if (hasStockIssues) {
       const issueMessages = stockIssues.map(
         (issue) =>
@@ -381,68 +504,25 @@ export default function OrdersPage() {
       return;
     }
 
+    const data: SalesOrderCreate = {
+      customer_id: Number(customerId),
+      details: lines.map((line) => ({
+        IM_ID: line.IM_ID,
+        quantity: line.quantity,
+        discount: line.discount,
+      })),
+    };
+
     setSaving(true);
 
     try {
-      const financeAlerts = await fetchFinanceFloorPrices(20);
-
-      for (const line of lines) {
-        const item = itemCatalog[line.IM_ID];
-
-        if (!item) {
-          setError(
-            `Unable to verify the selling price for item ID ${line.IM_ID}. Please select the item again.`
-          );
-          return;
-        }
-
-        const catalogPrice = Number(item.Price);
-
-        if (!Number.isFinite(catalogPrice) || catalogPrice < 0) {
-          setError(
-            `The catalog price for ${item.Item_Name} is invalid. Please check the item catalog.`
-          );
-          return;
-        }
-
-        const effectiveUnitPrice =
-          catalogPrice * (1 - line.discount / 100);
-
-        const validation = validateSellingPrice(
-          line.IM_ID,
-          effectiveUnitPrice,
-          financeAlerts
-        );
-
-        if (!validation.allowed) {
-          setError(
-            `${item.Item_Name}: ${
-              validation.message ??
-              "The selling price is below Finance's minimum selling price."
-            }`
-          );
-          return;
-        }
-      }
-
-      const data: SalesOrderCreate = {
-        customer_id: Number(customerId),
-        details: lines.map((line) => ({
-          IM_ID: line.IM_ID,
-          quantity: line.quantity,
-          discount: line.discount,
-        })),
-      };
-
       await salesOrderAPI.create(data);
       resetForm();
       setCurrentPage(1);
       await loadOrders();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to verify Finance pricing or create the sales order."
+        err instanceof Error ? err.message : "Unable to create sales order."
       );
     } finally {
       setSaving(false);
@@ -485,6 +565,9 @@ export default function OrdersPage() {
 
   const itemFieldsDisabled =
     !customerSelected || saving || loadingItems;
+
+  const pricingBlocked =
+    loadingPricing || !pricingLoaded || Boolean(pricingError);
 
   return (
     <div className="min-h-full space-y-5 bg-gray text-slate-800">
@@ -584,13 +667,19 @@ export default function OrdersPage() {
             <tbody className="divide-y divide-[#D1D5DB]">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-600">
+                  <td
+                    colSpan={6}
+                    className="px-5 py-10 text-center text-slate-600"
+                  >
                     Loading sales orders...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-600">
+                  <td
+                    colSpan={6}
+                    className="px-5 py-10 text-center text-slate-600"
+                  >
                     {search
                       ? "No sales orders match your search."
                       : "No sales orders found."}
@@ -634,7 +723,9 @@ export default function OrdersPage() {
                         <div className="flex items-center justify-center gap-2">
                           <select
                             value={knownStatus ? order.status : "Pending"}
-                            disabled={isUpdating || !canUpdate || !knownStatus}
+                            disabled={
+                              isUpdating || !canUpdate || !knownStatus
+                            }
                             onChange={(e) =>
                               void handleStatusChange(
                                 order,
@@ -740,6 +831,34 @@ export default function OrdersPage() {
             </div>
 
             <div className="space-y-5">
+              {/* Finance pricing status */}
+              <div
+                className={`rounded-lg border p-3 text-sm ${
+                  pricingError
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : loadingPricing
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : pricingLoaded
+                        ? "border-green-200 bg-green-50 text-green-700"
+                        : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                {loadingPricing
+                  ? "Loading minimum selling prices from Finance..."
+                  : pricingError
+                    ? `Finance pricing unavailable: ${pricingError}`
+                    : pricingLoaded
+                      ? "Finance minimum selling-price rules loaded."
+                      : "Waiting for Finance pricing rules..."}
+              </div>
+
+              {pricingLoaded && (
+                <p className="text-xs text-slate-600">
+                  Item prices are checked after discounts against the minimum
+                  selling prices provided by Finance.
+                </p>
+              )}
+
               <div>
                 <label
                   htmlFor="order-customer"
@@ -809,14 +928,37 @@ export default function OrdersPage() {
                     const matchingItems = selectItems.filter((item) => {
                       if (!term) return true;
 
-                      const itemName = String(item.Item_Name ?? "").toLowerCase();
+                      const itemName = String(
+                        item.Item_Name ?? ""
+                      ).toLowerCase();
+
                       const sku = String(item.SKU ?? "").toLowerCase();
 
-                      return itemName.includes(term) || sku.includes(term);
+                      return (
+                        itemName.includes(term) || sku.includes(term)
+                      );
                     });
 
                     const showSuggestions =
                       activeItemLine === line.lineId && customerSelected;
+
+                    const originalPrice = Number(
+                      selectedItem?.Price ?? 0
+                    );
+
+                    const discountedPrice =
+                      originalPrice * (1 - line.discount / 100);
+
+                    const pricingRule = pricingAlerts.find(
+                      (alert) =>
+                        Number(alert.productID) === Number(line.IM_ID)
+                    );
+
+                    const isBelowMinimum =
+                      pricingLoaded &&
+                      Boolean(pricingRule) &&
+                      discountedPrice <
+                        Number(pricingRule?.minSellingPrice ?? 0);
 
                     return (
                       <div
@@ -906,7 +1048,9 @@ export default function OrdersPage() {
 
                                         <span className="text-xs font-medium text-green-700">
                                           Stock available:{" "}
-                                          {Number(item.stock_available ?? 0)}
+                                          {Number(
+                                            item.stock_available ?? 0
+                                          )}
                                           {item.unit_of_measure
                                             ? ` ${item.unit_of_measure}`
                                             : ""}
@@ -932,7 +1076,9 @@ export default function OrdersPage() {
                               type="number"
                               min="1"
                               step="1"
-                              value={line.quantity === 0 ? "" : line.quantity}
+                              value={
+                                line.quantity === 0 ? "" : line.quantity
+                              }
                               onChange={(e) =>
                                 updateLineById(line.lineId, {
                                   quantity:
@@ -959,7 +1105,11 @@ export default function OrdersPage() {
                                 min="0"
                                 max="100"
                                 step="0.01"
-                                value={line.discount === 0 ? "" : line.discount}
+                                value={
+                                  line.discount === 0
+                                    ? ""
+                                    : line.discount
+                                }
                                 onChange={(e) =>
                                   updateLineById(line.lineId, {
                                     discount:
@@ -997,25 +1147,77 @@ export default function OrdersPage() {
                         </div>
 
                         {selectedItem && (
-                          <div className="mt-3 flex flex-col gap-1 border-t border-slate-100 pt-3 text-xs sm:flex-row sm:items-center sm:justify-between">
-                            <span className="text-slate-600">
-                              Selected:{" "}
-                              <strong className="text-slate-800">
-                                {selectedItem.Item_Name}
-                              </strong>
-                            </span>
+                          <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="text-slate-600">
+                                Selected:{" "}
+                                <strong className="text-slate-800">
+                                  {selectedItem.Item_Name}
+                                </strong>
+                              </span>
 
-                            <span
-                              className={
-                                isInsufficient
-                                  ? "font-semibold text-red-600"
-                                  : "font-medium text-green-700"
-                              }
-                            >
-                              {isInsufficient
-                                ? `Insufficient stock: ${requested} requested, ${available} available`
-                                : `Requested across order: ${requested} / ${available}`}
-                            </span>
+                              <span
+                                className={
+                                  isInsufficient
+                                    ? "font-semibold text-red-600"
+                                    : "font-medium text-green-700"
+                                }
+                              >
+                                {isInsufficient
+                                  ? `Insufficient stock: ${requested} requested, ${available} available`
+                                  : `Requested across order: ${requested} / ${available}`}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="text-slate-600">
+                                Original unit price:{" "}
+                                <strong className="text-slate-800">
+                                  {money(originalPrice)}
+                                </strong>
+                              </span>
+
+                              <span className="text-slate-600">
+                                Discounted unit price:{" "}
+                                <strong className="text-slate-800">
+                                  {money(discountedPrice)}
+                                </strong>
+                              </span>
+                            </div>
+
+                            {pricingLoaded && pricingRule && (
+                              <div
+                                className={`rounded-md p-2 ${
+                                  isBelowMinimum
+                                    ? "bg-red-50 text-red-700"
+                                    : "bg-green-50 text-green-700"
+                                }`}
+                              >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                  <span>
+                                    Finance minimum:{" "}
+                                    <strong>
+                                      {money(
+                                        pricingRule.minSellingPrice
+                                      )}
+                                    </strong>
+                                  </span>
+
+                                  <strong>
+                                    {isBelowMinimum
+                                      ? "Below minimum price"
+                                      : "Price meets Finance policy"}
+                                  </strong>
+                                </div>
+                              </div>
+                            )}
+
+                            {pricingLoaded && !pricingRule && (
+                              <p className="text-slate-500">
+                                No Finance minimum-price rule was returned
+                                for this item.
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1049,6 +1251,31 @@ export default function OrdersPage() {
                   </div>
                 )}
 
+                {hasPricingIssues && (
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  >
+                    <p className="font-semibold">
+                      Finance minimum selling-price violation.
+                    </p>
+
+                    <ul className="mt-2 list-disc space-y-2 pl-5">
+                      {pricingIssues.map((issue) => (
+                        <li key={issue.IM_ID}>
+                          <strong>{issue.itemName}</strong>
+                          <div>
+                            Selling price: {money(issue.sellingPrice)}
+                          </div>
+                          <div>
+                            Required minimum: {money(issue.minimumPrice)}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   onClick={addLine}
@@ -1076,11 +1303,19 @@ export default function OrdersPage() {
                     saving ||
                     !customerSelected ||
                     hasStockIssues ||
-                    loadingItems
+                    hasPricingIssues ||
+                    loadingItems ||
+                    pricingBlocked
                   }
                   className="rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving ? "Verifying and Creating..." : "Create Order"}
+                  {saving
+                    ? "Creating..."
+                    : pricingBlocked
+                      ? "Waiting for Finance..."
+                      : hasPricingIssues
+                        ? "Price Below Minimum"
+                        : "Create Order"}
                 </button>
               </div>
             </div>

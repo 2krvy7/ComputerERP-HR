@@ -1,3 +1,4 @@
+
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
@@ -10,12 +11,14 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models.customer import Customer
+from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
 from app.models.sales_quotation import SalesQuotation
 from app.models.sales_quotation_detail import SalesQuotationDetail
 from app.models.sales_order import SalesOrder
 from app.models.sales_order_detail import SalesOrderDetail
 from app.models.stock import Stock
+from app.models.stock_ledger import StockLedger
 
 from app.schemas.sales_order import (
     SalesOrderCreate,
@@ -60,157 +63,6 @@ def get_item_pricing_data(item: ItemMaster):
         "Price": item.Price,
         "status": item.status,
     }
-
-
-def deduct_order_stock(
-    db: Session,
-    order: SalesOrder,
-):
-    requested_item_ids = {
-        detail.IM_ID
-        for detail in order.details
-    }
-
-    stock_rows = db.scalars(
-        select(Stock)
-        .where(Stock.IM_ID.in_(requested_item_ids))
-        .order_by(Stock.STOCK_ID)
-        .with_for_update()
-    ).all()
-
-    stock_by_item = defaultdict(list)
-    remaining_stock = {}
-
-    for stock in stock_rows:
-        stock_by_item[stock.IM_ID].append(stock)
-        remaining_stock[stock.STOCK_ID] = int(
-            stock.quantity_on_hand
-        )
-
-    allocation_plans = {}
-
-    for detail in order.details:
-        if detail.stock_allocations:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Stock has already been allocated for "
-                    f"order detail {detail.order_detail_id}."
-                ),
-            )
-
-        remaining_quantity = detail.quantity
-        allocations = []
-
-        for stock in stock_by_item.get(detail.IM_ID, []):
-            available_quantity = remaining_stock[
-                stock.STOCK_ID
-            ]
-
-            if available_quantity <= 0:
-                continue
-
-            deducted_quantity = min(
-                remaining_quantity,
-                available_quantity,
-            )
-
-            allocations.append({
-                "stock_id": stock.STOCK_ID,
-                "quantity": deducted_quantity,
-            })
-
-            remaining_stock[stock.STOCK_ID] -= (
-                deducted_quantity
-            )
-
-            remaining_quantity -= deducted_quantity
-
-            if remaining_quantity == 0:
-                break
-
-        if remaining_quantity > 0:
-            item = db.get(ItemMaster, detail.IM_ID)
-
-            item_name = (
-                item.Item_Name
-                if item
-                else f"Item #{detail.IM_ID}"
-            )
-
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Insufficient stock for {item_name}. "
-                    f"Missing quantity: {remaining_quantity}."
-                ),
-            )
-
-        allocation_plans[detail.order_detail_id] = allocations
-
-    for stock in stock_rows:
-        stock.quantity_on_hand = remaining_stock[
-            stock.STOCK_ID
-        ]
-
-    for detail in order.details:
-        detail.stock_allocations = allocation_plans[
-            detail.order_detail_id
-        ]
-
-
-def restore_order_stock(
-    db: Session,
-    order: SalesOrder,
-):
-    stock_ids = set()
-
-    for detail in order.details:
-        if not detail.stock_allocations:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Stock allocation records are missing for "
-                    f"order detail {detail.order_detail_id}. "
-                    "Automatic restoration is not safe."
-                ),
-            )
-
-        for allocation in detail.stock_allocations:
-            stock_ids.add(allocation["stock_id"])
-
-    stock_rows = db.scalars(
-        select(Stock)
-        .where(Stock.STOCK_ID.in_(stock_ids))
-        .order_by(Stock.STOCK_ID)
-        .with_for_update()
-    ).all()
-
-    stock_by_id = {
-        stock.STOCK_ID: stock
-        for stock in stock_rows
-    }
-
-    for detail in order.details:
-        for allocation in detail.stock_allocations:
-            stock_id = allocation["stock_id"]
-            quantity = allocation["quantity"]
-
-            stock = stock_by_id.get(stock_id)
-
-            if stock is None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Stock record {stock_id} no longer exists. "
-                        "Automatic restoration cannot continue."
-                    ),
-                )
-
-            stock.quantity_on_hand += quantity
-
-    for detail in order.details:
-        detail.stock_allocations = None
 
 
 @router.get("/items")
@@ -520,6 +372,8 @@ def create_order(
                 ),
             )
 
+    # This is an availability check only.
+    # Stock is not reserved or deducted when an order is created.
     stock_rows = db.execute(
         select(
             Stock.IM_ID,
@@ -764,21 +618,35 @@ def update_order_status(
                 ),
             )
 
-        if new_status == "Approved":
-            deduct_order_stock(
-                db,
-                order,
-            )
-
-        elif new_status == "Cancelled":
-            if current_status in (
-                "Approved",
-                "Processing",
-            ):
-                restore_order_stock(
-                    db,
-                    order,
+        if new_status == "Cancelled":
+            deliveries = db.scalars(
+                select(Delivery).where(
+                    Delivery.order_id == order_id
                 )
+            ).all()
+
+            for delivery in deliveries:
+                reference_no = f"DEL-{delivery.delivery_id}"
+
+                released_stock = db.scalar(
+                    select(StockLedger.LogID).where(
+                        StockLedger.ReferenceNo == reference_no,
+                        StockLedger.TransactionType == "STOCK_OUT",
+                    ).limit(1)
+                )
+
+                if released_stock is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            "This order cannot be cancelled because "
+                            "inventory has already released its items. "
+                            "Process a return or stock adjustment instead."
+                        ),
+                    )
+
+        # Approving an order no longer deducts stock.
+        # Stock deduction is handled by the Delivery release endpoint.
 
         order.status = new_status
 

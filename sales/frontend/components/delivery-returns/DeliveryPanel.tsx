@@ -3,11 +3,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  authAPI,
   customerAPI,
   deliveryAPI,
   salesOrderAPI,
 } from "../../lib/api";
 
+import type { AuthUser } from "../../lib/api";
 import type { Customer } from "../../types/customer";
 import type {
   Delivery,
@@ -17,34 +19,24 @@ import type {
 } from "../../types/delivery";
 import type { SalesOrder } from "../../types/order";
 
-const statuses: DeliveryStatus[] = [
-  "Pending",
-  "Preparing",
-  "Released by Inventory",
-  "Delivered",
-  "Cancelled",
-];
-
 const statusStyles: Record<string, string> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-800",
   Preparing: "border-blue-200 bg-blue-50 text-blue-800",
-  "Released by Inventory": "border-teal-200 bg-teal-50 text-teal-800",
+  Released: "border-teal-200 bg-teal-50 text-teal-800",
   Delivered: "border-green-200 bg-green-50 text-green-800",
   Cancelled: "border-red-200 bg-red-50 text-red-800",
-  Shipped: "border-teal-200 bg-teal-50 text-teal-800",
 };
 
 const allowedTransitions: Record<string, DeliveryStatus[]> = {
   Pending: ["Preparing", "Cancelled"],
-  Preparing: ["Released by Inventory", "Cancelled"],
-  "Released by Inventory": ["Delivered", "Cancelled"],
+  Preparing: ["Released", "Cancelled"],
+  Released: ["Delivered", "Cancelled"],
   Delivered: [],
   Cancelled: [],
-  Shipped: ["Delivered", "Cancelled"],
 };
 
 const displayStatus = (status: DeliveryStatus): string =>
-  status === "Shipped" ? "Released by Inventory" : status;
+  status === "Released" ? "Released by Inventory" : status;
 
 const formatDate = (date: string | null) => {
   if (!date) return "—";
@@ -60,15 +52,51 @@ const formatDate = (date: string | null) => {
   });
 };
 
+const isAdmin = (user: AuthUser | null) =>
+  user?.role_id === 1;
+
+const canCreatePickup = (user: AuthUser | null) =>
+  isAdmin(user) || user?.dept_id === "SL";
+
+function getAvailableTransitions(
+  status: DeliveryStatus,
+  user: AuthUser | null
+): DeliveryStatus[] {
+  const transitions = allowedTransitions[status] ?? [];
+
+  if (!user) return [];
+
+  if (isAdmin(user)) {
+    return transitions;
+  }
+
+  if (user.dept_id === "IN") {
+    return transitions.filter(
+      (nextStatus) =>
+        nextStatus === "Preparing" ||
+        nextStatus === "Released"
+    );
+  }
+
+  if (user.dept_id === "SL") {
+    return transitions.filter(
+      (nextStatus) => nextStatus === "Delivered"
+    );
+  }
+
+  return [];
+}
+
 export default function DeliveryPanel() {
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(10);
+  const pageSize = 10;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -87,17 +115,20 @@ export default function DeliveryPanel() {
 
     try {
       const [
+        userData,
         deliveryData,
         orderData,
         customerData,
         warehouseData,
       ] = await Promise.all([
+        authAPI.getMe(),
         deliveryAPI.getAll(),
         salesOrderAPI.getAll(),
         customerAPI.getAll(),
         deliveryAPI.getWarehouses(),
       ]);
 
+      setCurrentUser(userData);
       setDeliveries(deliveryData);
       setOrders(orderData);
       setCustomers(customerData);
@@ -212,20 +243,15 @@ export default function DeliveryPanel() {
   );
 
   const pendingCount = deliveries.filter(
-    (delivery) => displayStatus(delivery.status) === "Pending"
-  ).length;
-
-  const preparingCount = deliveries.filter(
-    (delivery) => displayStatus(delivery.status) === "Preparing"
+    (delivery) => delivery.status === "Pending"
   ).length;
 
   const readyForPickupCount = deliveries.filter(
-    (delivery) =>
-      displayStatus(delivery.status) === "Released by Inventory"
+    (delivery) => delivery.status === "Released"
   ).length;
 
   const deliveredCount = deliveries.filter(
-    (delivery) => displayStatus(delivery.status) === "Delivered"
+    (delivery) => delivery.status === "Delivered"
   ).length;
 
   function resetForm() {
@@ -294,23 +320,16 @@ export default function DeliveryPanel() {
     delivery: Delivery,
     newStatus: DeliveryStatus
   ) {
-    const currentStatus = displayStatus(delivery.status);
+    if (updatingId !== null) return;
 
-    if (
-      currentStatus === newStatus ||
-      updatingId !== null
-    ) {
-      return;
-    }
-
-    const permittedStatuses =
-      allowedTransitions[delivery.status] ??
-      allowedTransitions[currentStatus] ??
-      [];
+    const permittedStatuses = getAvailableTransitions(
+      delivery.status,
+      currentUser
+    );
 
     if (!permittedStatuses.includes(newStatus)) {
       setError(
-        `The status cannot be changed from ${currentStatus} to ${newStatus}.`
+        `You are not authorized to change this pickup to ${displayStatus(newStatus)}.`
       );
       return;
     }
@@ -336,7 +355,7 @@ export default function DeliveryPanel() {
 
     if (newStatus === "Cancelled") {
       const confirmed = window.confirm(
-        "Are you sure you want to cancel this customer pickup?"
+        "Are you sure you want to cancel this customer pickup? Any stock already released will not be automatically restored."
       );
 
       if (!confirmed) return;
@@ -420,7 +439,7 @@ export default function DeliveryPanel() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              Prepare orders, release items from inventory, and confirm customer collection.
+              Inventory prepares and releases items. Sales confirms customer collection.
             </p>
           </div>
 
@@ -435,16 +454,18 @@ export default function DeliveryPanel() {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setError("");
-                setShowForm(true);
-              }}
-              className="shrink-0 whitespace-nowrap rounded-lg bg-[#4F8585] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3D6D6D]"
-            >
-              + Create Pickup
-            </button>
+            {canCreatePickup(currentUser) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setShowForm(true);
+                }}
+                className="shrink-0 whitespace-nowrap rounded-lg bg-[#4F8585] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3D6D6D]"
+              >
+                + Create Pickup
+              </button>
+            )}
           </div>
         </div>
 
@@ -496,12 +517,12 @@ export default function DeliveryPanel() {
               ) : (
                 paginatedDeliveries.map((delivery) => {
                   const order = orderMap.get(delivery.order_id);
-                  const currentStatus = displayStatus(delivery.status);
 
                   const availableStatuses =
-                    allowedTransitions[delivery.status] ??
-                    allowedTransitions[currentStatus] ??
-                    [];
+                    getAvailableTransitions(
+                      delivery.status,
+                      currentUser
+                    );
 
                   return (
                     <tr
@@ -531,11 +552,11 @@ export default function DeliveryPanel() {
                         <div className="flex min-w-[230px] flex-col items-center justify-center gap-2">
                           <span
                             className={`inline-flex min-w-[150px] items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                              statusStyles[currentStatus] ??
+                              statusStyles[delivery.status] ??
                               "border-slate-200 bg-slate-50 text-slate-700"
                             }`}
                           >
-                            {currentStatus}
+                            {displayStatus(delivery.status)}
                           </span>
 
                           {availableStatuses.length > 0 && (
@@ -554,9 +575,12 @@ export default function DeliveryPanel() {
                               aria-label={`Update pickup status for record ${delivery.delivery_id}`}
                             >
                               <option value="">Update status</option>
-                              {availableStatuses.map((status) => (
-                                <option key={status} value={status}>
-                                  {status}
+                              {availableStatuses.map((nextStatus) => (
+                                <option
+                                  key={nextStatus}
+                                  value={nextStatus}
+                                >
+                                  {displayStatus(nextStatus)}
                                 </option>
                               ))}
                             </select>
