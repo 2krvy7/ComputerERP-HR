@@ -14,18 +14,18 @@ export default function DeliveryReturnsPage() {
   const tabClass = (tab: DeliveryReturnsTab) =>
     `rounded-lg px-5 py-3 text-sm font-semibold transition-colors ${
       activeTab === tab
-        ? "bg-blue-700 text-white shadow-sm"
+        ? "bg-green-700 text-white shadow-sm"
         : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"
     }`;
 
   return (
-    <div className="min-h-full bg-slate-50 p-4 text-slate-900 sm:p-6">
+    <div className="min-h-full bg-green-50 p-4 text-slate-900 sm:p-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
 
         <div
           role="tablist"
           aria-label="Delivery and returns sections"
-          className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm"
+          className="flex flex-wrap gap-2 rounded-xl bg-[#E5E7EB] border border-slate-200 p-2 shadow-sm"
         >
           <button
             id="deliveries-tab"

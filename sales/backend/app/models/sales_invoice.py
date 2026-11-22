@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Integer, Numeric
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -34,7 +34,43 @@ class SalesInvoice(Base):
         nullable=True,
     )
 
+    installment_months: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    interest_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
+    interest_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
+    tax_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="Non-VAT",
+    )
+
+    tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
+    tax_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+    )
+
     total_due: Mapped[Decimal] = mapped_column(
-        Numeric,
+        Numeric(12, 2),
         nullable=False,
     )

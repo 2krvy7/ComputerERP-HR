@@ -1,7 +1,8 @@
+
 export type DeliveryStatus =
   | "Pending"
   | "Preparing"
-  | "Shipped"
+  | "Released"
   | "Delivered"
   | "Cancelled";
 
@@ -23,6 +24,7 @@ export interface DeliveryCreate {
 
 export interface DeliveryStatusUpdate {
   status: DeliveryStatus;
+  received_by?: string;
 }
 
 export interface Warehouse {

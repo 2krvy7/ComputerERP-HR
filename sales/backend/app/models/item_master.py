@@ -1,3 +1,4 @@
+
 from decimal import Decimal
 
 from sqlalchemy import Integer, Numeric, String, Text
@@ -49,8 +50,18 @@ class ItemMaster(Base):
         nullable=True,
     )
 
+    production_cost: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+
+    markup_percentage: Mapped[Decimal | None] = mapped_column(
+        Numeric(7, 2),
+        nullable=True,
+    )
+
     Price: Mapped[Decimal | None] = mapped_column(
-        Numeric,
+        Numeric(12, 2),
         nullable=True,
     )
 
