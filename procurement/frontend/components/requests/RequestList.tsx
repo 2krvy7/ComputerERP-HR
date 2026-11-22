@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QuotationPanel from "./QuotationPanel";
+import Pagination from "@/components/Pagination";
 
 type PurchaseRequest = {
   PR_ID: number;
@@ -14,7 +15,7 @@ type PurchaseRequest = {
   Warehouse_Name: string;
   bid_count: number;
 };
-
+const PAGE_SIZE = 10;
 const FILTERS = ["All", "Open", "Closed", "Cancelled"] as const;
 
 const STATUS_COLORS = {
@@ -31,7 +32,7 @@ export default function RequestList({ limit }: { limit?: number }) {
   const [selectedId, setSelectedId] = useState<number | null>(null); // which request's popup is open
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [reloadKey, setReloadKey] = useState(0); // bump this to re-fetch the list
-
+  const [page, setPage] = useState(1);
   // Fetch again whenever the filter changes or the popup reports a change
   useEffect(() => {
     async function load() {
@@ -50,7 +51,12 @@ export default function RequestList({ limit }: { limit?: number }) {
     load();
   }, [filter, reloadKey]);
 
-  const shown = limit ? requests.slice(0, limit) : requests;
+  const shown = limit ? requests.slice(0, limit) : requests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(requests.length / PAGE_SIZE));
+    if (page > pages) setPage(pages);
+  }, [requests, page]);
 
   const note = (text: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -59,6 +65,11 @@ export default function RequestList({ limit }: { limit?: number }) {
   );
 
   const cell = { padding: "0.8vw 1.4vw", textAlign: "left" as const };
+
+  useEffect(() => {
+    const t = setInterval(() => setReloadKey((k) => k + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <>
@@ -88,7 +99,7 @@ export default function RequestList({ limit }: { limit?: number }) {
               {FILTERS.map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
+                  onClick={() => { setFilter(f); setPage(1); }}
                   style={{
                     padding: "0.4vw 1vw",
                     borderRadius: "99vw",
@@ -122,7 +133,7 @@ export default function RequestList({ limit }: { limit?: number }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
               <thead>
                 <tr>
-                  {["ID", "Item", "Qty", "Warehouse", "Quoatations", "Status", "Issued"].map((h) => (
+                  {["ID", "Item", "Qty", "Warehouse", "Quotations", "Status", "Issued"].map((h) => (
                     <th
                       key={h}
                       style={{
@@ -187,6 +198,7 @@ export default function RequestList({ limit }: { limit?: number }) {
             </table>
           )}
         </div>
+        {!limit && <Pagination total={requests.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
       </div>
 
       {/* The floating popup, only while a request is selected */}

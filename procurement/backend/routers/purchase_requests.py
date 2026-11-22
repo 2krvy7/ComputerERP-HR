@@ -53,7 +53,7 @@ def create_purchase_request(body: PurchaseRequestIn):
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    '''SELECT rr."approved_by", im."ItemType"
+                    '''SELECT rr."status", im."ItemType"
                        FROM public."RestockRequest" rr
                        JOIN public."ITEM_MASTER" im ON im."IM_ID" = rr."IM_ID"
                        WHERE rr."RR_ID" = %s''',
@@ -67,7 +67,7 @@ def create_purchase_request(body: PurchaseRequestIn):
                         status_code=409,
                         detail="Only raw material restock requests go to Procurement",
                     )
-                if rr["approved_by"] is None:
+                if rr["status"] != "Approved":
                     raise HTTPException(status_code=409, detail="Restock request is not approved yet")
 
                 cur.execute(

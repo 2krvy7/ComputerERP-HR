@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Pagination from "@/components/Pagination"
+import { printReport } from "@/components/printReport";
 
 type Invoice = {
   PI_ID: number;
@@ -18,6 +20,7 @@ type Invoice = {
   dueDate: string | null;
 };
 
+const PAGE_SIZE = 10;
 const FILTERS = ["All", "Awaiting Finance", "Outstanding", "Paid"] as const;
 
 const money = (n: number | null) =>
@@ -44,6 +47,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -73,7 +77,33 @@ export default function InvoiceList({ limit }: { limit?: number }) {
       i.Item_Name.toLowerCase().includes(text);
     return matchesFilter && matchesSearch;
   });
-  const shown = limit ? filtered.slice(0, limit) : filtered;
+  const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  function handlePrint() {
+    const total = filtered.reduce((s, i) => s + Number(i.TotalDue ?? 0), 0);
+    const balance = filtered.reduce((s, i) => s + (i.apInvoiceID === null ? 0 : Number(i.remainingBalance ?? 0)), 0);
+    printReport({
+      title: "Purchase Invoices Report",
+      subtitle: `Filter: ${filter}${search ? ` · Search: "${search}"` : ""}`,
+      summary: [
+        ["Invoices", String(filtered.length)],
+        ["Total due", money(total)],
+        ["Outstanding balance", money(balance)],
+      ],
+      headers: ["Invoice", "Order", "Supplier", "Item", "Date", "Tax", "Total due", "Balance", "Payment", "Due date"],
+      rows: filtered.map((i) => [
+        `#${i.PI_ID}`, `#${i.PO_ID}`, i.SupplierName, i.Item_Name, date(i.InvoiceDate),
+        money(i.TaxAmount), money(i.TotalDue),
+        i.apInvoiceID === null ? "—" : money(i.remainingBalance),
+        paymentBadge(i).label, date(i.dueDate),
+      ]),
+    });
+  }
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > pages) setPage(pages);
+  }, [filtered.length, page]);
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -112,7 +142,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             {FILTERS.map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setPage(1); }}
                 style={{
                   padding: "0.4vw 1vw",
                   borderRadius: "99vw",
@@ -131,7 +161,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           <div style={{ display: "flex", alignItems: "center", gap: "1vw" }}>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search supplier or item..."
               style={{
                 width: "15vw",
@@ -147,6 +177,15 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             <span style={{ fontSize: "0.8vw", color: "#668d98", whiteSpace: "nowrap" }}>
               {filtered.length} {filtered.length === 1 ? "invoice" : "invoices"}
             </span>
+            <button
+              onClick={handlePrint}
+              style={{
+                border: "none", cursor: "pointer", padding: "0.45vw 1.1vw", borderRadius: "99vw",
+                fontSize: "0.8vw", fontWeight: 600, backgroundColor: "#365f68", color: "#ffffff",
+              }}
+            >
+              Print report
+            </button>
           </div>
         </div>
       )}
@@ -219,6 +258,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           </table>
         )}
       </div>
+      {!limit && <Pagination total={filtered.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
     </div>
   );
 }
