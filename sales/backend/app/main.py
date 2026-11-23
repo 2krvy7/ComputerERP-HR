@@ -48,7 +48,14 @@ ALLOWED_ORIGINS = [
     origin.strip().rstrip("/")
     for origin in os.getenv(
         "FRONTEND_ORIGINS",
-        "https://computer-erp-login.vercel.app,http://localhost:3000",
+        ",".join(
+            [
+                "https://sales-kenethvivas22.vercel.app",
+                "https://sales-pink-iota.vercel.app",
+                "https://computer-erp-login.vercel.app",
+                "http://localhost:3000",
+            ]
+        ),
     ).split(",")
     if origin.strip()
 ]
