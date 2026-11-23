@@ -5,7 +5,9 @@ from database import get_db_connection
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
 # One query joins the whole chain: order -> winning bid -> supplier -> request -> item and warehouse.
-# The two LEFT JOINs add delivery and invoice info if those rows exist yet.
+# The two LEFT JOINs add delivery info (Inventory's count) and Finance's payment info.
+# "invoiced" now means Finance has fully paid the order. The old tax columns stay in the
+# response as empty values, so the pages that still read them keep working.
 ORDER_SELECT = """
     SELECT po."PO_ID", po."OrderDate", po."Total_Amount",
            rq."RFQ_ID", rq."QuotedAmount" AS unit_price, rq."DeliveryTerms",
@@ -14,8 +16,12 @@ ORDER_SELECT = """
            im."Item_Name", im."SKU", w."Warehouse_Name",
            (gr."QuantityReceived" IS NOT NULL) AS goods_received,
            gr."ReceivedDate", gr."ItemCondition", gr."QuantityReceived", gr."Remarks",
-           (inv."PI_ID" IS NOT NULL) AS invoiced,
-           inv."InvoiceDate", inv."TaxAmount", inv."TotalDue"
+           (LOWER(COALESCE(ap."status", '')) = 'paid') AS invoiced,
+           NULL::date    AS "InvoiceDate",
+           NULL::numeric AS "TaxAmount",
+           ap."amount"   AS "TotalDue",
+           ap."apInvoiceID", ap."status" AS payment_status,
+           ap."totalPaid", ap."remainingBalance"
     FROM public."PurchaseOrder" po
     JOIN public."RequestQuotation" rq ON rq."RFQ_ID" = po."RFQ_ID"
     JOIN public."Supplier" s          ON s."SupplierID" = rq."SupplierID"
@@ -23,8 +29,8 @@ ORDER_SELECT = """
     JOIN public."RestockRequest" rr   ON rr."RR_ID" = pr."RestockRequestID"
     JOIN public."ITEM_MASTER" im      ON im."IM_ID" = rr."IM_ID"
     JOIN public."WAREHOUSE" w         ON w."WH_ID" = rr."WH_ID"
-    LEFT JOIN public."GoodsReceived" gr    ON gr."PO_ID" = po."PO_ID"
-    LEFT JOIN public."PurchaseInvoice" inv ON inv."PO_ID" = po."PO_ID"
+    LEFT JOIN public."GoodsReceived" gr ON gr."PO_ID" = po."PO_ID"
+    LEFT JOIN public."APInvoice" ap     ON ap."poID" = po."PO_ID"
 """
 
 @router.get("/")
