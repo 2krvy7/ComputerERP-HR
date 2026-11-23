@@ -5,7 +5,7 @@ import OrderPanel, { Badge, money } from "./OrderPanel";
 import type { Order } from "./OrderPanel";
 import Pagination from "@/components/Pagination"
 
-const FILTERS = ["All", "Awaiting delivery", "Awaiting invoice", "Completed"] as const;
+const FILTERS = ["All", "Awaiting delivery", "Awaiting payment", "Completed"] as const;
 const PAGE_SIZE = 10;
 
 export default function OrderList({ limit }: { limit?: number }) {
@@ -39,7 +39,7 @@ export default function OrderList({ limit }: { limit?: number }) {
     const matchesFilter =
       filter === "All" ||
       (filter === "Awaiting delivery" && !o.goods_received) ||
-      (filter === "Awaiting invoice" && !o.invoiced) ||
+      (filter === "Awaiting payment" && !o.invoiced) ||
       (filter === "Completed" && o.goods_received && o.invoiced);
     const matchesSearch =
       !text ||
@@ -144,7 +144,7 @@ export default function OrderList({ limit }: { limit?: number }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
               <thead>
                 <tr>
-                  {["PO", "Supplier", "Item", "Qty", "Unit price", "Total", "Ordered", "Delivery", "Invoice"].map((h) => (
+                  {["PO", "Supplier", "Item", "Qty", "Unit price", "Total", "Ordered", "Delivery", "Payment"].map((h) => (
                     <th
                       key={h}
                       style={{
@@ -189,7 +189,7 @@ export default function OrderList({ limit }: { limit?: number }) {
                       <Badge done={o.goods_received} doneText="Received" pendingText="Awaiting" />
                     </td>
                     <td style={cell}>
-                      <Badge done={o.invoiced} doneText="Invoiced" pendingText="Awaiting" />
+                      <Badge done={o.invoiced} doneText="Paid" pendingText="Unpaid" />
                     </td>
                   </tr>
                 ))}

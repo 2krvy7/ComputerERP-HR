@@ -78,7 +78,7 @@ const getLastSixMonths = () => {
 };
 
 const cardClass =
-  "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+  "rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm";
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -226,7 +226,6 @@ export default function DashboardPage() {
       {
         IM_ID: number;
         name: string;
-        sku: string;
         quantity: number;
         sales: number;
       }
@@ -289,7 +288,6 @@ export default function DashboardPage() {
         productMap.set(detail.IM_ID, {
           IM_ID: detail.IM_ID,
           name: item?.Item_Name ?? `Item #${detail.IM_ID}`,
-          sku: item?.SKU ?? "—",
           quantity: netQuantity,
           sales: netSales,
         });
@@ -312,16 +310,15 @@ export default function DashboardPage() {
       .slice(0, 5);
   }, [invoices]);
 
-  // Line graph dimensions and coordinates
-  const chartWidth = 600;
-const chartHeight = 200;
+  const chartWidth = 560;
+  const chartHeight = 160;
 
-const chartPadding = {
-  top: 15,
-  right: 20,
-  bottom: 35,
-  left: 70,
-};
+  const chartPadding = {
+    top: 10,
+    right: 16,
+    bottom: 28,
+    left: 64,
+  };
 
   const maxMonthlyValue = Math.max(
     1,
@@ -357,14 +354,13 @@ const chartPadding = {
   const chartAxisLabels = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="min-h-full space-y-6 bg-#8FB1B8-50 p-4 sm:p-6">
-      {/* Dashboard Header */}
+    <div className="min-h-full space-y-6 bg-green-50 p-4 text-slate-900 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="mt-1 text-2xl font-bold text-slate-900">
             {PAGE_TITLE}
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-600">
             Overview of sales performance and financial activities.
           </p>
         </div>
@@ -377,479 +373,284 @@ const chartPadding = {
         </div>
       )}
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Sales
           </p>
           <p className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "—" : money(analytics.totalSales)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Based on sales invoices
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Orders
           </p>
           <p className="mt-2 text-2xl font-bold text-slate-900">
             {loading ? "—" : analytics.totalOrders.toLocaleString()}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             {analytics.activeOrders} non-cancelled orders
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Outstanding Balance
           </p>
           <p className="mt-2 text-2xl font-bold text-amber-600">
             {loading ? "—" : money(analytics.outstandingBalance)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Remaining accounts receivable
           </p>
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-500">
+          <p className="text-sm font-medium text-slate-600">
             Total Collections
           </p>
           <p className="mt-2 text-2xl font-bold text-emerald-600">
             {loading ? "—" : money(analytics.totalCollections)}
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-slate-600">
             Recorded customer payments
           </p>
         </div>
       </div>
 
-      {/* Sales Performance - Line Graph */}
-      <section className={cardClass}>
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-900">
-            Sales Performance
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Monthly sales and collections for the last six months.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="py-10 text-center text-sm text-slate-500">
-            Loading sales performance...
-          </p>
-        ) : monthlyAnalytics.every(
-            (month) => month.sales === 0 && month.collections === 0
-          ) ? (
-          <p className="py-10 text-center text-sm text-slate-500">
-            No sales or collection records available for this period.
-          </p>
-        ) : (
-          <>
-            {/* Graph Legend */}
-            <div className="mb-4 flex flex-wrap gap-5 text-sm">
-              <span className="flex items-center gap-2 text-slate-600">
-                <span className="h-3 w-3 rounded-full bg-blue-600" />
-                Sales
-              </span>
-
-              <span className="flex items-center gap-2 text-slate-600">
-                <span className="h-3 w-3 rounded-full bg-emerald-500" />
-                Collections
-              </span>
-            </div>
-
-            {/* Line Graph */}
-            <div className="mx-auto w-full max-w-[650px]">
-              <svg
-                viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                className="mx-auto h-auto w-full max-w-[650px]"
-                role="img"
-                aria-label="Line graph showing monthly sales and collections for the last six months"
-              >
-                {/* Horizontal grid lines and peso labels */}
-                {chartAxisLabels.map((ratio) => {
-                  const value = maxMonthlyValue * ratio;
-                  const y = chartY(value);
-
-                  return (
-                    <g key={ratio}>
-                      <line
-                        x1={chartPadding.left}
-                        y1={y}
-                        x2={chartWidth - chartPadding.right}
-                        y2={y}
-                        stroke="#e2e8f0"
-                        strokeDasharray="4 4"
-                      />
-
-                      <text
-                        x={chartPadding.left - 10}
-                        y={y + 4}
-                        textAnchor="end"
-                        fontSize="11"
-                        fill="#64748b"
-                      >
-                        {value >= 1000
-                          ? `₱${(value / 1000).toFixed(0)}k`
-                          : `₱${value.toFixed(0)}`}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Sales Line */}
-                <polyline
-                  points={salesLine}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-
-                {/* Collections Line */}
-                <polyline
-                  points={collectionsLine}
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-
-                {/* Data Points and Month Labels */}
-                {monthlyAnalytics.map((month, index) => (
-                  <g key={month.key}>
-                    {/* Sales Point */}
-                    <circle
-                      cx={chartX(index)}
-                      cy={chartY(month.sales)}
-                      r="5"
-                      fill="#2563eb"
-                      stroke="white"
-                      strokeWidth="2"
-                    >
-                      <title>
-                        {month.label} Sales: {money(month.sales)}
-                      </title>
-                    </circle>
-
-                    {/* Collections Point */}
-                    <circle
-                      cx={chartX(index)}
-                      cy={chartY(month.collections)}
-                      r="5"
-                      fill="#10b981"
-                      stroke="white"
-                      strokeWidth="2"
-                    >
-                      <title>
-                        {month.label} Collections: {money(month.collections)}
-                      </title>
-                    </circle>
-
-                    {/* Month Label */}
-                    <text
-                      x={chartX(index)}
-                      y={chartHeight - 12}
-                      textAnchor="middle"
-                      fontSize="11"
-                      fill="#64748b"
-                    >
-                      {month.label}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-            </div>
-
-            {/* Monthly Totals */}
-            <div className="mt-5 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-slate-500">
-                  Sales in displayed period
-                </p>
-                <p className="mt-1 font-semibold text-blue-700">
-                  {money(
-                    monthlyAnalytics.reduce(
-                      (sum, month) => sum + month.sales,
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs text-slate-500">
-                  Collections in displayed period
-                </p>
-                <p className="mt-1 font-semibold text-emerald-700">
-                  {money(
-                    monthlyAnalytics.reduce(
-                      (sum, month) => sum + month.collections,
-                      0
-                    )
-                  )}
-                </p>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* Top Selling Products */}
-      <section className={cardClass}>
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-900">
-            Top Selling Products
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Products ranked by net quantity sold, after recorded returns.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="py-8 text-center text-sm text-slate-500">
-            Loading product analytics...
-          </p>
-        ) : topProducts.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">
-            No product sales records available yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3 text-left">Rank</th>
-                  <th className="px-4 py-3 text-center">Product</th>
-                  <th className="px-4 py-3 text-center">SKU</th>
-                  <th className="px-4 py-3 text-center">
-                    Quantity Sold
-                  </th>
-                  <th className="px-4 py-3 text-center">
-                    Net Sales
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {topProducts.map((product, index) => (
-                  <tr
-                    key={product.IM_ID}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                  >
-                    <td className="px-4 py-4 font-semibold text-slate-500 ">
-                      #{index + 1}
-                    </td>
-
-                    <td className="px-4 py-4 text-center ">
-                      <p className="font-semibold text-slate-800 text-center">
-                        {product.name}
-                      </p>
-                      <p className="text-xs text-slate-500 text-center">
-                        Item ID: {product.IM_ID}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-4 text-slate-600 text-center">
-                      {product.sku}
-                    </td>
-
-                    <td className="px-4 py-4 text-center font-semibold text-slate-800">
-                      {product.quantity.toLocaleString()}
-                    </td>
-
-                    <td className="px-4 py-4 text-center font-semibold text-slate-800">
-                      {money(product.sales)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <section className="w-full rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              Sales Performance
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Monthly sales and collections for the last six months.
+            </p>
           </div>
-        )}
-      </section>
-
-      {/* Order Status and Financial Overview */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <section className={cardClass}>
-          <h2 className="text-lg font-bold text-slate-900">
-            Sales Order Status
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Current distribution of sales orders.
-          </p>
 
           {loading ? (
-            <p className="py-8 text-center text-sm text-slate-500">
-              Loading order statuses...
+            <p className="py-8 text-center text-sm text-slate-600">
+              Loading sales performance...
             </p>
-          ) : orders.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">
-              No sales orders available.
+          ) : monthlyAnalytics.every(
+              (month) => month.sales === 0 && month.collections === 0
+            ) ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              No sales or collection records available for this period.
             </p>
           ) : (
-            <div className="mt-5 space-y-4">
-              {analytics.orderStatuses.map((item) => {
-                const percentage =
-                  analytics.totalOrders > 0
-                    ? (item.count / analytics.totalOrders) * 100
-                    : 0;
+            <>
+              <div className="mb-2 flex flex-wrap gap-4 text-xs">
+                <span className="flex items-center gap-2 text-slate-700">
+                  <span className="h-2.5 w-2.5 rounded-full bg-blue-600" />
+                  Sales
+                </span>
 
-                const statusColors: Record<string, string> = {
-                  Pending: "bg-amber-500",
-                  Approved: "bg-blue-500",
-                  Processing: "bg-indigo-500",
-                  Completed: "bg-emerald-500",
-                  Cancelled: "bg-red-500",
-                };
+                <span className="flex items-center gap-2 text-slate-700">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  Collections
+                </span>
+              </div>
 
-                return (
-                  <div key={item.status}>
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-sm font-medium text-slate-700">
-                        {item.status}
-                      </span>
-                      <span className="text-sm font-semibold text-slate-800">
-                        {item.count}
-                      </span>
-                    </div>
+              <div className="mx-auto w-full max-w-[560px]">
+                <svg
+                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  className="mx-auto h-auto w-full"
+                  role="img"
+                  aria-label="Line graph showing monthly sales and collections for the last six months"
+                >
+                  {chartAxisLabels.map((ratio) => {
+                    const value = maxMonthlyValue * ratio;
+                    const y = chartY(value);
 
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className={`h-full rounded-full ${
-                          statusColors[item.status]
-                        }`}
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    return (
+                      <g key={ratio}>
+                        <line
+                          x1={chartPadding.left}
+                          y1={y}
+                          x2={chartWidth - chartPadding.right}
+                          y2={y}
+                          stroke="#cbd5e1"
+                          strokeDasharray="4 4"
+                        />
+
+                        <text
+                          x={chartPadding.left - 10}
+                          y={y + 4}
+                          textAnchor="end"
+                          fontSize="11"
+                          fill="#475569"
+                        >
+                          {value >= 1000
+                            ? `₱${(value / 1000).toFixed(0)}k`
+                            : `₱${value.toFixed(0)}`}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  <polyline
+                    points={salesLine}
+                    fill="none"
+                    stroke="#2563eb"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  <polyline
+                    points={collectionsLine}
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {monthlyAnalytics.map((month, index) => (
+                    <g key={month.key}>
+                      <circle
+                        cx={chartX(index)}
+                        cy={chartY(month.sales)}
+                        r="4"
+                        fill="#2563eb"
+                        stroke="white"
+                        strokeWidth="1.5"
+                      >
+                        <title>
+                          {month.label} Sales: {money(month.sales)}
+                        </title>
+                      </circle>
+
+                      <circle
+                        cx={chartX(index)}
+                        cy={chartY(month.collections)}
+                        r="4"
+                        fill="#10b981"
+                        stroke="white"
+                        strokeWidth="1.5"
+                      >
+                        <title>
+                          {month.label} Collections: {money(month.collections)}
+                        </title>
+                      </circle>
+
+                      <text
+                        x={chartX(index)}
+                        y={chartHeight - 12}
+                        textAnchor="middle"
+                        fontSize="11"
+                        fill="#475569"
+                      >
+                        {month.label}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 border-t border-[#D1D5DB] pt-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-600">
+                    Sales in displayed period
+                  </p>
+                  <p className="mt-1 font-semibold text-blue-700">
+                    {money(
+                      monthlyAnalytics.reduce(
+                        (sum, month) => sum + month.sales,
+                        0
+                      )
+                    )}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs text-slate-600">
+                    Collections in displayed period
+                  </p>
+                  <p className="mt-1 font-semibold text-emerald-700">
+                    {money(
+                      monthlyAnalytics.reduce(
+                        (sum, month) => sum + month.collections,
+                        0
+                      )
+                    )}
+                  </p>
+                </div>
+              </div>
+            </>
           )}
         </section>
 
         <section className={cardClass}>
-          <h2 className="text-lg font-bold text-slate-900">
-            Financial Overview
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Summary of recorded sales and payment activity.
-          </p>
-
-          <div className="mt-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
-                Total Sales
-              </span>
-              <span className="font-semibold text-slate-900">
-                {loading ? "—" : money(analytics.totalSales)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
-                Total Collections
-              </span>
-              <span className="font-semibold text-emerald-700">
-                {loading ? "—" : money(analytics.totalCollections)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
-                Outstanding Balance
-              </span>
-              <span className="font-semibold text-amber-600">
-                {loading ? "—" : money(analytics.outstandingBalance)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-600">
-                Total Sales Returns
-              </span>
-              <span className="font-semibold text-red-600">
-                {loading ? "—" : money(analytics.totalReturns)}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-slate-600">
-                Overdue Accounts
-              </span>
-              <span className="font-semibold text-red-600">
-                {loading ? "—" : analytics.overdueAccounts}
-              </span>
-            </div>
+          <div className="mb-5">
+            <h2 className="text-lg font-bold text-slate-900">
+              Top Selling Products
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Products ranked by net quantity sold, after recorded returns.
+            </p>
           </div>
+
+          {loading ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              Loading product analytics...
+            </p>
+          ) : topProducts.length === 0 ? (
+            <p className="py-8 text-center text-sm text-slate-600">
+              No product sales records available yet.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
+                    <th className="px-4 py-3 text-left">Rank</th>
+                    <th className="px-4 py-3 text-left">Product</th>
+                    <th className="px-4 py-3 text-center">
+                      Quantity Sold
+                    </th>
+                    <th className="px-4 py-3 text-center">
+                      Net Sales
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {topProducts.map((product, index) => (
+                    <tr
+                      key={product.IM_ID}
+                      className="border-b border-[#D1D5DB] last:border-0 hover:bg-[#DDE1E5]"
+                    >
+                      <td className="px-4 py-4 font-semibold text-slate-600">
+                        #{index + 1}
+                      </td>
+
+                      <td className="px-4 py-4 font-semibold text-slate-800">
+                        {product.name}
+                      </td>
+
+                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                        {product.quantity.toLocaleString()}
+                      </td>
+
+                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                        {money(product.sales)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
       </div>
-
-      {/* Recent Sales Invoices */}
-      <section className={cardClass}>
-        <div className="mb-5">
-          <h2 className="text-lg font-bold text-slate-900">
-            Recent Sales Invoices
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            The five most recently issued sales invoices.
-          </p>
-        </div>
-
-        {loading ? (
-          <p className="py-8 text-center text-sm text-slate-500">
-            Loading recent invoices...
-          </p>
-        ) : recentInvoices.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">
-            No sales invoices available yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[550px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3 text-left">Invoice ID</th>
-                  <th className="px-4 py-3 text-center">Order ID</th>
-                  <th className="px-4 py-3 text-center">Invoice Date</th>
-                  <th className="px-4 py-3 text-center">Total Due</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {recentInvoices.map((invoice) => (
-                  <tr
-                    key={invoice.invoice_id}
-                    className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                  >
-                    <td className="px-4 py-4 font-semibold text-blue-700 text-left">
-                      #{invoice.invoice_id}
-                    </td>
-                    <td className="px-4 py-4 text-slate-600 text-center">
-                      #{invoice.order_id}
-                    </td>
-                    <td className="px-4 py-4 text-slate-600 text-center">
-                      {formatDate(invoice.invoice_date)}
-                    </td>
-                    <td className="px-4 py-4 font-semibold text-slate-800 text-center">
-                      {money(invoice.total_due)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

@@ -3,6 +3,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { customerAPI, salesOrderAPI } from "../../lib/api";
+
+import {
+  fetchFinanceFloorPrices,
+  validateSellingPrice,
+} from "../../lib/finance";
+
+import type { PricingAlert } from "../../lib/finance";
+
 import type { Customer } from "../../types/customer";
 import type {
   SalesOrder,
@@ -12,20 +20,31 @@ import type {
 } from "../../types/order";
 
 interface OrderLine {
+  lineId: number;
   IM_ID: number;
   quantity: number;
   discount: number;
 }
 
-const PAGE_SIZE = 10;
+interface StockIssue {
+  IM_ID: number;
+  itemName: string;
+  requested: number;
+  available: number;
+}
 
-const statuses: SalesOrderStatus[] = [
-  "Pending",
-  "Approved",
-  "Processing",
-  "Completed",
-  "Cancelled",
-];
+interface PricingIssue {
+  IM_ID: number;
+  itemName: string;
+  sellingPrice: number;
+  minimumPrice: number;
+  message: string;
+}
+
+const PAGE_SIZE = 10;
+const statuses = ["Pending", "Completed", "Cancelled"] as const;
+
+type OrderStatusOption = (typeof statuses)[number];
 
 const money = (amount: string | number) =>
   `₱${Number(amount || 0).toLocaleString("en-PH", {
@@ -38,9 +57,7 @@ const formatDate = (value: string | null | undefined) => {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
+  if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleDateString("en-PH", {
     day: "2-digit",
@@ -49,10 +66,8 @@ const formatDate = (value: string | null | undefined) => {
   });
 };
 
-const statusStyles: Record<SalesOrderStatus, string> = {
+const statusStyles: Partial<Record<SalesOrderStatus, string>> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
-  Approved: "border-blue-200 bg-blue-50 text-blue-700",
-  Processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
   Completed: "border-green-200 bg-green-50 text-green-700",
   Cancelled: "border-red-200 bg-red-50 text-red-700",
 };
@@ -61,9 +76,11 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesOrderItem[]>([]);
+  const [itemCatalog, setItemCatalog] = useState<
+    Record<number, SalesOrderItem>
+  >({});
 
   const [search, setSearch] = useState("");
-  const [itemSearch, setItemSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
   const [loading, setLoading] = useState(true);
@@ -74,9 +91,22 @@ export default function OrdersPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [customerId, setCustomerId] = useState("");
+
+  const [nextLineId, setNextLineId] = useState(2);
   const [lines, setLines] = useState<OrderLine[]>([
-    { IM_ID: 0, quantity: 1, discount: 0 },
+    { lineId: 1, IM_ID: 0, quantity: 1, discount: 0 },
   ]);
+
+  const [itemQueries, setItemQueries] = useState<Record<number, string>>({});
+  const [activeItemLine, setActiveItemLine] = useState<number | null>(null);
+
+  // Finance pricing states
+  const [pricingAlerts, setPricingAlerts] = useState<PricingAlert[]>([]);
+  const [loadingPricing, setLoadingPricing] = useState(false);
+  const [pricingLoaded, setPricingLoaded] = useState(false);
+  const [pricingError, setPricingError] = useState("");
+
+  const customerSelected = customerId !== "";
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -87,9 +117,7 @@ export default function OrdersPage() {
       setOrders(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load sales orders."
+        err instanceof Error ? err.message : "Unable to load sales orders."
       );
     } finally {
       setLoading(false);
@@ -102,9 +130,7 @@ export default function OrdersPage() {
       setCustomers(data);
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load customers."
+        err instanceof Error ? err.message : "Unable to load customers."
       );
     }
   }, []);
@@ -113,31 +139,74 @@ export default function OrdersPage() {
     setLoadingItems(true);
 
     try {
-      const data = await salesOrderAPI.getItems(itemSearch);
+      const data = await salesOrderAPI.getItems();
+
       setItems(data);
+
+      setItemCatalog((current) => {
+        const updated = { ...current };
+
+        data.forEach((item) => {
+          updated[item.IM_ID] = item;
+        });
+
+        return updated;
+      });
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to load items."
+        err instanceof Error ? err.message : "Unable to load items."
       );
     } finally {
       setLoadingItems(false);
     }
-  }, [itemSearch]);
+  }, []);
 
   useEffect(() => {
     void loadOrders();
     void loadCustomers();
-  }, [loadOrders, loadCustomers]);
+    void loadItems();
+  }, [loadOrders, loadCustomers, loadItems]);
 
+  // Fetch Finance minimum selling prices when the order form opens.
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      void loadItems();
-    }, 300);
+    if (!showForm) return;
 
-    return () => clearTimeout(timeout);
-  }, [loadItems]);
+    let cancelled = false;
+
+    async function loadPricing() {
+      setLoadingPricing(true);
+      setPricingLoaded(false);
+      setPricingError("");
+
+      try {
+        const alerts = await fetchFinanceFloorPrices();
+
+        if (!cancelled) {
+          setPricingAlerts(alerts);
+          setPricingLoaded(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPricingAlerts([]);
+          setPricingError(
+            err instanceof Error
+              ? err.message
+              : "Unable to retrieve Finance pricing rules."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPricing(false);
+        }
+      }
+    }
+
+    void loadPricing();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showForm]);
 
   const customerMap = useMemo(
     () =>
@@ -156,8 +225,7 @@ export default function OrdersPage() {
     if (!term) return orders;
 
     return orders.filter((order) => {
-      const customerName =
-        customerMap.get(order.customer_id) ?? "";
+      const customerName = customerMap.get(order.customer_id) ?? "";
 
       return (
         String(order.order_id).includes(term) ||
@@ -173,15 +241,17 @@ export default function OrdersPage() {
   );
 
   const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
 
-  const paginatedOrders = useMemo(() => {
-    const startIndex = (safePage - 1) * PAGE_SIZE;
+  const paginatedOrders = useMemo(
+    () => filteredOrders.slice(startIndex, startIndex + PAGE_SIZE),
+    [filteredOrders, startIndex]
+  );
 
-    return filteredOrders.slice(
-      startIndex,
-      startIndex + PAGE_SIZE
-    );
-  }, [filteredOrders, safePage]);
+  const endRecord = Math.min(
+    startIndex + PAGE_SIZE,
+    filteredOrders.length
+  );
 
   const totalSales = orders.reduce(
     (sum, order) => sum + Number(order.total_amount || 0),
@@ -196,46 +266,191 @@ export default function OrdersPage() {
     (order) => order.status === "Completed"
   ).length;
 
-  const startRecord =
-    filteredOrders.length === 0
-      ? 0
-      : (safePage - 1) * PAGE_SIZE + 1;
+  const requestedByItem = useMemo(() => {
+    const totals = new Map<number, number>();
 
-  const endRecord = Math.min(
-    safePage * PAGE_SIZE,
-    filteredOrders.length
-  );
+    lines.forEach((line) => {
+      if (line.IM_ID > 0 && line.quantity > 0) {
+        totals.set(
+          line.IM_ID,
+          (totals.get(line.IM_ID) ?? 0) + line.quantity
+        );
+      }
+    });
 
-  function updateLine(index: number, changes: Partial<OrderLine>) {
+    return totals;
+  }, [lines]);
+
+  const stockIssues = useMemo<StockIssue[]>(() => {
+    const issues: StockIssue[] = [];
+
+    requestedByItem.forEach((requested, itemId) => {
+      const item = itemCatalog[itemId];
+
+      if (!item) return;
+
+      const available = Number(item.stock_available ?? 0);
+
+      if (requested > available) {
+        issues.push({
+          IM_ID: itemId,
+          itemName: item.Item_Name,
+          requested,
+          available,
+        });
+      }
+    });
+
+    return issues;
+  }, [requestedByItem, itemCatalog]);
+
+  const hasStockIssues = stockIssues.length > 0;
+
+  // Validate each selected item's discounted unit price.
+  const pricingIssues = useMemo<PricingIssue[]>(() => {
+    if (!pricingLoaded) return [];
+
+    return lines.flatMap((line) => {
+      if (line.IM_ID <= 0) return [];
+
+      const item = itemCatalog[line.IM_ID];
+
+      if (!item) return [];
+
+      const originalPrice = Number(item.Price ?? 0);
+
+      const discountedPrice =
+        originalPrice * (1 - line.discount / 100);
+
+      const validation = validateSellingPrice(
+        line.IM_ID,
+        discountedPrice,
+        pricingAlerts
+      );
+
+      if (validation.allowed) return [];
+
+      const pricingRule = pricingAlerts.find(
+        (alert) => Number(alert.productID) === Number(line.IM_ID)
+      );
+
+      return [
+        {
+          IM_ID: line.IM_ID,
+          itemName: item.Item_Name,
+          sellingPrice: discountedPrice,
+          minimumPrice: Number(pricingRule?.minSellingPrice ?? 0),
+          message:
+            validation.message ??
+            "Selling price is below the Finance minimum.",
+        },
+      ];
+    });
+  }, [lines, itemCatalog, pricingAlerts, pricingLoaded]);
+
+  const hasPricingIssues = pricingIssues.length > 0;
+
+  const selectItems = useMemo(() => {
+    const combined = new Map<number, SalesOrderItem>();
+
+    items.forEach((item) => combined.set(item.IM_ID, item));
+
+    lines.forEach((line) => {
+      if (line.IM_ID > 0 && itemCatalog[line.IM_ID]) {
+        combined.set(line.IM_ID, itemCatalog[line.IM_ID]);
+      }
+    });
+
+    return Array.from(combined.values());
+  }, [items, lines, itemCatalog]);
+
+  function updateLineById(
+    lineId: number,
+    changes: Partial<OrderLine>
+  ) {
     setLines((current) =>
-      current.map((line, i) =>
-        i === index ? { ...line, ...changes } : line
+      current.map((line) =>
+        line.lineId === lineId ? { ...line, ...changes } : line
       )
     );
   }
 
+  function handleItemSearch(line: OrderLine, value: string) {
+    if (!customerSelected) return;
+
+    setItemQueries((current) => ({
+      ...current,
+      [line.lineId]: value,
+    }));
+
+    updateLineById(line.lineId, { IM_ID: 0 });
+    setActiveItemLine(line.lineId);
+  }
+
+  function chooseItem(line: OrderLine, item: SalesOrderItem) {
+    if (!customerSelected) return;
+
+    updateLineById(line.lineId, { IM_ID: item.IM_ID });
+
+    setItemQueries((current) => ({
+      ...current,
+      [line.lineId]: `${item.SKU} - ${item.Item_Name}`,
+    }));
+
+    setActiveItemLine(null);
+  }
+
   function addLine() {
+    if (!customerSelected || saving) return;
+
+    const newLineId = nextLineId;
+
     setLines((current) => [
       ...current,
-      { IM_ID: 0, quantity: 1, discount: 0 },
+      {
+        lineId: newLineId,
+        IM_ID: 0,
+        quantity: 1,
+        discount: 0,
+      },
     ]);
+
+    setNextLineId((current) => current + 1);
   }
 
   function removeLine(index: number) {
+    if (!customerSelected || saving || lines.length === 1) return;
+
+    const removedLine = lines[index];
+
     setLines((current) => current.filter((_, i) => i !== index));
+
+    if (removedLine) {
+      setItemQueries((current) => {
+        const updated = { ...current };
+        delete updated[removedLine.lineId];
+        return updated;
+      });
+
+      if (activeItemLine === removedLine.lineId) {
+        setActiveItemLine(null);
+      }
+    }
   }
 
   function resetForm() {
     setCustomerId("");
-    setLines([{ IM_ID: 0, quantity: 1, discount: 0 }]);
-    setItemSearch("");
+    setLines([{ lineId: 1, IM_ID: 0, quantity: 1, discount: 0 }]);
+    setNextLineId(2);
+    setItemQueries({});
+    setActiveItemLine(null);
     setShowForm(false);
   }
 
   async function handleCreateOrder() {
     setError("");
 
-    if (!customerId) {
+    if (!customerSelected) {
       setError("Please select a customer.");
       return;
     }
@@ -253,8 +468,39 @@ export default function OrdersPage() {
       )
     ) {
       setError(
-        "Please select valid items, whole-number quantities, and discounts between 0 and 100."
+        "Please select valid items, whole-number quantities, and discounts between 0 and 100%."
       );
+      return;
+    }
+
+    // Do not allow order creation until Finance rules are available.
+    if (loadingPricing || !pricingLoaded || pricingError) {
+      setError(
+        pricingError ||
+          "Please wait until Finance minimum selling prices have loaded."
+      );
+      return;
+    }
+
+    if (hasPricingIssues) {
+      setError(
+        `Finance minimum selling-price policy violation: ${pricingIssues
+          .map(
+            (issue) =>
+              `${issue.itemName}: ${issue.message}`
+          )
+          .join(" ")}`
+      );
+      return;
+    }
+
+    if (hasStockIssues) {
+      const issueMessages = stockIssues.map(
+        (issue) =>
+          `${issue.itemName}: requested ${issue.requested}, available ${issue.available}.`
+      );
+
+      setError(`Insufficient stock. ${issueMessages.join(" ")}`);
       return;
     }
 
@@ -276,9 +522,7 @@ export default function OrdersPage() {
       await loadOrders();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to create sales order."
+        err instanceof Error ? err.message : "Unable to create sales order."
       );
     } finally {
       setSaving(false);
@@ -287,9 +531,14 @@ export default function OrdersPage() {
 
   async function handleStatusChange(
     order: SalesOrder,
-    newStatus: SalesOrderStatus
+    newStatus: OrderStatusOption
   ) {
     if (order.status === newStatus) return;
+
+    if (order.status !== "Pending") {
+      setError("Completed and Cancelled orders cannot be changed.");
+      return;
+    }
 
     setError("");
     setUpdatingOrderId(order.order_id);
@@ -297,7 +546,7 @@ export default function OrdersPage() {
     try {
       const updated = await salesOrderAPI.updateStatus(
         order.order_id,
-        newStatus
+        newStatus as SalesOrderStatus
       );
 
       setOrders((current) =>
@@ -307,24 +556,28 @@ export default function OrdersPage() {
       );
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update order status."
+        err instanceof Error ? err.message : "Unable to update order status."
       );
     } finally {
       setUpdatingOrderId(null);
     }
   }
 
+  const itemFieldsDisabled =
+    !customerSelected || saving || loadingItems;
+
+  const pricingBlocked =
+    loadingPricing || !pricingLoaded || Boolean(pricingError);
+
   return (
-    <div className="min-h-full space-y-5 text-slate-800">
-      {/* Error Message */}
+    <div className="min-h-full space-y-5 bg-gray text-slate-800">
       {error && (
         <div
           role="alert"
           className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
           <span>{error}</span>
+
           <button
             type="button"
             onClick={() => setError("")}
@@ -336,17 +589,9 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Summary Cards */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="Total Orders"
-          value={orders.length.toString()}
-        />
-
-        <SummaryCard
-          title="Total Sales"
-          value={money(totalSales)}
-        />
+        <SummaryCard title="Total Orders" value={orders.length.toString()} />
+        <SummaryCard title="Total Sales" value={money(totalSales)} />
 
         <SummaryCard
           title="Pending Orders"
@@ -361,14 +606,14 @@ export default function OrdersPage() {
         />
       </section>
 
-      {/* Sales Order List */}
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col justify-between gap-4 border-b border-slate-200 p-4 sm:flex-row sm:items-center">
+      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-semibold text-slate-800">
               Sales Order List
             </h2>
-            <p className="mt-1 text-sm text-slate-500">
+
+            <p className="mt-1 text-sm text-slate-600">
               View and update your sales orders.
             </p>
           </div>
@@ -382,7 +627,7 @@ export default function OrdersPage() {
                 setCurrentPage(1);
               }}
               placeholder="Search order, customer, or status..."
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-600 focus:ring-2 focus:ring-green-100 sm:w-72"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-700 focus:ring-2 focus:ring-green-100 sm:w-72"
             />
 
             <button
@@ -391,7 +636,7 @@ export default function OrdersPage() {
                 setError("");
                 setShowForm(true);
               }}
-              className="whitespace-nowrap rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+              className="whitespace-nowrap rounded-lg bg-[#3F7657] px-4 py-2 text-sm font-semibold text-white hover:bg-[#315F46]"
             >
               + Create Sales Order
             </button>
@@ -400,35 +645,31 @@ export default function OrdersPage() {
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+            <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
               <tr>
-                <th className="whitespace-nowrap text-center px-5 py-3">
+                <th className="whitespace-nowrap px-5 py-3 text-center">
                   Order No.
                 </th>
-                <th className="whitespace-nowrap px-5 py-3">
-                  Customer
-                </th>
-                <th className="whitespace-nowrap text-center px-5 py-3">
+                <th className="whitespace-nowrap px-5 py-3">Customer</th>
+                <th className="whitespace-nowrap px-5 py-3 text-center">
                   Order Date
                 </th>
                 <th className="whitespace-nowrap px-5 py-3 text-center">
                   Items
                 </th>
-                <th className="whitespace-nowrap px-5 py-3">
-                  Total Amount
-                </th>
+                <th className="whitespace-nowrap px-5 py-3">Total Amount</th>
                 <th className="whitespace-nowrap px-5 py-3 text-center">
                   Status
                 </th>
               </tr>
             </thead>
 
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-[#D1D5DB]">
               {loading ? (
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-10 text-center text-slate-500"
+                    className="px-5 py-10 text-center text-slate-600"
                   >
                     Loading sales orders...
                   </td>
@@ -437,7 +678,7 @@ export default function OrdersPage() {
                 <tr>
                   <td
                     colSpan={6}
-                    className="px-5 py-10 text-center text-slate-500"
+                    className="px-5 py-10 text-center text-slate-600"
                   >
                     {search
                       ? "No sales orders match your search."
@@ -446,15 +687,18 @@ export default function OrdersPage() {
                 </tr>
               ) : (
                 paginatedOrders.map((order) => {
-                  const isUpdating =
-                    updatingOrderId === order.order_id;
+                  const isUpdating = updatingOrderId === order.order_id;
+                  const canUpdate = order.status === "Pending";
+                  const knownStatus = statuses.includes(
+                    order.status as OrderStatusOption
+                  );
 
                   return (
                     <tr
                       key={order.order_id}
-                      className="transition-colors hover:bg-slate-50"
+                      className="bg-[#E5E7EB] transition-colors hover:bg-[#DDE1E5]"
                     >
-                      <td className="whitespace-nowrap text-center px-5 py-4 font-semibold text-slate-800">
+                      <td className="whitespace-nowrap px-5 py-4 text-center font-semibold text-slate-800">
                         SO-{String(order.order_id).padStart(4, "0")}
                       </td>
 
@@ -463,7 +707,7 @@ export default function OrdersPage() {
                           `Customer #${order.customer_id}`}
                       </td>
 
-                      <td className="whitespace-nowrap text-center px-5 py-4 text-slate-600">
+                      <td className="whitespace-nowrap px-5 py-4 text-center text-slate-600">
                         {formatDate(order.order_date)}
                       </td>
 
@@ -476,18 +720,21 @@ export default function OrdersPage() {
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4">
-                        <div className="flex items-center gap-2 items-center">
+                        <div className="flex items-center justify-center gap-2">
                           <select
-                            value={order.status}
-                            disabled={isUpdating}
+                            value={knownStatus ? order.status : "Pending"}
+                            disabled={
+                              isUpdating || !canUpdate || !knownStatus
+                            }
                             onChange={(e) =>
                               void handleStatusChange(
                                 order,
-                                e.target.value as SalesOrderStatus
+                                e.target.value as OrderStatusOption
                               )
                             }
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold outline-none transition disabled:cursor-wait disabled:opacity-60 ${
-                              statusStyles[order.status]
+                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold outline-none transition disabled:cursor-not-allowed disabled:opacity-70 ${
+                              statusStyles[order.status] ??
+                              "border-slate-300 bg-slate-100 text-slate-600"
                             }`}
                             aria-label={`Update status for order ${order.order_id}`}
                           >
@@ -499,7 +746,7 @@ export default function OrdersPage() {
                           </select>
 
                           {isUpdating && (
-                            <span className="text-xs text-slate-500">
+                            <span className="text-xs text-slate-600">
                               Saving...
                             </span>
                           )}
@@ -513,13 +760,16 @@ export default function OrdersPage() {
           </table>
         </div>
 
-        {/* Pagination */}
-        {!loading && filteredOrders.length > 0 && (
-          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row">
-            <p className="text-xs text-slate-500">
+        {!loading && (
+          <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-gray px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500">
               Showing{" "}
               <span className="font-semibold text-slate-700">
-                {startRecord}–{endRecord}
+                {filteredOrders.length === 0 ? 0 : startIndex + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-semibold text-slate-700">
+                {endRecord}
               </span>{" "}
               of{" "}
               <span className="font-semibold text-slate-700">
@@ -528,31 +778,25 @@ export default function OrdersPage() {
               orders
             </p>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  setCurrentPage((page) => Math.max(1, page - 1))
-                }
                 disabled={safePage === 1}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => setCurrentPage(safePage - 1)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Previous
               </button>
 
-              <span className="min-w-20 text-center text-sm text-slate-600">
+              <span className="px-2 text-sm font-medium text-slate-600">
                 Page {safePage} of {totalPages}
               </span>
 
               <button
                 type="button"
-                onClick={() =>
-                  setCurrentPage((page) =>
-                    Math.min(totalPages, page + 1)
-                  )
-                }
                 disabled={safePage === totalPages}
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => setCurrentPage(safePage + 1)}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next
               </button>
@@ -561,16 +805,16 @@ export default function OrdersPage() {
         )}
       </section>
 
-      {/* Create Sales Order Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl sm:p-6">
+          <div className="my-auto max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-xl sm:p-6">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
                   Create Sales Order
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+
+                <p className="mt-1 text-sm text-slate-600">
                   Select a customer and add the items for this order.
                 </p>
               </div>
@@ -579,7 +823,7 @@ export default function OrdersPage() {
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                className="rounded-lg p-2 text-slate-600 hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-50"
                 aria-label="Close form"
               >
                 ✕
@@ -587,7 +831,34 @@ export default function OrdersPage() {
             </div>
 
             <div className="space-y-5">
-              {/* Customer */}
+              {/* Finance pricing status */}
+              <div
+                className={`rounded-lg border p-3 text-sm ${
+                  pricingError
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : loadingPricing
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : pricingLoaded
+                        ? "border-green-200 bg-green-50 text-green-700"
+                        : "border-slate-200 bg-white text-slate-600"
+                }`}
+              >
+                {loadingPricing
+                  ? "Loading minimum selling prices from Finance..."
+                  : pricingError
+                    ? `Finance pricing unavailable: ${pricingError}`
+                    : pricingLoaded
+                      ? "Finance minimum selling-price rules loaded."
+                      : "Waiting for Finance pricing rules..."}
+              </div>
+
+              {pricingLoaded && (
+                <p className="text-xs text-slate-600">
+                  Item prices are checked after discounts against the minimum
+                  selling prices provided by Finance.
+                </p>
+              )}
+
               <div>
                 <label
                   htmlFor="order-customer"
@@ -599,9 +870,12 @@ export default function OrdersPage() {
                 <select
                   id="order-customer"
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
+                  onChange={(e) => {
+                    setCustomerId(e.target.value);
+                    setActiveItemLine(null);
+                  }}
                   disabled={saving}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-green-600"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-green-700"
                 >
                   <option value="">Select customer</option>
 
@@ -618,129 +892,406 @@ export default function OrdersPage() {
                 </select>
               </div>
 
-              {/* Order Items */}
               <div>
-                <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-                  <label className="text-sm font-medium text-slate-700">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-sm font-medium text-slate-700">
                     Order Items
                   </label>
 
-                  <input
-                    type="search"
-                    value={itemSearch}
-                    onChange={(e) => setItemSearch(e.target.value)}
-                    placeholder="Search items..."
-                    disabled={saving}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-600"
-                  />
+                  {!customerSelected && (
+                    <span className="text-xs font-medium text-amber-700">
+                      Select a customer first to enable order items.
+                    </span>
+                  )}
                 </div>
 
                 {loadingItems && (
-                  <p className="mb-2 text-xs text-slate-500">
-                    Loading items...
+                  <p className="mb-2 text-xs text-slate-600">
+                    Loading items and stock...
                   </p>
                 )}
 
                 <div className="space-y-3">
-                  {lines.map((line, index) => (
-                    <div
-                      key={index}
-                      className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_90px_100px_auto]"
-                    >
-                      <select
-                        value={line.IM_ID || ""}
-                        onChange={(e) =>
-                          updateLine(index, {
-                            IM_ID: Number(e.target.value),
-                          })
-                        }
-                        disabled={saving}
-                        className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+                  {lines.map((line, index) => {
+                    const selectedItem = itemCatalog[line.IM_ID];
+                    const requested =
+                      requestedByItem.get(line.IM_ID) ?? 0;
+                    const available = Number(
+                      selectedItem?.stock_available ?? 0
+                    );
+                    const isInsufficient =
+                      Boolean(selectedItem) && requested > available;
+
+                    const query = itemQueries[line.lineId] ?? "";
+                    const term = query.trim().toLowerCase();
+
+                    const matchingItems = selectItems.filter((item) => {
+                      if (!term) return true;
+
+                      const itemName = String(
+                        item.Item_Name ?? ""
+                      ).toLowerCase();
+
+                      const sku = String(item.SKU ?? "").toLowerCase();
+
+                      return (
+                        itemName.includes(term) || sku.includes(term)
+                      );
+                    });
+
+                    const showSuggestions =
+                      activeItemLine === line.lineId && customerSelected;
+
+                    const originalPrice = Number(
+                      selectedItem?.Price ?? 0
+                    );
+
+                    const discountedPrice =
+                      originalPrice * (1 - line.discount / 100);
+
+                    const pricingRule = pricingAlerts.find(
+                      (alert) =>
+                        Number(alert.productID) === Number(line.IM_ID)
+                    );
+
+                    const isBelowMinimum =
+                      pricingLoaded &&
+                      Boolean(pricingRule) &&
+                      discountedPrice <
+                        Number(pricingRule?.minSellingPrice ?? 0);
+
+                    return (
+                      <div
+                        key={line.lineId}
+                        className={`rounded-lg border border-[#D1D5DB] bg-white p-3 ${
+                          !customerSelected ? "opacity-60" : ""
+                        }`}
                       >
-                        <option value="">Select item</option>
+                        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_90px_110px_auto]">
+                          <div className="relative min-w-0">
+                            <label
+                              htmlFor={`item-search-${line.lineId}`}
+                              className="mb-1 block text-xs font-medium text-slate-600"
+                            >
+                              Search or Select Item
+                            </label>
 
-                        {items.map((item) => (
-                          <option key={item.IM_ID} value={item.IM_ID}>
-                            {item.SKU} - {item.Item_Name} (
-                            {money(item.Price ?? 0)})
-                          </option>
-                        ))}
-                      </select>
+                            <input
+                              id={`item-search-${line.lineId}`}
+                              type="search"
+                              value={
+                                query ||
+                                (selectedItem
+                                  ? `${selectedItem.SKU} - ${selectedItem.Item_Name}`
+                                  : "")
+                              }
+                              onChange={(e) =>
+                                handleItemSearch(line, e.target.value)
+                              }
+                              onFocus={() => {
+                                if (customerSelected) {
+                                  setActiveItemLine(line.lineId);
+                                }
+                              }}
+                              onBlur={() => {
+                                setTimeout(() => {
+                                  setActiveItemLine((current) =>
+                                    current === line.lineId ? null : current
+                                  );
+                                }, 150);
+                              }}
+                              disabled={itemFieldsDisabled}
+                              placeholder={
+                                customerSelected
+                                  ? "Type item name or SKU..."
+                                  : "Select a customer first"
+                              }
+                              autoComplete="off"
+                              aria-expanded={showSuggestions}
+                              aria-controls={`item-suggestions-${line.lineId}`}
+                              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-700 focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                            />
 
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={line.quantity}
-                        onChange={(e) =>
-                          updateLine(index, {
-                            quantity:
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value),
-                          })
-                        }
-                        disabled={saving}
-                        aria-label="Quantity"
-                        placeholder="Qty"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                      />
+                            {showSuggestions && (
+                              <div
+                                id={`item-suggestions-${line.lineId}`}
+                                className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+                              >
+                                {matchingItems.length > 0 ? (
+                                  <>
+                                    <p className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+                                      {term
+                                        ? "Matching items"
+                                        : "Available items"}
+                                    </p>
 
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={line.discount}
-                        onChange={(e) =>
-                          updateLine(index, {
-                            discount:
-                              e.target.value === ""
-                                ? 0
-                                : Number(e.target.value),
-                          })
-                        }
-                        disabled={saving}
-                        aria-label="Discount percentage"
-                        placeholder="Discount %"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"
-                      />
+                                    {matchingItems.map((item) => (
+                                      <button
+                                        key={item.IM_ID}
+                                        type="button"
+                                        onMouseDown={(e) =>
+                                          e.preventDefault()
+                                        }
+                                        onClick={() =>
+                                          chooseItem(line, item)
+                                        }
+                                        className="flex w-full flex-col gap-1 border-b border-slate-100 px-3 py-3 text-left last:border-b-0 hover:bg-[#E8F0EA] focus:bg-[#E8F0EA] focus:outline-none"
+                                      >
+                                        <span className="text-sm font-semibold text-slate-800">
+                                          {item.Item_Name}
+                                        </span>
 
-                      <button
-                        type="button"
-                        onClick={() => removeLine(index)}
-                        disabled={lines.length === 1 || saving}
-                        className="rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                                        <span className="text-xs text-slate-500">
+                                          {item.SKU} ·{" "}
+                                          {money(item.Price ?? 0)}
+                                        </span>
+
+                                        <span className="text-xs font-medium text-green-700">
+                                          Stock available:{" "}
+                                          {Number(
+                                            item.stock_available ?? 0
+                                          )}
+                                          {item.unit_of_measure
+                                            ? ` ${item.unit_of_measure}`
+                                            : ""}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <p className="px-3 py-3 text-sm text-slate-500">
+                                    No matching items found.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">
+                              Quantity
+                            </label>
+
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={
+                                line.quantity === 0 ? "" : line.quantity
+                              }
+                              onChange={(e) =>
+                                updateLineById(line.lineId, {
+                                  quantity:
+                                    e.target.value === ""
+                                      ? 0
+                                      : Number(e.target.value),
+                                })
+                              }
+                              disabled={!customerSelected || saving}
+                              aria-label="Quantity"
+                              placeholder="Qty"
+                              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600">
+                              Discount (%)
+                            </label>
+
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.01"
+                                value={
+                                  line.discount === 0
+                                    ? ""
+                                    : line.discount
+                                }
+                                onChange={(e) =>
+                                  updateLineById(line.lineId, {
+                                    discount:
+                                      e.target.value === ""
+                                        ? 0
+                                        : Number(e.target.value),
+                                  })
+                                }
+                                disabled={!customerSelected || saving}
+                                aria-label="Discount percentage"
+                                placeholder="0"
+                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-8 text-sm text-slate-800 outline-none focus:border-green-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                              />
+
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                                %
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removeLine(index)}
+                              disabled={
+                                !customerSelected ||
+                                lines.length === 1 ||
+                                saving
+                              }
+                              className="w-full rounded-lg px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-30"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        {selectedItem && (
+                          <div className="mt-3 space-y-2 border-t border-slate-100 pt-3 text-xs">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="text-slate-600">
+                                Selected:{" "}
+                                <strong className="text-slate-800">
+                                  {selectedItem.Item_Name}
+                                </strong>
+                              </span>
+
+                              <span
+                                className={
+                                  isInsufficient
+                                    ? "font-semibold text-red-600"
+                                    : "font-medium text-green-700"
+                                }
+                              >
+                                {isInsufficient
+                                  ? `Insufficient stock: ${requested} requested, ${available} available`
+                                  : `Requested across order: ${requested} / ${available}`}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <span className="text-slate-600">
+                                Original unit price:{" "}
+                                <strong className="text-slate-800">
+                                  {money(originalPrice)}
+                                </strong>
+                              </span>
+
+                              <span className="text-slate-600">
+                                Discounted unit price:{" "}
+                                <strong className="text-slate-800">
+                                  {money(discountedPrice)}
+                                </strong>
+                              </span>
+                            </div>
+
+                            {pricingLoaded && pricingRule && (
+                              <div
+                                className={`rounded-md p-2 ${
+                                  isBelowMinimum
+                                    ? "bg-red-50 text-red-700"
+                                    : "bg-green-50 text-green-700"
+                                }`}
+                              >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                  <span>
+                                    Finance minimum:{" "}
+                                    <strong>
+                                      {money(
+                                        pricingRule.minSellingPrice
+                                      )}
+                                    </strong>
+                                  </span>
+
+                                  <strong>
+                                    {isBelowMinimum
+                                      ? "Below minimum price"
+                                      : "Price meets Finance policy"}
+                                  </strong>
+                                </div>
+                              </div>
+                            )}
+
+                            {pricingLoaded && !pricingRule && (
+                              <p className="text-slate-500">
+                                No Finance minimum-price rule was returned
+                                for this item.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {!loadingItems && items.length === 0 && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    No items found. Try a different search.
+                  <p className="mt-2 text-xs text-slate-600">
+                    No items available.
                   </p>
+                )}
+
+                {hasStockIssues && (
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  >
+                    <p className="font-semibold">
+                      Insufficient stock for this order.
+                    </p>
+
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {stockIssues.map((issue) => (
+                        <li key={issue.IM_ID}>
+                          {issue.itemName}: {issue.requested} requested,
+                          only {issue.available} available.
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {hasPricingIssues && (
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  >
+                    <p className="font-semibold">
+                      Finance minimum selling-price violation.
+                    </p>
+
+                    <ul className="mt-2 list-disc space-y-2 pl-5">
+                      {pricingIssues.map((issue) => (
+                        <li key={issue.IM_ID}>
+                          <strong>{issue.itemName}</strong>
+                          <div>
+                            Selling price: {money(issue.sellingPrice)}
+                          </div>
+                          <div>
+                            Required minimum: {money(issue.minimumPrice)}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
 
                 <button
                   type="button"
                   onClick={addLine}
-                  disabled={saving}
-                  className="mt-3 text-sm font-semibold text-green-700 hover:text-green-800 disabled:opacity-50"
+                  disabled={!customerSelected || saving}
+                  className="mt-3 text-sm font-semibold text-[#3F7657] hover:text-[#315F46] disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   + Add another item
                 </button>
               </div>
 
-              {/* Form Actions */}
-              <div className="flex flex-col-reverse justify-end gap-3 border-t border-slate-200 pt-5 sm:flex-row">
+              <div className="flex flex-col-reverse justify-end gap-3 border-t border-[#D1D5DB] pt-5 sm:flex-row">
                 <button
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-lg border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -748,10 +1299,23 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   onClick={() => void handleCreateOrder()}
-                  disabled={saving}
-                  className="rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    saving ||
+                    !customerSelected ||
+                    hasStockIssues ||
+                    hasPricingIssues ||
+                    loadingItems ||
+                    pricingBlocked
+                  }
+                  className="rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving
+                    ? "Creating..."
+                    : pricingBlocked
+                      ? "Waiting for Finance..."
+                      : hasPricingIssues
+                        ? "Price Below Minimum"
+                        : "Create Order"}
                 </button>
               </div>
             </div>
@@ -772,8 +1336,9 @@ function SummaryCard({
   valueColor?: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{title}</p>
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+
       <p className={`mt-2 text-2xl font-bold ${valueColor}`}>
         {value}
       </p>
