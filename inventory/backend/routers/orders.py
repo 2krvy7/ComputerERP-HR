@@ -1168,12 +1168,6 @@ def release_material_request(
 
             material_request = cur.fetchone()
 
-            print("========== RELEASE DEBUG ==========")
-            print("Requested MR_ID:", mr_id)
-            print("Retrieved Request:", material_request)
-            print("Retrieved Status:", material_request["Status"] if material_request else None)
-            print("===================================")
-
             if material_request is None:
                 raise HTTPException(
                     status_code=404,
