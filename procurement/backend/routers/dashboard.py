@@ -21,7 +21,7 @@ def summary():
                         WHERE pr."Status" = 'Open') AS open_requests,
                   (SELECT COUNT(*) FROM public."PurchaseOrder")                         AS purchase_orders,
                   (SELECT COUNT(*) FROM public."GoodsReceived" WHERE "QuantityReceived" IS NOT NULL) AS goods_received,
-                  (SELECT COUNT(*) FROM public."PurchaseInvoice")                       AS purchase_invoices
+                  (SELECT COUNT(*) FROM public."APInvoice" WHERE LOWER(COALESCE("status", '')) = 'paid') AS purchase_invoices
             """)
             return cur.fetchone()
 
