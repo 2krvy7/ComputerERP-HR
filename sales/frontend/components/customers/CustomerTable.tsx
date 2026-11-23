@@ -9,11 +9,11 @@ type CustomerTableProps = {
   loading: boolean;
   onEdit: (customer: Customer) => void;
   onToggleStatus: (customer: Customer) => void;
+  onViewHistory: (customer: Customer) => void;
 };
 
 const PAGE_SIZE = 10;
 
-// Safely extracts contact numbers from strings, arrays, or objects.
 function extractContactNumbers(value: unknown): string[] {
   if (value === null || value === undefined || value === "") {
     return [];
@@ -60,13 +60,10 @@ function extractContactNumbers(value: unknown): string[] {
 function getContactType(contact: string): string {
   const digits = contact.replace(/\D/g, "");
 
-  // Philippine mobile number formats: 09XXXXXXXXX or 639XXXXXXXXX.
   if (/^09\d{9}$/.test(digits) || /^639\d{9}$/.test(digits)) {
     return "Mobile Phone";
   }
 
-  // Philippine landline numbers commonly use area codes,
-  // including 02 for Metro Manila.
   if (
     /^02\d{7,8}$/.test(digits) ||
     /^0[3-9]\d{6,8}$/.test(digits) ||
@@ -83,6 +80,7 @@ export default function CustomerTable({
   loading,
   onEdit,
   onToggleStatus,
+  onViewHistory,
 }: CustomerTableProps) {
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -94,6 +92,7 @@ export default function CustomerTable({
   const safePage = Math.min(currentPage, totalPages);
 
   const startIndex = (safePage - 1) * PAGE_SIZE;
+
   const paginatedCustomers = customers.slice(
     startIndex,
     startIndex + PAGE_SIZE
@@ -123,38 +122,44 @@ export default function CustomerTable({
   return (
     <div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1050px] text-left text-sm">
-          <thead className="bg-slate-50 text-slate-600">
-            
+        <table className="w-full min-w-[1200px] text-left text-sm">
+          <thead className="bg-[#D1D5DB] text-slate-600">
             <tr>
               <th className="px-5 py-4 text-center font-semibold">
                 Customer ID
               </th>
-              <th className="px-5 py-4 font-semibold">
+
+              <th className="px-5 py-4 text-center font-semibold">
                 Customer Name
               </th>
+
               <th className="px-5 py-4 text-center font-semibold">
                 Email
               </th>
+
               <th className="px-5 py-4 text-center font-semibold">
                 Contact
               </th>
-              <th className="px-5 py-4 font-semibold text-center">
+
+              <th className="px-5 py-4 text-center font-semibold">
                 Type
               </th>
-              <th className="px-5 py-4 font-semibold">
+
+              <th className="px-5 py-4 text-center font-semibold">
                 Status
               </th>
-              <th className="px-5 py-4 font-semibold">
+
+              <th className="px-5 py-4 text-center font-semibold">
                 Address
               </th>
+
               <th className="px-5 py-4 text-center font-semibold">
                 Actions
               </th>
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-slate-200">
             {paginatedCustomers.map((customer) => {
               const contactNumbers = extractContactNumbers(
                 customer.contact
@@ -163,13 +168,13 @@ export default function CustomerTable({
               return (
                 <tr
                   key={customer.customer_id}
-                  className="transition hover:bg-slate-50"
+                  className="transition-colors hover:bg-[#DDE1E5]"
                 >
                   <td className="px-5 py-4 text-center font-semibold text-slate-700">
                     #{customer.customer_id}
                   </td>
 
-                  <td className="px-5 py-4 text-center font-medium text-slate-900">
+                  <td className="px-5 py-4 font-medium text-slate-900">
                     {customer.name}
                   </td>
 
@@ -182,9 +187,10 @@ export default function CustomerTable({
                       <div className="space-y-1">
                         {contactNumbers.map((contact, index) => (
                           <div key={`${contact}-${index}`}>
-                            <p className="font-medium text-center text-slate-800">
+                            <p className="font-medium text-slate-800">
                               {contact}
                             </p>
+
                             <span className="text-xs text-slate-500">
                               {getContactType(contact)}
                             </span>
@@ -217,7 +223,15 @@ export default function CustomerTable({
                   </td>
 
                   <td className="px-5 py-4">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onViewHistory(customer)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        View History
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => onEdit(customer)}
@@ -246,22 +260,21 @@ export default function CustomerTable({
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 border-t border-slate-200 bg-[#E5E7EB] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-500">
           Showing{" "}
           <span className="font-semibold text-slate-700">
             {startIndex + 1}
-          </span>
-          {" "}to{" "}
+          </span>{" "}
+          to{" "}
           <span className="font-semibold text-slate-700">
             {Math.min(startIndex + PAGE_SIZE, customers.length)}
-          </span>
-          {" "}of{" "}
+          </span>{" "}
+          of{" "}
           <span className="font-semibold text-slate-700">
             {customers.length}
-          </span>
-          {" "}customers
+          </span>{" "}
+          customers
         </p>
 
         <div className="flex items-center justify-end gap-2">
@@ -269,7 +282,7 @@ export default function CustomerTable({
             type="button"
             disabled={safePage === 1}
             onClick={() => setCurrentPage(safePage - 1)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Previous
           </button>
@@ -282,7 +295,7 @@ export default function CustomerTable({
             type="button"
             disabled={safePage === totalPages}
             onClick={() => setCurrentPage(safePage + 1)}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Next
           </button>

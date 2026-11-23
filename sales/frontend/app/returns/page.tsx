@@ -359,7 +359,6 @@ export default function ReturnsPage() {
                 <tr>
                   <th className="px-5 py-4 font-medium">Return No.</th>
                   <th className="px-5 py-4 font-medium">Order No.</th>
-                  <th className="px-5 py-4 font-medium">Invoice No.</th>
                   <th className="px-5 py-4 font-medium">Customer</th>
                   <th className="px-5 py-4 font-medium">Returned Item</th>
                   <th className="px-5 py-4 font-medium">Return Date</th>
@@ -371,13 +370,13 @@ export default function ReturnsPage() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500">
                       Loading sales returns...
                     </td>
                   </tr>
                 ) : filteredReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500">
                       No sales returns found.
                     </td>
                   </tr>
@@ -413,10 +412,6 @@ export default function ReturnsPage() {
                           {relatedOrder
                             ? `SO-${String(relatedOrder.order_id).padStart(4, "0")}`
                             : "—"}
-                        </td>
-
-                        <td className="px-5 py-4">
-                          SI-{String(record.invoice_id).padStart(4, "0")}
                         </td>
 
                         <td className="px-5 py-4">
@@ -475,7 +470,7 @@ export default function ReturnsPage() {
                 className="text-gray-500 hover:text-gray-900"
                 aria-label="Close form"
               >
-                ✕
+                ×
               </button>
             </div>
 

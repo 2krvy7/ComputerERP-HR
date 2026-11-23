@@ -141,6 +141,50 @@ export default function Dashboard() {
   const ticks = [0, max / 2, max];
   const hp = hover !== null ? series[hover] : null;
 
+<<<<<<< HEAD
+=======
+  function handlePrint() {
+    if (!value) return;
+    const p = PERIODS.find((x) => x.key === period)!;
+    const avg = (total: number, n: number) => (n ? money(total / n) : "—");
+
+    // Breakdown table: one row per day (week/month) or per month (year)
+    const breakdown = series.map((pt) => [pt.full, String(pt.orders), money(pt.total), avg(Number(pt.total), pt.orders)]);
+
+    // Week and month also list the orders themselves; the year would be too long, so it doesn't
+    let extra;
+    if (period !== "year") {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - ((period === "week" ? 7 : 30) - 1));
+      extra = {
+        heading: "Orders in this period",
+        headers: ["PO", "Supplier", "Item", "Qty", "Total", "Ordered", "Delivery", "Payment"],
+        rows: orders
+          .filter((o) => new Date(o.OrderDate) >= start)
+          .map((o) => [
+            `#${o.PO_ID}`, o.SupplierName, o.Item_Name, String(o.Quantity), money(o.Total_Amount),
+            date(o.OrderDate), o.goods_received ? "Received" : "Awaiting", o.invoiced ? "Paid" : "Unpaid",
+          ]),
+      };
+    }
+
+    printReport({
+      title: `Purchase Orders Report — ${p.sub}`,
+      subtitle: `${p.sub} · printed ${new Date().toLocaleDateString()}`,
+      summary: [
+        ["Total order value", money(value.total)],
+        ["Orders", String(value.orders)],
+        ["Average per order", avg(Number(value.total), value.orders)],
+      ],
+      heading: period === "year" ? "Monthly breakdown" : "Daily breakdown",
+      headers: [period === "year" ? "Month" : "Day", "Orders", "Total value", "Average"],
+      rows: breakdown,
+      extra,
+    });
+  }
+
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "1.2vw" }}>
       {/* Row of 4 cards */}
@@ -153,13 +197,16 @@ export default function Dashboard() {
         <StatCard
           label="Purchase Orders"
           value={summary?.purchase_orders ?? "–"}
+        />
+        <StatCard
+          label="Goods Received"
+          value={summary?.goods_received ?? "–"}
           note={summary ? `awaiting delivery : ${summary.purchase_orders - summary.goods_received}` : ""}
         />
-        <StatCard label="Goods Received" value={summary?.goods_received ?? "–"} />
         <StatCard
-          label="Purchase Invoices"
+          label="Paid Orders"
           value={summary?.purchase_invoices ?? "–"}
-          note={summary ? `not invoiced yet : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
+          note={summary ? `unpaid : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
         />
       </div>
 

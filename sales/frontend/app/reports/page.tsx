@@ -16,7 +16,28 @@ import type { Collection } from "../../types/payment";
 import type { AccountsReceivable } from "../../types/accounts-receivable";
 import type { SalesReturn } from "../../types/return";
 
-type ReportPeriod = "all" | "today" | "month" | "year";
+type ReportCategory =
+  | "Dashboard"
+  | "Customer Management"
+  | "Sales Processing"
+  | "Delivery & Returns"
+  | "Billing & Collections";
+
+type ReportRow = {
+  title: string;
+  period: string;
+  count: number;
+  amount: number;
+  category: ReportCategory;
+};
+
+const PAGE_CATEGORIES: ReportCategory[] = [
+  "Dashboard",
+  "Customer Management",
+  "Sales Processing",
+  "Delivery & Returns",
+  "Billing & Collections",
+];
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-PH", {
@@ -26,7 +47,7 @@ const money = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value || 0);
 
-const today = () => {
+const getToday = () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -35,41 +56,32 @@ const today = () => {
   return `${year}-${month}-${day}`;
 };
 
-function isInPeriod(
+function isWithinDateRange(
   dateValue: string | null | undefined,
-  period: ReportPeriod
+  startDate: string,
+  endDate: string
 ) {
-  if (period === "all") return true;
+  if (!startDate && !endDate) return true;
   if (!dateValue) return false;
 
   const dateString = dateValue.slice(0, 10);
-  const currentDate = today();
 
-  if (period === "today") {
-    return dateString === currentDate;
-  }
+  if (startDate && dateString < startDate) return false;
+  if (endDate && dateString > endDate) return false;
 
-  const date = new Date(`${dateString}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) return false;
-
-  const now = new Date();
-
-  if (period === "month") {
-    return (
-      date.getFullYear() === now.getFullYear() &&
-      date.getMonth() === now.getMonth()
-    );
-  }
-
-  return date.getFullYear() === now.getFullYear();
+  return true;
 }
 
-const periodLabels: Record<ReportPeriod, string> = {
-  all: "All Time",
-  today: "Today",
-  month: "This Month",
-  year: "This Year",
+const categoryDescriptions: Record<ReportCategory, string> = {
+  Dashboard: "Overall summary of your sales operations.",
+  "Customer Management":
+    "Customer balances and receivables information.",
+  "Sales Processing":
+    "Sales order transactions and order values.",
+  "Delivery & Returns":
+    "Sales return transactions and returned amounts.",
+  "Billing & Collections":
+    "Invoices, payment collections, and outstanding receivables.",
 };
 
 export default function ReportsPage() {
@@ -79,7 +91,16 @@ export default function ReportsPage() {
   const [receivables, setReceivables] = useState<AccountsReceivable[]>([]);
   const [returns, setReturns] = useState<SalesReturn[]>([]);
 
-  const [period, setPeriod] = useState<ReportPeriod>("all");
+  const [activeCategory, setActiveCategory] =
+    useState<ReportCategory>("Dashboard");
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const [appliedStartDate, setAppliedStartDate] = useState("");
+  const [appliedEndDate, setAppliedEndDate] = useState("");
+
+  const [rangeError, setRangeError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -122,22 +143,85 @@ export default function ReportsPage() {
     void loadData();
   }, [loadData]);
 
+  function applyDateRange() {
+    setRangeError("");
+
+    if (!startDate || !endDate) {
+      setRangeError("Please select both a start date and an end date.");
+      return;
+    }
+
+    if (startDate > endDate) {
+      setRangeError("Start date cannot be later than end date.");
+      return;
+    }
+
+    setAppliedStartDate(startDate);
+    setAppliedEndDate(endDate);
+  }
+
+  function clearDateRange() {
+    setStartDate("");
+    setEndDate("");
+    setAppliedStartDate("");
+    setAppliedEndDate("");
+    setRangeError("");
+  }
+
+  const dateRangeLabel = useMemo(() => {
+    if (!appliedStartDate && !appliedEndDate) {
+      return "All Time";
+    }
+
+    const formatDate = (value: string) =>
+      new Date(`${value}T00:00:00`).toLocaleDateString("en-PH", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+
+    return `${formatDate(appliedStartDate)} – ${formatDate(appliedEndDate)}`;
+  }, [appliedStartDate, appliedEndDate]);
+
   const filtered = useMemo(
     () => ({
       invoices: invoices.filter((item) =>
-        isInPeriod(item.invoice_date, period)
+        isWithinDateRange(
+          item.invoice_date,
+          appliedStartDate,
+          appliedEndDate
+        )
       ),
       orders: orders.filter((item) =>
-        isInPeriod(item.order_date, period)
+        isWithinDateRange(
+          item.order_date,
+          appliedStartDate,
+          appliedEndDate
+        )
       ),
       collections: collections.filter((item) =>
-        isInPeriod(item.payment_date, period)
+        isWithinDateRange(
+          item.payment_date,
+          appliedStartDate,
+          appliedEndDate
+        )
       ),
       returns: returns.filter((item) =>
-        isInPeriod(item.return_date, period)
+        isWithinDateRange(
+          item.return_date,
+          appliedStartDate,
+          appliedEndDate
+        )
       ),
     }),
-    [invoices, orders, collections, returns, period]
+    [
+      invoices,
+      orders,
+      collections,
+      returns,
+      appliedStartDate,
+      appliedEndDate,
+    ]
   );
 
   const totals = useMemo(
@@ -166,47 +250,81 @@ export default function ReportsPage() {
     [filtered, receivables]
   );
 
-  const reportRows = useMemo(
+  const reportRows = useMemo<ReportRow[]>(
     () => [
       {
-        title: "Sales Revenue",
-        period: "Invoice Date",
-        count: filtered.invoices.length,
-        amount: totals.revenue,
+        title: "Customer Balances",
+        period: "Current Balance",
+        count: receivables.length,
+        amount: totals.outstanding,
+        category: "Customer Management",
       },
       {
         title: "Sales Orders",
         period: "Order Date",
         count: filtered.orders.length,
         amount: totals.orderAmount,
-      },
-      {
-        title: "Payment Collections",
-        period: "Payment Date",
-        count: filtered.collections.length,
-        amount: totals.collected,
-      },
-      {
-        title: "Accounts Receivable",
-        period: "Current Balance",
-        count: receivables.length,
-        amount: totals.outstanding,
+        category: "Sales Processing",
       },
       {
         title: "Sales Returns",
         period: "Return Date",
         count: filtered.returns.length,
         amount: totals.returned,
+        category: "Delivery & Returns",
+      },
+      {
+        title: "Sales Revenue",
+        period: "Invoice Date",
+        count: filtered.invoices.length,
+        amount: totals.revenue,
+        category: "Billing & Collections",
+      },
+      {
+        title: "Payment Collections",
+        period: "Payment Date",
+        count: filtered.collections.length,
+        amount: totals.collected,
+        category: "Billing & Collections",
+      },
+      {
+        title: "Accounts Receivable",
+        period: "Current Balance",
+        count: receivables.length,
+        amount: totals.outstanding,
+        category: "Billing & Collections",
       },
     ],
     [filtered, totals, receivables]
   );
 
+  const visibleRows = useMemo(() => {
+    if (activeCategory === "Dashboard") {
+      return reportRows.filter(
+        (row) =>
+          row.category === "Sales Processing" ||
+          row.category === "Delivery & Returns" ||
+          row.category === "Billing & Collections"
+      );
+    }
+
+    return reportRows.filter(
+      (row) => row.category === activeCategory
+    );
+  }, [reportRows, activeCategory]);
+
   function exportCSV() {
     const rows = [
-      ["Report", "Period", "Total Records", "Total Amount (PHP)"],
-      ...reportRows.map((row) => [
+      [
+        "Report",
+        "Category",
+        "Period",
+        "Total Records",
+        "Total Amount (PHP)",
+      ],
+      ...visibleRows.map((row) => [
         row.title,
+        row.category,
         row.period,
         String(row.count),
         row.amount.toFixed(2),
@@ -229,7 +347,9 @@ export default function ReportsPage() {
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `sales-reports-${today()}.csv`;
+    link.download = `sales-reports-${activeCategory
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}-${getToday()}.csv`;
 
     document.body.appendChild(link);
     link.click();
@@ -239,34 +359,93 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="min-h-full space-y-5 p-4 text-slate-800 sm:p-6">
-
-      {/* Report Period */}
-      <section className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div>
+    <div className="min-h-full space-y-5 bg-green-50 p-4 text-slate-800 sm:p-6">
+      <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm">
+        <div className="mb-4">
           <h2 className="text-sm font-semibold text-slate-800">
-            Reporting Period
+            Reporting Date Range
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Select the period used to filter transaction records.
+            Select the start and end dates to filter your report data.
           </p>
         </div>
 
-        <select
-          value={period}
-          onChange={(event) =>
-            setPeriod(event.target.value as ReportPeriod)
-          }
-          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100 sm:w-48"
-          aria-label="Report period"
-        >
-          <option value="all">All Time</option>
-          <option value="today">Today</option>
-          <option value="month">This Month</option>
-          <option value="year">This Year</option>
-        </select>
-</section>
-      {/* Error Message */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="w-full lg:flex-1">
+            <label
+              htmlFor="report-start-date"
+              className="mb-1.5 block text-xs font-medium text-slate-600"
+            >
+              Start Date
+            </label>
+            <input
+              id="report-start-date"
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(event) => {
+                setStartDate(event.target.value);
+                setRangeError("");
+              }}
+              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <div className="w-full lg:flex-1">
+            <label
+              htmlFor="report-end-date"
+              className="mb-1.5 block text-xs font-medium text-slate-600"
+            >
+              End Date
+            </label>
+            <input
+              id="report-end-date"
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(event) => {
+                setEndDate(event.target.value);
+                setRangeError("");
+              }}
+              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={applyDateRange}
+              className="rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800"
+            >
+              Apply Filter
+            </button>
+
+            <button
+              type="button"
+              onClick={clearDateRange}
+              className="rounded-lg border border-[#D1D5DB] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {rangeError && (
+          <p className="mt-3 text-xs font-medium text-red-600">
+            {rangeError}
+          </p>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs text-slate-500">
+            Applied date range:
+          </span>
+          <span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+            {dateRangeLabel}
+          </span>
+        </div>
+      </section>
+
       {error && (
         <div
           role="alert"
@@ -284,96 +463,186 @@ export default function ReportsPage() {
         </div>
       )}
 
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-800">
+          Report Categories
+        </h2>
+
+        <div className="flex gap-2 overflow-x-auto pb-2">
+          {PAGE_CATEGORIES.map((category) => {
+            const isActive = activeCategory === category;
+
+            return (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setActiveCategory(category)}
+                className={`whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+                  isActive
+                    ? "border-blue-700 bg-blue-700 text-white shadow-sm"
+                    : "border-[#D1D5DB] bg-[#E5E7EB] text-slate-700 hover:bg-[#DDE1E5]"
+                }`}
+              >
+                {category}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       {loading ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-10 text-center text-sm text-slate-500">
           Loading sales reports...
         </div>
       ) : !error ? (
         <>
-          {/* Selected Period Indicator */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-slate-900">
+                {activeCategory}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {categoryDescriptions[activeCategory]}
+              </p>
+            </div>
+
             <p className="text-sm text-slate-600">
-              Showing report data for{" "}
+              Period:{" "}
               <span className="font-semibold text-slate-900">
-                {periodLabels[period]}
+                {dateRangeLabel}
               </span>
             </p>
           </div>
 
-          {/* Summary Cards */}
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <SummaryCard
-              title="Sales Revenue"
-              value={money(totals.revenue)}
-              description="Based on invoice dates"
-              color="text-green-700"
-            />
+            {activeCategory === "Dashboard" && (
+              <>
+                <SummaryCard
+                  title="Sales Revenue"
+                  value={money(totals.revenue)}
+                  description="Based on invoice dates"
+                  color="text-green-700"
+                />
 
-            <SummaryCard
-              title="Sales Orders"
-              value={String(filtered.orders.length)}
-              description={`${money(totals.orderAmount)} total order value`}
-              color="text-blue-700"
-            />
+                <SummaryCard
+                  title="Sales Orders"
+                  value={String(filtered.orders.length)}
+                  description={`${money(totals.orderAmount)} total order value`}
+                  color="text-blue-700"
+                />
 
-            <SummaryCard
-              title="Total Collections"
-              value={money(totals.collected)}
-              description="Based on payment dates"
-              color="text-purple-700"
-            />
+                <SummaryCard
+                  title="Total Collections"
+                  value={money(totals.collected)}
+                  description="Based on payment dates"
+                  color="text-purple-700"
+                />
 
-            <SummaryCard
-              title="Outstanding Receivables"
-              value={money(totals.outstanding)}
-              description="Current balance across all periods"
-              color="text-orange-700"
-            />
+                <SummaryCard
+                  title="Outstanding Receivables"
+                  value={money(totals.outstanding)}
+                  description="Current balance across all periods"
+                  color="text-orange-700"
+                />
 
-            <SummaryCard
-              title="Sales Returns"
-              value={money(totals.returned)}
-              description="Based on return dates"
-              color="text-red-700"
-            />
+                <SummaryCard
+                  title="Sales Returns"
+                  value={money(totals.returned)}
+                  description="Based on return dates"
+                  color="text-red-700"
+                />
 
-            <SummaryCard
-              title="Invoices Issued"
-              value={String(filtered.invoices.length)}
-              description="Based on invoice dates"
-              color="text-indigo-700"
-            />
+                <SummaryCard
+                  title="Invoices Issued"
+                  value={String(filtered.invoices.length)}
+                  description="Based on invoice dates"
+                  color="text-indigo-700"
+                />
+              </>
+            )}
+
+            {activeCategory === "Customer Management" && (
+              <SummaryCard
+                title="Customer Balances"
+                value={money(totals.outstanding)}
+                description={`${receivables.length} receivable records`}
+                color="text-orange-700"
+              />
+            )}
+
+            {activeCategory === "Sales Processing" && (
+              <SummaryCard
+                title="Sales Orders"
+                value={String(filtered.orders.length)}
+                description={`${money(totals.orderAmount)} total order value`}
+                color="text-blue-700"
+              />
+            )}
+
+            {activeCategory === "Delivery & Returns" && (
+              <SummaryCard
+                title="Sales Returns"
+                value={money(totals.returned)}
+                description={`${filtered.returns.length} return records`}
+                color="text-red-700"
+              />
+            )}
+
+            {activeCategory === "Billing & Collections" && (
+              <>
+                <SummaryCard
+                  title="Sales Revenue"
+                  value={money(totals.revenue)}
+                  description="Based on invoice dates"
+                  color="text-green-700"
+                />
+
+                <SummaryCard
+                  title="Total Collections"
+                  value={money(totals.collected)}
+                  description="Based on payment dates"
+                  color="text-purple-700"
+                />
+
+                <SummaryCard
+                  title="Outstanding Receivables"
+                  value={money(totals.outstanding)}
+                  description="Current balance across all periods"
+                  color="text-orange-700"
+                />
+              </>
+            )}
           </section>
 
-          {/* Report Summary */}
-<section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-  <div className="border-b border-slate-200 p-5">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="font-semibold text-slate-900">
-        Report Summary
-      </h2>
+          <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+            <div className="border-b border-[#D1D5DB] p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-slate-900">
+                    Report Summary
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {visibleRows.length} report{" "}
+                    {visibleRows.length === 1 ? "record" : "records"}{" "}
+                    displayed.
+                  </p>
+                </div>
 
-      <button
-        type="button"
-        onClick={exportCSV}
-        disabled={loading || !!error}
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <span aria-hidden="true">↓</span>
-        Export to CSV
-      </button>
-    </div>
-
-    <p className="mt-1 text-sm text-slate-500">
-      Overview of sales transactions and current receivables.
-    </p>
-  </div>
-</section>
-
+                <button
+                  type="button"
+                  onClick={exportCSV}
+                  disabled={visibleRows.length === 0}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span aria-hidden="true">↓</span>
+                  Export to CSV
+                </button>
+              </div>
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-600">
+                <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="whitespace-nowrap px-5 py-3">
                       Report
@@ -390,60 +659,44 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-100">
-                  {reportRows.map((row) => (
-                    <tr
-                      key={row.title}
-                      className="transition-colors hover:bg-slate-50"
-                    >
-                      <td className="whitespace-nowrap px-5 py-4 font-medium text-slate-800">
-                        {row.title}
-                      </td>
+                <tbody className="divide-y divide-[#D1D5DB]">
+                  {visibleRows.length > 0 ? (
+                    visibleRows.map((row) => (
+                      <tr
+                        key={`${row.category}-${row.title}`}
+                        className="transition-colors hover:bg-[#DDE1E5]"
+                      >
+                        <td className="whitespace-nowrap px-5 py-4 font-medium text-slate-800">
+                          {row.title}
+                        </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-500">
-                        {row.period}
-                      </td>
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-600">
+                          {row.period}
+                        </td>
 
-                      <td className="px-5 py-4 text-center text-slate-700">
-                        {row.count.toLocaleString("en-PH")}
-                      </td>
+                        <td className="px-5 py-4 text-center text-slate-700">
+                          {row.count.toLocaleString("en-PH")}
+                        </td>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-800">
-                        {money(row.amount)}
+                        <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-800">
+                          {money(row.amount)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-5 py-10 text-center text-sm text-slate-500"
+                      >
+                        No report records available for this category.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
-
-                <tfoot className="border-t border-slate-200 bg-slate-50">
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="px-5 py-4 text-right font-semibold text-slate-700"
-                    >
-                      Total Transaction Amount
-                    </td>
-                    <td className="whitespace-nowrap px-5 py-4 text-right font-bold text-slate-900">
-                      {money(
-                        totals.revenue +
-                          totals.orderAmount +
-                          totals.collected +
-                          totals.returned
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
-            <div className="flex justify-end border-t border-slate-200 bg-white p-5">
-          </div>
-
-          <p className="text-xs text-slate-400">
-            Note: Outstanding receivables show the current balance and are
-            not filtered by the selected transaction period. The total
-            transaction amount is a combined figure across different
-            transaction types, not a separate accounting balance.
-          </p>
+          </section>
         </>
       ) : null}
     </div>
@@ -462,7 +715,7 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{title}</p>
       <p className={`mt-2 text-2xl font-bold ${color}`}>
         {value}
