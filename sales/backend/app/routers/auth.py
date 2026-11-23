@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.user import User
 from app.core.security import hash_password, verify_password
+from app.core.roles import ROLE_NAMES
 from app.dependencies.auth import (
     SESSION_COOKIE,
     encode_auth_token,
@@ -22,8 +23,13 @@ router = APIRouter(
 )
 
 COOKIE_SECURE = (
-    os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    os.getenv("COOKIE_SECURE", "true").lower() == "true"
 )
+
+COOKIE_SAMESITE = os.getenv(
+    "COOKIE_SAMESITE",
+    "none" if COOKIE_SECURE else "lax",
+).lower()
 
 
 class LoginRequest(BaseModel):
@@ -47,8 +53,9 @@ def user_response(user: User):
         "username": user.username,
         "email": user.email,
         "role_id": user.role_id,
-        "role": "Admin" if user.role_id == 1 else "Staff",
+        "role": ROLE_NAMES.get(user.role_id, "Staff"),
         "dept_id": user.dept_id,
+        "must_change_password": user.must_change_password,
     }
 
 
@@ -63,8 +70,8 @@ def login(
     user = db.scalar(
         select(User).where(
             or_(
-                User.email == identifier,
-                User.username == identifier,
+                func.lower(User.email) == identifier.lower(),
+                func.lower(User.username) == identifier.lower(),
             )
         )
     )
@@ -110,7 +117,7 @@ def login(
         max_age=28800,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         path="/",
     )
 
@@ -124,7 +131,7 @@ def logout(response: Response):
         path="/",
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
     )
 
     return {
@@ -252,6 +259,7 @@ def change_password(
         )
 
     current_user.password = hash_password(data.new_password)
+    current_user.must_change_password = False
 
     db.commit()
     db.refresh(current_user)

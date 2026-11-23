@@ -8,12 +8,12 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate, UserStatusUpdate, UserResponse
 from app.core.security import hash_password
-from app.dependencies.auth import require_admin
+from app.dependencies.auth import require_admin, require_password_change_completed
 
 router = APIRouter(
     prefix="/api/users",
     tags=["User Management"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_password_change_completed), Depends(require_admin)],
 )
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 # Import database, models, and schemas.
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.accounts_receivable import AccountsReceivable
 from app.models.sales_invoice import SalesInvoice
 from app.models.sales_order import SalesOrder
@@ -19,6 +20,7 @@ from app.schemas.accounts_receivable import (
 router = APIRouter(
     prefix="/api/accounts-receivable",
     tags=["Accounts Receivable"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 

@@ -15,6 +15,8 @@ import type { SalesOrder } from "../../types/order";
 import type { Collection } from "../../types/payment";
 import type { AccountsReceivable } from "../../types/accounts-receivable";
 import type { SalesReturn } from "../../types/return";
+import { useAuth } from "@/contexts/auth-context";
+import { isAdminRole } from "@/lib/roles";
 
 type ReportCategory =
   | "Dashboard"
@@ -85,6 +87,8 @@ const categoryDescriptions: Record<ReportCategory, string> = {
 };
 
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const canExport = isAdminRole(user?.role_id);
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -314,6 +318,8 @@ export default function ReportsPage() {
   }, [reportRows, activeCategory]);
 
   function exportCSV() {
+    if (!canExport) return;
+
     const rows = [
       [
         "Report",
@@ -628,15 +634,17 @@ export default function ReportsPage() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={exportCSV}
-                  disabled={visibleRows.length === 0}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span aria-hidden="true">↓</span>
-                  Export to CSV
-                </button>
+                {canExport && (
+                  <button
+                    type="button"
+                    onClick={exportCSV}
+                    disabled={visibleRows.length === 0}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span aria-hidden="true">↓</span>
+                    Export to CSV
+                  </button>
+                )}
               </div>
             </div>
 
