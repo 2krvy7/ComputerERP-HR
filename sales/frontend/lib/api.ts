@@ -44,7 +44,7 @@ export async function request<T>(
     throw new Error("NEXT_PUBLIC_API_URL is not configured.");
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const response = await fetch(endpoint, {
     ...options,
     headers: {
       "Content-Type": "application/json",
