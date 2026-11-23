@@ -1137,3 +1137,353 @@ def get_material_request_availability(
         result.append(request)
 
     return result
+
+
+# ==========================================
+# RELEASE MATERIAL REQUEST
+# INVENTORY ADMIN + STAFF
+# ==========================================
+
+@router.post("/material-requests/{mr_id}/release")
+def release_material_request(
+    mr_id: int,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # 1. Lock and retrieve the Material Request.
+            cur.execute("""
+                SELECT
+                    "MR_ID",
+                    "Status"
+                FROM "MaterialRequest"
+                WHERE "MR_ID" = %s
+                FOR UPDATE
+            """, (mr_id,))
+
+            material_request = cur.fetchone()
+
+            print("========== RELEASE DEBUG ==========")
+            print("Requested MR_ID:", mr_id)
+            print("Retrieved Request:", material_request)
+            print("Retrieved Status:", material_request["Status"] if material_request else None)
+            print("===================================")
+
+            if material_request is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Material Request not found."
+                )
+
+            if material_request["Status"] != "Pending":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Only Pending Material Requests can be released."
+                )
+
+            # 2. Find the Main Warehouse.
+            cur.execute("""
+                SELECT
+                    "WH_ID",
+                    "Warehouse_Name"
+                FROM "WAREHOUSE"
+                WHERE "WH_ID" = 14
+                FOR UPDATE
+            """)
+
+            warehouse = cur.fetchone()
+
+            if not warehouse:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Warehouse A (WH_ID: 14) was not found."
+                )
+
+            main_wh_id = warehouse["WH_ID"]
+
+
+            # 3. Retrieve requested materials.
+            # Group by IM_ID in case an item appears more than once.
+            cur.execute("""
+                SELECT
+                    mrd."IM_ID",
+                    im."Item_Name",
+                    im."SKU",
+                    SUM(mrd."QuantityRequested") AS "QuantityRequested"
+                FROM "MaterialRequestDetail" mrd
+                JOIN "ITEM_MASTER" im
+                    ON mrd."IM_ID" = im."IM_ID"
+                WHERE mrd."MR_ID" = %s
+                GROUP BY
+                    mrd."IM_ID",
+                    im."Item_Name",
+                    im."SKU"
+                ORDER BY mrd."IM_ID"
+            """, (mr_id,))
+
+            materials = cur.fetchall()
+
+            if not materials:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This Material Request has no materials."
+                )
+
+            # 4. Lock and validate stock for ALL materials.
+            # No stock will be deducted unless every item is available.
+            for material in materials:
+
+                cur.execute("""
+                    SELECT
+                        "STOCK_ID",
+                        "quantity_on_hand"
+                    FROM "STOCK"
+                    WHERE "IM_ID" = %s
+                      AND "WH_ID" = %s
+                    FOR UPDATE
+                """, (
+                    material["IM_ID"],
+                    main_wh_id
+                ))
+
+                stock = cur.fetchone()
+
+                available = (
+                    stock["quantity_on_hand"]
+                    if stock is not None
+                    else 0
+                )
+
+                requested = material["QuantityRequested"]
+
+                if available < requested:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            f"Insufficient stock for {material['Item_Name']}. "
+                            f"Requested: {requested}, "
+                            f"Available in Main Warehouse: {available}."
+                        )
+                    )
+
+            # 5. Deduct stock and record STOCK_OUT.
+            reference_no = f"MR-{mr_id}"
+            released_by = user["sub"]
+
+            for material in materials:
+
+                im_id = material["IM_ID"]
+                quantity = material["QuantityRequested"]
+
+                cur.execute("""
+                    UPDATE "STOCK"
+                    SET "quantity_on_hand" =
+                        "quantity_on_hand" - %s
+                    WHERE "IM_ID" = %s
+                      AND "WH_ID" = %s
+                    RETURNING
+                        "STOCK_ID",
+                        "quantity_on_hand"
+                """, (
+                    quantity,
+                    im_id,
+                    main_wh_id
+                ))
+
+                updated_stock = cur.fetchone()
+
+                # Record the stock movement.
+                cur.execute("""
+                    INSERT INTO "STOCK_LEDGER" (
+                        "IM_ID",
+                        "WH_ID",
+                        "TransactionType",
+                        "Quantity",
+                        "ActualQuantity",
+                        "ReferenceNo",
+                        "LoggedBy",
+                        "LogDate",
+                        "Remarks"
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        'STOCK_OUT',
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        CURRENT_TIMESTAMP,
+                        %s
+                    )
+                    RETURNING "LogID"
+                """, (
+                    im_id,
+                    main_wh_id,
+                    quantity,
+                    quantity,
+                    reference_no,
+                    released_by,
+                    f"Materials released for Material Request MR-{mr_id}."
+                ))
+
+            # 6. Update Material Request status.
+            cur.execute("""
+                UPDATE "MaterialRequest"
+                SET
+                    "Status" = 'Released',
+                    "ReleasedBy" = %s,
+                    "ReleasedAt" = CURRENT_TIMESTAMP
+                WHERE "MR_ID" = %s
+                RETURNING
+                    "MR_ID",
+                    "Status",
+                    "ReleasedBy",
+                    "ReleasedAt"
+            """, (
+                released_by,
+                mr_id
+            ))
+
+            updated_request = cur.fetchone()
+
+        # 7. Save all changes together.
+        conn.commit()
+
+        return {
+            "message": "Materials released successfully.",
+            "material_request": updated_request,
+            "warehouse": warehouse["Warehouse_Name"],
+            "released_materials": materials
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# MATERIAL RELEASE HISTORY
+# INVENTORY ADMIN + STAFF
+# ==========================================
+
+@router.get("/material-releases")
+def get_material_releases(
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    mr."MR_ID",
+                    mr."productionID",
+                    mr."DateRequested",
+                    mr."RequiredDate",
+                    mr."Status",
+                    mr."ReleasedBy",
+                    mr."ReleasedAt",
+                    mr."ReceivedBy",
+                    mr."ReceivedAt",
+
+                    mrd."IM_ID",
+                    im."SKU",
+                    im."Item_Name",
+                    mrd."QuantityRequested",
+
+                    sl."WH_ID",
+                    w."Warehouse_Name",
+                    sl."Quantity" AS "ReleasedQuantity",
+                    sl."ActualQuantity",
+                    sl."LogDate"
+
+                FROM "MaterialRequest" mr
+
+                JOIN "MaterialRequestDetail" mrd
+                    ON mr."MR_ID" = mrd."MR_ID"
+
+                JOIN "ITEM_MASTER" im
+                    ON mrd."IM_ID" = im."IM_ID"
+
+                LEFT JOIN "STOCK_LEDGER" sl
+                    ON sl."IM_ID" = mrd."IM_ID"
+                    AND sl."ReferenceNo" = 'MR-' || mr."MR_ID"::text
+                    AND sl."TransactionType" = 'STOCK_OUT'
+
+                LEFT JOIN "WAREHOUSE" w
+                    ON sl."WH_ID" = w."WH_ID"
+
+                WHERE mr."Status" IN ('Released', 'Received')
+
+                ORDER BY
+                    mr."ReleasedAt" DESC,
+                    mr."MR_ID" DESC,
+                    mrd."IM_ID"
+            """)
+
+            rows = cur.fetchall()
+
+        requests = {}
+
+        for row in rows:
+            mr_id = row["MR_ID"]
+
+            if mr_id not in requests:
+                requests[mr_id] = {
+                    "MR_ID": mr_id,
+                    "productionID": row["productionID"],
+                    "DateRequested": row["DateRequested"],
+                    "RequiredDate": row["RequiredDate"],
+                    "Status": row["Status"],
+                    "ReleasedBy": row["ReleasedBy"],
+                    "ReleasedAt": row["ReleasedAt"],
+                    "ReceivedBy": row["ReceivedBy"],
+                    "ReceivedAt": row["ReceivedAt"],
+                    "materials": []
+                }
+
+            requests[mr_id]["materials"].append({
+                "IM_ID": row["IM_ID"],
+                "SKU": row["SKU"],
+                "Item_Name": row["Item_Name"],
+                "QuantityRequested": row["QuantityRequested"],
+                "ReleasedQuantity": row["ReleasedQuantity"],
+                "ActualQuantity": row["ActualQuantity"],
+                "WH_ID": row["WH_ID"],
+                "Warehouse_Name": row["Warehouse_Name"],
+                "LogDate": row["LogDate"]
+            })
+
+        return list(requests.values())
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()

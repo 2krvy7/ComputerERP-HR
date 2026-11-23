@@ -134,6 +134,31 @@ type MaterialRequest = {
   materials: RequestedMaterial[];
 };
 
+type ReleasedMaterial = {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  QuantityRequested: number;
+  ReleasedQuantity: number | null;
+  ActualQuantity: number | null;
+  WH_ID: number | null;
+  Warehouse_Name: string | null;
+  LogDate: string | null;
+};
+
+type MaterialRelease = {
+  MR_ID: number;
+  productionID: number;
+  DateRequested: string;
+  RequiredDate: string;
+  Status: "Released" | "Received" | string;
+  ReleasedBy: string | null;
+  ReleasedAt: string | null;
+  ReceivedBy: string | null;
+  ReceivedAt: string | null;
+  materials: ReleasedMaterial[];
+};
+
 type InspectionInput = {
   quantityReceived: string;
   itemCondition: "Good" | "Partial" | "Damaged" | "";
@@ -257,6 +282,24 @@ const [inspectionInputs, setInspectionInputs] = useState<
 
   const [materialRequestsError, setMaterialRequestsError] =
     useState("");
+
+
+  // Material Releases
+  const [materialReleases, setMaterialReleases] =
+    useState<MaterialRelease[]>([]);
+
+  const [materialReleasesLoading, setMaterialReleasesLoading] =
+    useState(true);
+
+  const [materialReleasesError, setMaterialReleasesError] =
+    useState("");
+
+  const [releasingMR, setReleasingMR] =
+    useState<number | null>(null);
+
+  // Expanded rows
+  const [expandedMR, setExpandedMR] = useState<number | null>(null);
+  const [expandedRelease, setExpandedRelease] = useState<number | null>(null);
 
 
 
@@ -440,6 +483,106 @@ const [inspectionInputs, setInspectionInputs] = useState<
   }, []);
 
 
+  // Fetch Material Releases
+  useEffect(() => {
+    const fetchMaterialReleases = async () => {
+      try {
+        const response = await apiFetch("/orders/material-releases");
+
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(
+            data?.detail || "Failed to load material release records."
+          );
+        }
+
+        const data: MaterialRelease[] = await response.json();
+        setMaterialReleases(data);
+      } catch (error) {
+        setMaterialReleasesError(
+          error instanceof Error
+            ? error.message
+            : "Something went wrong."
+        );
+      } finally {
+        setMaterialReleasesLoading(false);
+      }
+    };
+
+    fetchMaterialReleases();
+  }, []);
+
+
+  // Release Production Material Request
+  const handleReleaseMaterialRequest = async (request: MaterialRequest) => {
+    const allMaterialsReady =
+      request.materials.length > 0 &&
+      request.materials.every(
+        (material) =>
+          material.availability_status === "Ready to Release"
+      );
+
+    if (!allMaterialsReady) {
+      alert(
+        "This request cannot be released yet. All materials must be Ready to Release."
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to release all materials for Material Request #${request.MR_ID}?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setReleasingMR(request.MR_ID);
+
+      const response = await apiFetch(
+        `/orders/material-requests/${request.MR_ID}/release`,
+        {
+          method: "POST",
+        }
+      );
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail || "Failed to release materials."
+        );
+      }
+
+      alert(data?.message || "Materials released successfully.");
+
+      // Refresh pending Material Requests.
+      const requestsResponse = await apiFetch(
+        "/orders/material-requests"
+      );
+
+      if (requestsResponse.ok) {
+        setMaterialRequests(await requestsResponse.json());
+      }
+
+      // Refresh Material Release history.
+      const releasesResponse = await apiFetch(
+        "/orders/material-releases"
+      );
+
+      if (releasesResponse.ok) {
+        setMaterialReleases(await releasesResponse.json());
+      }
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
+    } finally {
+      setReleasingMR(null);
+    }
+  };
+
   // Change Main Tab
   const handleDepartmentChange = (tab: MainTab) => {
     setActiveDepartment(tab);
@@ -545,7 +688,6 @@ const [inspectionInputs, setInspectionInputs] = useState<
     ...previous,
     [grId]: {
       quantityReceived: previous[grId]?.quantityReceived ?? "",
-      acceptedQuantity: previous[grId]?.acceptedQuantity ?? "",
       itemCondition: previous[grId]?.itemCondition ?? "",
       remarks: previous[grId]?.remarks ?? "",
       [field]: value,
@@ -835,73 +977,302 @@ const handleConfirmStock = async (record: GoodsReceived) => {
             </div>
           )}
 
-
           {/* Production - Material Requests */}
-          {activeDepartment === "Production" &&
-            activeSection === "Material Requests" && (
-              <div className="space-y-5">
+{activeDepartment === "Production" &&
+  activeSection === "Material Requests" && (
+    <div className="space-y-3">
 
-                {materialRequestsLoading ? (
-                  <p className="p-8 text-center text-sm text-[#587176]">
-                    Loading Production material requests...
+      {materialRequestsLoading ? (
+        <p className="p-6 text-center text-sm text-[#587176]">
+          Loading Production material requests...
+        </p>
+      ) : materialRequestsError ? (
+        <p className="p-6 text-center text-sm text-red-600">
+          {materialRequestsError}
+        </p>
+      ) : materialRequests.length === 0 ? (
+        <p className="p-6 text-center text-sm text-[#587176]">
+          No pending material requests available.
+        </p>
+      ) : (
+        materialRequests.map((request) => {
+          const isExpanded = expandedMR === request.MR_ID;
+
+          const allMaterialsReady =
+            request.materials.length > 0 &&
+            request.materials.every(
+              (material) =>
+                material.availability_status === "Ready to Release"
+            );
+
+          return (
+            <div
+              key={request.MR_ID}
+              className="overflow-hidden rounded-xl border border-[#DCE7EA]"
+            >
+              {/* Compact Request Row */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4">
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedMR(
+                      isExpanded ? null : request.MR_ID
+                    )
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#F2F7F8] text-[#365f68]">
+                    {isExpanded ? "−" : "+"}
+                  </span>
+
+                  <div className="min-w-0">
+                    <p className="font-bold text-[#1F3338]">
+                      Material Request #{request.MR_ID}
+                    </p>
+
+                    <p className="mt-1 text-xs text-[#587176]">
+                      Production Order #{request.productionID}
+                      {" · "}
+                      {request.materials.length} materials
+                    </p>
+                  </div>
+                </button>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-right">
+                    <p className="text-xs text-[#587176]">
+                      Required Date
+                    </p>
+                    <p className="text-sm font-medium text-[#1F3338]">
+                      {new Date(
+                        request.RequiredDate
+                      ).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                    {request.Status}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleReleaseMaterialRequest(request);
+                    }}
+                    className="whitespace-nowrap rounded-lg bg-[#365f68] px-4 py-2 text-xs font-semibold text-white hover:bg-[#24363B] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {releasingMR === request.MR_ID
+                      ? "Releasing..."
+                      : "Release"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded Details */}
+              {isExpanded && (
+                <div className="border-t border-[#DCE7EA] bg-[#FAFCFC] p-4">
+
+                  <div className="mb-3 flex flex-wrap gap-4 text-xs text-[#587176]">
+                    <p>
+                      <span className="font-semibold">Date Requested:</span>{" "}
+                      {new Date(
+                        request.DateRequested
+                      ).toLocaleDateString()}
+                    </p>
+
+                    <p>
+                      <span className="font-semibold">Required Date:</span>{" "}
+                      {new Date(
+                        request.RequiredDate
+                      ).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  {/* Materials Table */}
+                  <div className="overflow-x-auto rounded-lg border border-[#DCE7EA] bg-white">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-[#F2F7F8] text-[#365f68]">
+                        <tr>
+                          <th className="p-3">Material</th>
+                          <th className="p-3">SKU</th>
+                          <th className="p-3">Requested</th>
+                          <th className="p-3">Total Available</th>
+                          <th className="p-3">Missing</th>
+                          <th className="p-3">Availability</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {request.materials.map((material) => (
+                          <tr
+                            key={material.IM_ID}
+                            className="border-t border-[#DCE7EA] text-[#1F3338]"
+                          >
+                            <td className="p-3 font-medium">
+                              {material.Item_Name}
+                            </td>
+
+                            <td className="p-3">
+                              {material.SKU}
+                            </td>
+
+                            <td className="p-3">
+                              {material.QuantityRequested}
+                            </td>
+
+                            <td className="p-3">
+                              {material.total_available}
+                            </td>
+
+                            <td className="p-3">
+                              {material.missing_quantity}
+                            </td>
+
+                            <td className="p-3">
+                              <span
+                                className={`whitespace-nowrap rounded-full px-2 py-1 text-xs font-semibold ${
+                                  material.availability_status ===
+                                  "Ready to Release"
+                                    ? "bg-green-100 text-green-700"
+                                    : material.availability_status ===
+                                      "Transfer Required"
+                                      ? "bg-yellow-100 text-yellow-700"
+                                      : "bg-red-100 text-red-700"
+                                }`}
+                              >
+                                {material.availability_status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Warehouse Details */}
+                  <div className="mt-4">
+                    <h4 className="mb-2 text-xs font-bold text-[#365f68]">
+                      Warehouse Stock Details
+                    </h4>
+
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {request.materials.map((material) => (
+                        <div
+                          key={material.IM_ID}
+                          className="rounded-lg border border-[#DCE7EA] bg-white p-3"
+                        >
+                          <p className="mb-2 text-xs font-semibold text-[#1F3338]">
+                            {material.Item_Name}
+                          </p>
+
+                          {material.warehouses.map((warehouse) => (
+                            <div
+                              key={warehouse.WH_ID}
+                              className="flex justify-between gap-2 py-1 text-xs"
+                            >
+                              <span className="text-[#587176]">
+                                {warehouse.Warehouse_Name}
+                              </span>
+
+                              <span className="font-semibold text-[#1F3338]">
+                                {warehouse.quantity_on_hand}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="mt-3 text-xs text-[#587176]">
+                    {allMaterialsReady
+                      ? "All requested materials are ready for release."
+                      : "Resolve stock shortages or transfer requirements before releasing."}
                   </p>
-                ) : materialRequestsError ? (
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  )}
+
+          {/* Production - Material Release */}
+          {activeDepartment === "Production" &&
+            activeSection === "Material Release" && (
+              <div className="space-y-5">
+                {materialReleasesLoading ? (
+                  <p className="p-8 text-center text-sm text-[#587176]">
+                    Loading material release records...
+                  </p>
+                ) : materialReleasesError ? (
                   <p className="p-8 text-center text-sm text-red-600">
-                    {materialRequestsError}
+                    {materialReleasesError}
                   </p>
-                ) : materialRequests.length === 0 ? (
+                ) : materialReleases.length === 0 ? (
                   <p className="p-8 text-center text-sm text-[#587176]">
-                    No pending material requests available.
+                    No released material requests available.
                   </p>
                 ) : (
-                  materialRequests.map((request) => (
+                  materialReleases.map((request) => (
                     <div
                       key={request.MR_ID}
                       className="rounded-xl border border-[#DCE7EA] p-5"
                     >
-                      {/* Request Header */}
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <h3 className="text-lg font-bold text-[#1F3338]">
                             Material Request #{request.MR_ID}
                           </h3>
-
                           <p className="mt-1 text-sm text-[#587176]">
                             Production Order #{request.productionID}
                           </p>
                         </div>
 
-                        <span className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-700">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            request.Status === "Received"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-blue-100 text-blue-700"
+                          }`}
+                        >
                           {request.Status}
                         </span>
                       </div>
 
-                      {/* Request Dates */}
-                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
-                          <p className="text-xs text-[#587176]">
-                            Date Requested
-                          </p>
+                          <p className="text-xs text-[#587176]">Released By</p>
                           <p className="mt-1 text-sm font-medium text-[#1F3338]">
-                            {new Date(
-                              request.DateRequested
-                            ).toLocaleDateString()}
+                            {request.ReleasedBy ?? "-"}
                           </p>
                         </div>
-
                         <div>
-                          <p className="text-xs text-[#587176]">
-                            Required Date
-                          </p>
+                          <p className="text-xs text-[#587176]">Release Date</p>
                           <p className="mt-1 text-sm font-medium text-[#1F3338]">
-                            {new Date(
-                              request.RequiredDate
-                            ).toLocaleDateString()}
+                            {request.ReleasedAt
+                              ? new Date(request.ReleasedAt).toLocaleString()
+                              : "-"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#587176]">Received By</p>
+                          <p className="mt-1 text-sm font-medium text-[#1F3338]">
+                            {request.ReceivedBy ?? "-"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-[#587176]">Receipt Date</p>
+                          <p className="mt-1 text-sm font-medium text-[#1F3338]">
+                            {request.ReceivedAt
+                              ? new Date(request.ReceivedAt).toLocaleString()
+                              : "-"}
                           </p>
                         </div>
                       </div>
 
-                      {/* Requested Materials */}
                       <div className="mt-5 overflow-x-auto rounded-lg border border-[#DCE7EA]">
                         <table className="w-full text-left text-sm">
                           <thead className="bg-[#F2F7F8] text-[#365f68]">
@@ -909,12 +1280,11 @@ const handleConfirmStock = async (record: GoodsReceived) => {
                               <th className="p-3">Material</th>
                               <th className="p-3">SKU</th>
                               <th className="p-3">Requested</th>
-                              <th className="p-3">Total Available</th>
-                              <th className="p-3">Missing</th>
-                              <th className="p-3">Availability</th>
+                              <th className="p-3">Released</th>
+                              <th className="p-3">Actual Received</th>
+                              <th className="p-3">Warehouse</th>
                             </tr>
                           </thead>
-
                           <tbody>
                             {request.materials.map((material) => (
                               <tr
@@ -924,77 +1294,23 @@ const handleConfirmStock = async (record: GoodsReceived) => {
                                 <td className="p-3 font-medium">
                                   {material.Item_Name}
                                 </td>
-
-                                <td className="p-3">
-                                  {material.SKU}
-                                </td>
-
+                                <td className="p-3">{material.SKU}</td>
                                 <td className="p-3">
                                   {material.QuantityRequested}
                                 </td>
-
                                 <td className="p-3">
-                                  {material.total_available}
+                                  {material.ReleasedQuantity ?? "-"}
                                 </td>
-
                                 <td className="p-3">
-                                  {material.missing_quantity}
+                                  {material.ActualQuantity ?? "-"}
                                 </td>
-
                                 <td className="p-3">
-                                  <span
-                                    className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${
-                                      material.availability_status ===
-                                      "Ready to Release"
-                                        ? "bg-green-100 text-green-700"
-                                        : material.availability_status ===
-                                          "Transfer Required"
-                                          ? "bg-yellow-100 text-yellow-700"
-                                          : "bg-red-100 text-red-700"
-                                    }`}
-                                  >
-                                    {material.availability_status}
-                                  </span>
+                                  {material.Warehouse_Name ?? "-"}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
-                      </div>
-
-                      {/* Warehouse Availability */}
-                      <div className="mt-5 space-y-4">
-                        <h4 className="text-sm font-bold text-[#365f68]">
-                          Warehouse Stock Details
-                        </h4>
-
-                        {request.materials.map((material) => (
-                          <div
-                            key={material.IM_ID}
-                            className="rounded-lg bg-[#F2F7F8] p-4"
-                          >
-                            <p className="text-sm font-semibold text-[#1F3338]">
-                              {material.Item_Name}
-                            </p>
-
-                            <div className="mt-3 space-y-2">
-                              {material.warehouses.map((warehouse) => (
-                                <div
-                                  key={warehouse.WH_ID}
-                                  className="flex justify-between gap-3 text-sm"
-                                >
-                                  <span className="text-[#587176]">
-                                    {warehouse.Warehouse_Name}
-                                  </span>
-
-                                  <span className="font-semibold text-[#1F3338]">
-                                    {warehouse.quantity_on_hand}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     </div>
                   ))
@@ -1400,7 +1716,10 @@ const handleConfirmStock = async (record: GoodsReceived) => {
               ) &&
               !(
                 activeDepartment === "Production" &&
-                activeSection === "Material Requests"
+                (
+                  activeSection === "Material Requests" ||
+                  activeSection === "Material Release"
+                )
               ) && (
               <div className="flex min-h-[220px] flex-col items-center justify-center rounded-xl bg-[#F2F7F8] p-8 text-center">
                 <h3 className="font-bold text-[#1F3338]">
