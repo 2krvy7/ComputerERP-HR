@@ -150,12 +150,22 @@ def get_payment_options():
                 b_pk = b_cols.get("bankaccountid", "bankAccountID")
                 b_name = b_cols.get("bankname", "bankName")
                 b_num = b_cols.get("accountnumber", "accountNumber")
+                b_disb = b_cols.get("isdisbursement")
+
+                where_disb = (
+                    f'WHERE COALESCE("{b_disb}", TRUE) = TRUE'
+                    if b_disb
+                    else ""
+                )
+
                 cur.execute(f"""
                     SELECT 
                         "{b_pk}" AS "bankAccountID",
                         "{b_name}" AS "bankName",
-                        "{b_num}" AS "accountNumber"
+                        "{b_num}" AS "accountNumber",
+                        {f'COALESCE("{b_disb}", TRUE)' if b_disb else 'TRUE'} AS "isDisbursement"
                     FROM "{bank_t}"
+                    {where_disb}
                     ORDER BY "{b_pk}" ASC
                 """)
                 bank_accounts = cur.fetchall()

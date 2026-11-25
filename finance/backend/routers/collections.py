@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from psycopg.rows import dict_row
 from database import get_db_connection
+from routers.arinvoices import auto_sync_sales_invoices
 
 router = APIRouter(
     prefix="/api/collections",
@@ -37,6 +38,10 @@ def get_collection_worklist():
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
+            # Auto-pull any new Sales Invoices before loading unpaid collections
+            auto_sync_sales_invoices(cur)
+            conn.commit()
+
             ar_table = get_exact_table_name(cur, "ARInvoice")
             if not ar_table:
                 return []
@@ -80,13 +85,30 @@ def get_collection_worklist():
 
 @router.get("/bank-accounts")
 def get_bank_accounts():
+    """Returns ONLY active receiver bank accounts (e.g., BPI Sales) for AR Collections."""
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
             bank_table = get_exact_table_name(cur, "BankAccount")
             if not bank_table:
                 return []
-            cur.execute(f'SELECT * FROM "{bank_table}" ORDER BY 1 ASC')
+
+            b_cols = get_exact_cols(cur, bank_table)
+            b_pk = b_cols.get("bankaccountid", "bankAccountID")
+            b_rec = b_cols.get("isreceiver")
+
+            where_rec = (
+                f'WHERE COALESCE("{b_rec}", TRUE) = TRUE'
+                if b_rec
+                else ""
+            )
+
+            cur.execute(f"""
+                SELECT *
+                FROM "{bank_table}"
+                {where_rec}
+                ORDER BY "{b_pk}" ASC
+            """)
             return cur.fetchall()
     finally:
         conn.close()
@@ -121,6 +143,7 @@ def record_ar_receipt(payload: RecordReceiptPayload):
                 payload.amount,
             ))
             created_receipt = cur.fetchone()
+            receipt_id = created_receipt.get("receiptID") or created_receipt.get("receiptid")
 
             # 2. Update ARInvoice totalPaid, remainingBalance, and status
             pk_col = a_cols.get("arinvoiceid", "arInvoiceID")
@@ -143,6 +166,77 @@ def record_ar_receipt(payload: RecordReceiptPayload):
 
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="AR Invoice not found")
+
+            # 3. Automatically post balanced Journal Entry & General Ledger (Debit Cash in Bank, Credit Accounts Receivable)
+            je_table = get_exact_table_name(cur, "JournalEntry")
+            jel_table = get_exact_table_name(cur, "JournalEntryLine")
+            gl_table = get_exact_table_name(cur, "GeneralLedger")
+            coa_table = get_exact_table_name(cur, "ChartOfAccounts")
+
+            if je_table and jel_table and coa_table:
+                c_cols = get_exact_cols(cur, coa_table)
+                c_id = c_cols.get("accountid", "accountID")
+                c_code = c_cols.get("accountcode", "accountCode")
+                c_name = c_cols.get("accountname", "accountName")
+                c_type = c_cols.get("accounttype", "accountType")
+
+                # Find Cash in Bank (1020)
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('1020', '1010')
+                       OR "{c_name}" ILIKE '%Bank%'
+                       OR "{c_name}" ILIKE '%Cash%'
+                       OR LOWER("{c_type}") = 'asset'
+                    ORDER BY "{c_code}" ASC LIMIT 1
+                """)
+                cash_acc = cur.fetchone()
+
+                # Find Accounts Receivable (1100)
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('1100', '1200')
+                       OR "{c_name}" ILIKE '%Receivable%'
+                    ORDER BY "{c_code}" ASC LIMIT 1
+                """)
+                ar_acc = cur.fetchone()
+
+                if cash_acc and ar_acc:
+                    ref_code = f"REC-{str(receipt_id or payload.arInvoiceID).zfill(4)}"
+                    cur.execute(f"""
+                        INSERT INTO "{je_table}" (
+                            "journalDate", "referenceNo", "sourceModule", "description", "sourceID"
+                        )
+                        VALUES (%s, %s, 'AR Collection', %s, %s)
+                        RETURNING "journalID"
+                    """, (
+                        payload.paymentDate,
+                        ref_code,
+                        f"Customer payment collected for AR Invoice #{payload.arInvoiceID}",
+                        receipt_id,
+                    ))
+                    journal_id = cur.fetchone()["journalID"]
+
+                    # Debit Cash in Bank
+                    cur.execute(f"""
+                        INSERT INTO "{jel_table}" ("journalID", "accountID", "debit", "credit")
+                        VALUES (%s, %s, %s, 0)
+                    """, (journal_id, cash_acc["id"], payload.amount))
+
+                    # Credit Accounts Receivable
+                    cur.execute(f"""
+                        INSERT INTO "{jel_table}" ("journalID", "accountID", "debit", "credit")
+                        VALUES (%s, %s, 0, %s)
+                    """, (journal_id, ar_acc["id"], payload.amount))
+
+                    if gl_table:
+                        cur.execute(f"""
+                            INSERT INTO "{gl_table}" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
+                            VALUES (%s, %s, %s, 0, %s)
+                        """, (cash_acc["id"], journal_id, payload.amount, payload.amount))
+                        cur.execute(f"""
+                            INSERT INTO "{gl_table}" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
+                            VALUES (%s, %s, 0, %s, %s)
+                        """, (ar_acc["id"], journal_id, payload.amount, -payload.amount))
 
             conn.commit()
             return created_receipt

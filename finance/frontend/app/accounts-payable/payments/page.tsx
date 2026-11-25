@@ -86,8 +86,18 @@ export default function APPayments() {
         loadedBanks = Array.isArray(allBanks) ? allBanks : [];
       }
 
+      // Filter strictly to ONLY active disbursement accounts (excludes BPI Sales & BPI Payroll)
+      const activeDisbursementBanks = loadedBanks.filter(
+        (b: any) => b.isDisbursement !== false && b.isdisbursement !== false
+      );
+
       setOpenInvoices(loadedInvoices);
-      setBankAccounts(loadedBanks);
+      setBankAccounts(activeDisbursementBanks);
+
+      // Auto-select the active disbursement bank if only one exists (e.g., BDO Corporate Checking)
+      if (activeDisbursementBanks.length === 1) {
+        setSelectedBankId(String(activeDisbursementBanks[0].bankAccountID));
+      }
     } catch (err: any) {
       setError(err.message || "Failed to load AP payments");
     } finally {
@@ -419,27 +429,27 @@ export default function APPayments() {
             </div>
 
             {/* Active Invoice Details Box */}
-            {activeInvoice && (
+             {activeInvoice && (
               <div
                 style={{
                   backgroundColor: "#f8fafc",
-                  padding: "0.65rem 0.85rem",
+                  padding: "0.75rem 0.85rem",
                   borderRadius: "6px",
                   border: "1px solid #e2e8f0",
                   fontSize: "0.85rem",
                   display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
+                  flexDirection: "column",
+                  gap: "0.55rem",
                 }}
               >
-                <div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div>
                     <strong>Supplier:</strong>{" "}
                     {activeInvoice.supplier_name ||
                       `Supplier #${activeInvoice.supplierID}`}
                   </div>
                   <div>
-                    <strong>Remaining Balance:</strong>{" "}
+                    <strong>Remaining:</strong>{" "}
                     {formatCurrency(
                       activeInvoice.remainingBalance ??
                         activeInvoice.remainingbalance ??
@@ -447,29 +457,100 @@ export default function APPayments() {
                     )}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPaymentAmount(
-                      String(
+
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rem = Number(
                         activeInvoice.remainingBalance ??
                           activeInvoice.remainingbalance ??
-                          activeInvoice.amount
-                      )
-                    )
-                  }
-                  style={{
-                    padding: "0.3rem 0.6rem",
-                    fontSize: "0.78rem",
-                    borderRadius: "4px",
-                    border: "1px solid #2563eb",
-                    backgroundColor: "#eff6ff",
-                    color: "#1d4ed8",
-                    cursor: "pointer",
-                  }}
-                >
-                  Pay Full
-                </button>
+                          activeInvoice.amount ??
+                          0
+                      );
+                      setPaymentAmount(rem.toFixed(2));
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "0.4rem 0.6rem",
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                      borderRadius: "5px",
+                      border: "1px solid #2563eb",
+                      backgroundColor:
+                        Number(paymentAmount) ===
+                        Number(
+                          activeInvoice.remainingBalance ??
+                            activeInvoice.remainingbalance ??
+                            activeInvoice.amount
+                        )
+                          ? "#2563eb"
+                          : "#eff6ff",
+                      color:
+                        Number(paymentAmount) ===
+                        Number(
+                          activeInvoice.remainingBalance ??
+                            activeInvoice.remainingbalance ??
+                            activeInvoice.amount
+                        )
+                          ? "#ffffff"
+                          : "#1d4ed8",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Pay Full (100%)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rem = Number(
+                        activeInvoice.remainingBalance ??
+                          activeInvoice.remainingbalance ??
+                          activeInvoice.amount ??
+                          0
+                      );
+                      setPaymentAmount((rem / 2).toFixed(2));
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "0.4rem 0.6rem",
+                      fontSize: "0.8rem",
+                      fontWeight: 600,
+                      borderRadius: "5px",
+                      border: "1px solid #0d9488",
+                      backgroundColor:
+                        Number(paymentAmount) ===
+                        Number(
+                          (
+                            Number(
+                              activeInvoice.remainingBalance ??
+                                activeInvoice.remainingbalance ??
+                                activeInvoice.amount
+                            ) / 2
+                          ).toFixed(2)
+                        )
+                          ? "#0d9488"
+                          : "#f0fdfa",
+                      color:
+                        Number(paymentAmount) ===
+                        Number(
+                          (
+                            Number(
+                              activeInvoice.remainingBalance ??
+                                activeInvoice.remainingbalance ??
+                                activeInvoice.amount
+                            ) / 2
+                          ).toFixed(2)
+                        )
+                          ? "#ffffff"
+                          : "#0f766e",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Pay Half (50%)
+                  </button>
+                </div>
               </div>
             )}
 

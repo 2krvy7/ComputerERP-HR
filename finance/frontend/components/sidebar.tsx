@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-
 import { usePathname } from "next/navigation";
 import "./sidebar.css";
 
@@ -10,26 +9,15 @@ export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
 
-
-
-const [apOpen, setApOpen] = useState(false);
-const [arOpen, setArOpen] = useState(false);
-const [cashOpen, setCashOpen] = useState(false);
-const [reportsOpen, setReportsOpen] = useState(false);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  const [apOpen, setApOpen] = useState(
+    pathname.startsWith("/accounts-payable")
+  );
+  const [cashOpen, setCashOpen] = useState(
+    pathname.startsWith("/cash-bank")
+  );
+  const [reportsOpen, setReportsOpen] = useState(
+    pathname.startsWith("/reports")
+  );
 
   return (
     <nav className={`sidebar ${sidebarOpen ? "" : "closed"}`}>
@@ -50,7 +38,7 @@ const [reportsOpen, setReportsOpen] = useState(false);
       </header>
 
       <ul className="menu-links">
-
+        {/* Dashboard */}
         <li className={`nav-link ${pathname === "/" ? "active-link" : ""}`}>
           <Link href="/">
             <i className="bx bx-grid-alt icon"></i>
@@ -58,169 +46,130 @@ const [reportsOpen, setReportsOpen] = useState(false);
           </Link>
         </li>
 
+        {/* Chart of Accounts */}
         <li
           className={`nav-link ${
-            pathname === "/chart-of-accounts"
-              ? "active-link"
-              : ""
+            pathname === "/chart-of-accounts" ? "active-link" : ""
           }`}
         >
           <Link href="/chart-of-accounts">
             <i className="bx bx-list-ul icon"></i>
-            <span className="text nav-text">
-              Chart of Accounts
-            </span>
+            <span className="text nav-text">Chart of Accounts</span>
           </Link>
         </li>
 
+        {/* Journal Entries */}
         <li
           className={`nav-link ${
-            pathname === "/journal-entries"
-              ? "active-link"
-              : ""
+            pathname === "/journal-entries" ? "active-link" : ""
           }`}
         >
           <Link href="/journal-entries">
             <i className="bx bx-book icon"></i>
-            <span className="text nav-text">
-              Journal Entries
-            </span>
+            <span className="text nav-text">Journal Entries</span>
           </Link>
         </li>
 
+        {/* General Ledger */}
         <li
           className={`nav-link ${
-            pathname === "/general-ledger"
-              ? "active-link"
-              : ""
+            pathname === "/general-ledger" ? "active-link" : ""
           }`}
         >
           <Link href="/general-ledger">
             <i className="bx bx-book-content icon"></i>
-            <span className="text nav-text">
-              General Ledger
-            </span>
+            <span className="text nav-text">General Ledger</span>
           </Link>
         </li>
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
         {/* Accounts Payable */}
-<li className="nav-link parent-menu">
-  <div
-    className="menu-parent"
-    onClick={() => setApOpen(!apOpen)}
-  >
-    <i className="bx bx-up-arrow-alt icon"></i>
-    <span className="text nav-text">Accounts Payable</span>
+        <li className="nav-link parent-menu">
+          <div className="menu-parent" onClick={() => setApOpen(!apOpen)}>
+            <i className="bx bx-up-arrow-alt icon"></i>
+            <span className="text nav-text">Accounts Payable</span>
 
-    <i
-      className={`bx ${
-        apOpen ? "bx-chevron-down" : "bx-chevron-right"
-      } arrow`}
-    ></i>
-  </div>
+            <i
+              className={`bx ${
+                apOpen ? "bx-chevron-down" : "bx-chevron-right"
+              } arrow`}
+            ></i>
+          </div>
 
-  {apOpen && (
-    <ul className="sub-menu">
-      <li>
-        <Link href="/accounts-payable/invoices">
-          AP Invoices
-        </Link>
-      </li>
-      <li>
-        <Link href="/accounts-payable/payments">
-          AP Payments
-        </Link>
-      </li>
-    </ul>
-  )}
-</li>
+          {apOpen && (
+            <ul className="sub-menu">
+              <li
+                className={
+                  pathname === "/accounts-payable/invoices"
+                    ? "active-link"
+                    : ""
+                }
+              >
+                <Link href="/accounts-payable/invoices">AP Invoices</Link>
+              </li>
+              <li
+                className={
+                  pathname === "/accounts-payable/payments"
+                    ? "active-link"
+                    : ""
+                }
+              >
+                <Link href="/accounts-payable/payments">AP Payments</Link>
+              </li>
+            </ul>
+          )}
+        </li>
 
-
-
-
-
-
-       {/* Accounts Receivable */}
-<li className="nav-link parent-menu">
-  <div
-    className="menu-parent"
-    onClick={() => setArOpen(!arOpen)}
-  >
-    <i className="bx bx-down-arrow-alt icon"></i>
-    <span className="text nav-text">Accounts Receivable</span>
-
-    <i
-      className={`bx ${
-        arOpen ? "bx-chevron-down" : "bx-chevron-right"
-      } arrow`}
-    ></i>
-  </div>
-
-  {arOpen && (
-    <ul className="sub-menu">
-      <li>
-        <Link href="/accounts-receivable/invoices">
-          AR Invoices
-        </Link>
-      </li>
-      <li>
-        <Link href="/accounts-receivable/collections">
-          Collections
-        </Link>
-      </li>
-    </ul>
-  )}
-</li>
+        {/* Accounts Receivable (Single Main Tab — No Submenu) */}
+        <li
+          className={`nav-link ${
+            pathname.startsWith("/accounts-receivable") ? "active-link" : ""
+          }`}
+        >
+          <Link href="/accounts-receivable">
+            <i className="bx bx-down-arrow-alt icon"></i>
+            <span className="text nav-text">Accounts Receivable</span>
+          </Link>
+        </li>
 
         {/* Cash & Bank */}
-<li className="nav-link parent-menu">
-  <div
-    className="menu-parent"
-    onClick={() => setCashOpen(!cashOpen)}
-  >
-    <i className="bx bx-buildings icon"></i>
-    <span className="text nav-text">Cash & Bank</span>
+        <li className="nav-link parent-menu">
+          <div className="menu-parent" onClick={() => setCashOpen(!cashOpen)}>
+            <i className="bx bx-buildings icon"></i>
+            <span className="text nav-text">Cash &amp; Bank</span>
 
-    <i
-      className={`bx ${
-        cashOpen ? "bx-chevron-down" : "bx-chevron-right"
-      } arrow`}
-    ></i>
-  </div>
+            <i
+              className={`bx ${
+                cashOpen ? "bx-chevron-down" : "bx-chevron-right"
+              } arrow`}
+            ></i>
+          </div>
 
-  {cashOpen && (
-    <ul className="sub-menu">
-      <li>
-        <Link href="/cash-bank/accounts">
-          Bank Accounts
-        </Link>
-      </li>
-      <li>
-        <Link href="/cash-bank/transactions">
-          Transactions
-        </Link>
-      </li>
-    </ul>
-  )}
-</li>
+          {cashOpen && (
+            <ul className="sub-menu">
+              <li
+                className={
+                  pathname === "/cash-bank/accounts" ? "active-link" : ""
+                }
+              >
+                <Link href="/cash-bank/accounts">Bank Accounts</Link>
+              </li>
+              <li
+                className={
+                  pathname === "/cash-bank/transactions" ? "active-link" : ""
+                }
+              >
+                <Link href="/cash-bank/transactions">Transactions</Link>
+              </li>
+            </ul>
+          )}
+        </li>
 
         {/* Expenses */}
-        <li className="nav-link">
+        <li
+          className={`nav-link ${
+            pathname === "/expenses" ? "active-link" : ""
+          }`}
+        >
           <Link href="/expenses">
             <i className="bx bx-receipt icon"></i>
             <span className="text nav-text">Expenses</span>
@@ -228,72 +177,81 @@ const [reportsOpen, setReportsOpen] = useState(false);
         </li>
 
         {/* Reports */}
-<li className="nav-link parent-menu">
-  <div
-    className="menu-parent"
-    onClick={() => setReportsOpen(!reportsOpen)}
-  >
-    <i className="bx bx-bar-chart-alt-2 icon"></i>
-    <span className="text nav-text">Reports</span>
+        <li className="nav-link parent-menu">
+          <div
+            className="menu-parent"
+            onClick={() => setReportsOpen(!reportsOpen)}
+          >
+            <i className="bx bx-bar-chart-alt-2 icon"></i>
+            <span className="text nav-text">Reports</span>
 
-    <i
-      className={`bx ${
-        reportsOpen ? "bx-chevron-down" : "bx-chevron-right"
-      } arrow`}
-    ></i>
-  </div>
+            <i
+              className={`bx ${
+                reportsOpen ? "bx-chevron-down" : "bx-chevron-right"
+              } arrow`}
+            ></i>
+          </div>
 
-  {reportsOpen && (
-    <ul className="sub-menu">
-      <li>
-        <Link href="/reports/trial-balance">
-          Trial Balance
-        </Link>
-      </li>
+          {reportsOpen && (
+            <ul className="sub-menu">
+              <li
+                className={
+                  pathname === "/reports/trial-balance" ? "active-link" : ""
+                }
+              >
+                <Link href="/reports/trial-balance">Trial Balance</Link>
+              </li>
 
-      <li>
-        <Link href="/reports/income-statement">
-          Income Statement
-        </Link>
-      </li>
+              <li
+                className={
+                  pathname === "/reports/income-statement"
+                    ? "active-link"
+                    : ""
+                }
+              >
+                <Link href="/reports/income-statement">Income Statement</Link>
+              </li>
 
-      <li>
-        <Link href="/reports/balance-sheet">
-          Balance Sheet
-        </Link>
-      </li>
+              <li
+                className={
+                  pathname === "/reports/balance-sheet" ? "active-link" : ""
+                }
+              >
+                <Link href="/reports/balance-sheet">Balance Sheet</Link>
+              </li>
 
-      <li>
-        <Link href="/reports/cash-flow">
-          Cash Flow Statement
-        </Link>
-      </li>
+              <li
+                className={
+                  pathname === "/reports/cash-flow" ? "active-link" : ""
+                }
+              >
+                <Link href="/reports/cash-flow">Cash Flow Statement</Link>
+              </li>
 
-      <li>
-        <Link href="/reports/AP-aging">
-          AP Aging
-        </Link>
-      </li>
+              <li
+                className={
+                  pathname === "/reports/AP-aging" ? "active-link" : ""
+                }
+              >
+                <Link href="/reports/AP-aging">AP Aging</Link>
+              </li>
 
-      <li>
-        <Link href="/reports/AR-aging">
-          AR Aging
-        </Link>
-      </li>
-    </ul>
-  )}
-</li>
-        
-        
-
+              <li
+                className={
+                  pathname === "/reports/AR-aging" ? "active-link" : ""
+                }
+              >
+                <Link href="/reports/AR-aging">AR Aging</Link>
+              </li>
+            </ul>
+          )}
+        </li>
       </ul>
-
-      
 
       <div className="sidebar-footer">
         <div className="help-link">
           <i className="bx bx-help-circle"></i>
-          Help & Resources
+          Help &amp; Resources
         </div>
 
         <div className="user-box">

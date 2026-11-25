@@ -30,6 +30,13 @@ class PayPayrollPayload(BaseModel):
     bankAccountID: int
     paymentDate: str
 
+class BatchApproveExpensesPayload(BaseModel):
+    expenseIds: list[int] = []
+    payrollIds: list[int] = []
+    productionOrderIds: list[int] = []
+    approvalDate: str | None = None
+
+
 
 def get_exact_cols(cur, table_name: str) -> dict[str, str]:
     cur.execute("""
@@ -182,73 +189,204 @@ def get_expenses():
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
-            auto_sync_external_expenses(cur)
-            conn.commit()
+            # Protect external auto-sync with a SAVEPOINT so GET /api/expense/ never crashes
+            try:
+                cur.execute("SAVEPOINT sync_ext_exp_sp")
+                auto_sync_external_expenses(cur)
+                cur.execute("RELEASE SAVEPOINT sync_ext_exp_sp")
+                conn.commit()
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT sync_ext_exp_sp")
 
+            items = []
+
+            # 1. Fetch standard & approved production expenses from "Expense"
             exp_table = get_exact_table_name(cur, "Expense")
-            if not exp_table:
-                return []
+            if exp_table:
+                e_cols = get_exact_cols(cur, exp_table)
+                e_pk = e_cols.get("expenseid", "expenseID")
+                e_acc = e_cols.get("accountid", "accountID")
+                e_prod = e_cols.get("productionid", "productionID")
+                e_post = e_cols.get("postingid", "postingID")
+                e_amt = e_cols.get("amount", "amount")
 
-            e_cols = get_exact_cols(cur, exp_table)
-            e_pk = e_cols.get("expenseid", "expenseID")
-            e_acc = e_cols.get("accountid", "accountID")
-            e_prod = e_cols.get("productionid", "productionID")
-            e_post = e_cols.get("postingid", "postingID")
-            e_amt = e_cols.get("amount", "amount")
+                coa_table = get_exact_table_name(cur, "ChartOfAccounts")
+                prod_table = get_exact_table_name(cur, "ProductionOrder")
+                je_table = get_exact_table_name(cur, "JournalEntry")
 
-            coa_table = get_exact_table_name(cur, "ChartOfAccounts")
-            prod_table = get_exact_table_name(cur, "ProductionOrder")
-            je_table = get_exact_table_name(cur, "JournalEntry")
+                coa_join = ""
+                coa_select = "NULL AS account_code, NULL AS account_name"
+                if coa_table:
+                    c_cols = get_exact_cols(cur, coa_table)
+                    c_pk = c_cols.get("accountid", "accountID")
+                    c_code = c_cols.get("accountcode", "accountCode")
+                    c_name = c_cols.get("accountname", "accountName")
+                    coa_join = f'LEFT JOIN "{coa_table}" c ON e."{e_acc}" = c."{c_pk}"'
+                    coa_select = f'c."{c_code}" AS account_code, c."{c_name}" AS account_name'
 
-            coa_join = ""
-            coa_select = "NULL AS account_code, NULL AS account_name"
-            if coa_table:
-                c_cols = get_exact_cols(cur, coa_table)
-                c_pk = c_cols.get("accountid", "accountID")
-                c_code = c_cols.get("accountcode", "accountCode")
-                c_name = c_cols.get("accountname", "accountName")
-                coa_join = f'LEFT JOIN "{coa_table}" c ON e."{e_acc}" = c."{c_pk}"'
-                coa_select = f'c."{c_code}" AS account_code, c."{c_name}" AS account_name'
+                prod_join = ""
+                prod_select = "NULL AS order_total_cost"
+                if prod_table:
+                    p_cols = get_exact_cols(cur, prod_table)
+                    p_pk = p_cols.get("productionid", "productionID")
+                    p_cost = (
+                        p_cols.get("totalcost")
+                        or p_cols.get("total_cost")
+                        or p_cols.get("cost")
+                        or p_cols.get("amount")
+                    )
+                    prod_join = f'LEFT JOIN "{prod_table}" p ON e."{e_prod}" = p."{p_pk}"'
+                    if p_cost:
+                        prod_select = f'p."{p_cost}" AS order_total_cost'
 
-            prod_join = ""
-            prod_select = "NULL AS order_total_cost"
-            if prod_table:
-                p_cols = get_exact_cols(cur, prod_table)
-                p_pk = p_cols.get("productionid", "productionID")
-                p_cost = p_cols.get("totalcost") or p_cols.get("total_cost")
-                prod_join = f'LEFT JOIN "{prod_table}" p ON e."{e_prod}" = p."{p_pk}"'
-                if p_cost:
-                    prod_select = f'p."{p_cost}" AS order_total_cost'
+                je_join = ""
+                je_select = "NULL AS description, NULL AS reference_no"
+                if je_table:
+                    j_cols = get_exact_cols(cur, je_table)
+                    j_pk = j_cols.get("journalid", "journalID")
+                    j_desc = j_cols.get("description", "description")
+                    j_ref = j_cols.get("referenceno", "referenceNo")
+                    je_join = f'LEFT JOIN "{je_table}" j ON e."{e_post}" = j."{j_pk}"'
+                    je_select = f'j."{j_desc}" AS description, j."{j_ref}" AS reference_no'
 
-            je_join = ""
-            je_select = "NULL AS description, NULL AS reference_no"
-            if je_table:
-                j_cols = get_exact_cols(cur, je_table)
-                j_pk = j_cols.get("journalid", "journalID")
-                j_desc = j_cols.get("description", "description")
-                j_ref = j_cols.get("referenceno", "referenceNo")
-                je_join = f'LEFT JOIN "{je_table}" j ON e."{e_post}" = j."{j_pk}"'
-                je_select = f'j."{j_desc}" AS description, j."{j_ref}" AS reference_no'
+                cur.execute(f"""
+                    SELECT 
+                        e."{e_pk}" AS "expenseID",
+                        e."{e_acc}" AS "accountID",
+                        e."{e_prod}" AS "productionID",
+                        e."{e_post}" AS "postingID",
+                        e."{e_amt}" AS "amount",
+                        {coa_select},
+                        {prod_select},
+                        {je_select},
+                        'Expense' AS source_type
+                    FROM "{exp_table}" e
+                    {coa_join}
+                    {prod_join}
+                    {je_join}
+                    ORDER BY e."{e_pk}" DESC
+                """)
+                items.extend(cur.fetchall())
 
-            cur.execute(f"""
-                SELECT 
-                    e."{e_pk}" AS "expenseID",
-                    e."{e_acc}" AS "accountID",
-                    e."{e_prod}" AS "productionID",
-                    e."{e_post}" AS "postingID",
-                    e."{e_amt}" AS "amount",
-                    {coa_select},
-                    {prod_select},
-                    {je_select}
-                FROM "{exp_table}" e
-                {coa_join}
-                {prod_join}
-                {je_join}
-                ORDER BY e."{e_pk}" DESC
-            """)
-            return cur.fetchall()
+                            # 2. Include HR Payroll runs from "PayrollExpense"
+            pay_table = get_exact_table_name(cur, "PayrollExpense")
+            if pay_table:
+                p_cols = get_exact_cols(cur, pay_table)
+                pk_col = p_cols.get("payrollexpenseid", "payrollExpenseID")
+                pid_col = p_cols.get("payroll_id", "payroll_id")
+                amt_col = p_cols.get("amount", "amount")
+                je_table = get_exact_table_name(cur, "JournalEntry")
+
+                if je_table:
+                    cur.execute(f"""
+                        SELECT 
+                            p."{pk_col}" AS "payrollExpenseID",
+                            p."{pid_col}" AS "payroll_id",
+                            p."{amt_col}" AS "amount",
+                            j."journalID" AS "postingID",
+                            j."referenceNo" AS "reference_no"
+                        FROM "{pay_table}" p
+                        LEFT JOIN "{je_table}" j
+                          ON j."sourceModule" = 'Payroll' AND j."sourceID" = p."{pk_col}"
+                        ORDER BY p."{pk_col}" DESC
+                    """)
+                else:
+                    cur.execute(f"""
+                        SELECT 
+                            "{pk_col}" AS "payrollExpenseID",
+                            "{pid_col}" AS "payroll_id",
+                            "{amt_col}" AS "amount",
+                            NULL AS "postingID",
+                            NULL AS "reference_no"
+                        FROM "{pay_table}"
+                        ORDER BY "{pk_col}" DESC
+                    """)
+
+                for pr in cur.fetchall():
+                    items.append({
+                        "expenseID": f"PR-{pr['payrollExpenseID']}",
+                        "payrollExpenseID": pr["payrollExpenseID"],
+                        "accountID": None,
+                        "account_code": "5100",
+                        "account_name": "Salaries & Wages Expense",
+                        "productionID": None,
+                        "postingID": pr["postingID"],
+                        "reference_no": pr["reference_no"],
+                        "description": f"HR Payroll Run #{pr['payroll_id']}",
+                        "amount": float(pr["amount"] or 0),
+                        "source_type": "Payroll",
+                    })
+
+            # 3. Safely read directly from "ProductionOrder" without hardcoding missing columns
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            if po_table:
+                po_cols = get_exact_cols(cur, po_table)
+                po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+                po_prod = po_cols.get("productid") or po_cols.get("product_id") or po_cols.get("pm_id")
+                po_qty = po_cols.get("quantity") or po_cols.get("qty") or po_cols.get("quantityproduced")
+                po_cost = (
+                    po_cols.get("totalcost")
+                    or po_cols.get("total_cost")
+                    or po_cols.get("cost")
+                    or po_cols.get("amount")
+                    or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+                )
+
+                if po_pk and po_cost:
+                    prod_sel = f'po."{po_prod}" AS "productID"' if po_prod else 'NULL AS "productID"'
+                    qty_sel = f'po."{po_qty}" AS "quantity"' if po_qty else '0 AS "quantity"'
+
+                    if exp_table:
+                        e_cols = get_exact_cols(cur, exp_table)
+                        e_prod = e_cols.get("productionid", "productionID")
+                        cur.execute(f"""
+                            SELECT 
+                                po."{po_pk}" AS "productionID",
+                                {prod_sel},
+                                {qty_sel},
+                                po."{po_cost}" AS "totalCost"
+                            FROM "{po_table}" po
+                            WHERE COALESCE(po."{po_cost}", 0) > 0
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM "{exp_table}" e WHERE e."{e_prod}" = po."{po_pk}"
+                              )
+                            ORDER BY po."{po_pk}" DESC
+                        """)
+                    else:
+                        cur.execute(f"""
+                            SELECT 
+                                po."{po_pk}" AS "productionID",
+                                {prod_sel},
+                                {qty_sel},
+                                po."{po_cost}" AS "totalCost"
+                            FROM "{po_table}" po
+                            WHERE COALESCE(po."{po_cost}", 0) > 0
+                            ORDER BY po."{po_pk}" DESC
+                        """)
+
+                    for po in cur.fetchall():
+                        pid = po["productionID"]
+                        qty = po.get("quantity") or 0
+                        prod_id = po.get("productID")
+                        label_extra = f" (Product #{prod_id}, Qty: {qty})" if prod_id else (f" (Qty: {qty})" if qty else "")
+                        items.append({
+                            "expenseID": f"PO-{pid}",
+                            "productionOrderID": pid,
+                            "accountID": None,
+                            "account_code": "5010",
+                            "account_name": "Cost of Goods Sold / Production Cost",
+                            "productionID": pid,
+                            "postingID": None,
+                            "reference_no": None,
+                            "description": f"Production Order #{pid}{label_extra}",
+                            "amount": float(po["totalCost"] or 0),
+                            "source_type": "ProductionOrder",
+                        })
+
+            return items
     finally:
         conn.close()
+
 
 @router.get("/options")
 def get_expense_options():
@@ -289,98 +427,47 @@ def get_expense_options():
 @router.post("/")
 def create_expense(payload: NewExpensePayload):
     if payload.amount <= 0:
-        raise HTTPException(status_code=400, detail="Expense amount must be greater than 0")
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
 
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
             exp_table = get_exact_table_name(cur, "Expense") or "Expense"
             e_cols = get_exact_cols(cur, exp_table)
-
-            desc_text = payload.description.strip() or "Operating / Overhead Expense"
+            desc_text = payload.description.strip() or "Operating Expense"
             auto_journal_id = None
 
-            je_table = get_exact_table_name(cur, "JournalEntry")
-            jel_table = get_exact_table_name(cur, "JournalEntryLine")
-            gl_table = get_exact_table_name(cur, "GeneralLedger")
-            coa_table = get_exact_table_name(cur, "ChartOfAccounts")
+            # Auto-post to JournalEntry & GeneralLedger
+            cur.execute('SELECT "accountID" FROM "ChartOfAccounts" WHERE "accountCode" IN (\'1020\', \'1010\') OR "accountName" ILIKE \'%Bank%\' LIMIT 1')
+            cash_acc = cur.fetchone()
 
-            if je_table and jel_table and coa_table:
-                c_cols = get_exact_cols(cur, coa_table)
-                c_id = c_cols.get("accountid", "accountID")
-                c_code = c_cols.get("accountcode", "accountCode")
-                c_name = c_cols.get("accountname", "accountName")
-                c_type = c_cols.get("accounttype", "accountType")
+            if cash_acc:
+                cur.execute("""
+                    INSERT INTO "JournalEntry" ("journalDate", "referenceNo", "sourceModule", "description")
+                    VALUES (CURRENT_DATE, 'EXP-AUTO', 'Expenses', %s)
+                    RETURNING "journalID"
+                """, (desc_text,))
+                auto_journal_id = cur.fetchone()["journalID"]
 
-                cur.execute(f"""
-                    SELECT "{c_id}" AS id FROM "{coa_table}"
-                    WHERE "{c_code}" IN ('1020', '1010')
-                       OR "{c_name}" ILIKE '%Bank%'
-                       OR "{c_name}" ILIKE '%Cash%'
-                       OR LOWER("{c_type}") = 'asset'
-                    ORDER BY "{c_code}" ASC LIMIT 1
-                """)
-                cash_acc = cur.fetchone()
+                cur.execute('UPDATE "JournalEntry" SET "referenceNo" = %s WHERE "journalID" = %s', (f"EXP-{str(auto_journal_id).zfill(4)}", auto_journal_id))
+                cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (auto_journal_id, payload.accountID, payload.amount))
+                cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (auto_journal_id, cash_acc["accountID"], payload.amount))
+                cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (payload.accountID, auto_journal_id, payload.amount, payload.amount))
+                cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (cash_acc["accountID"], auto_journal_id, payload.amount, -payload.amount))
 
-                if cash_acc:
-                    cur.execute("""
-                        INSERT INTO "JournalEntry" (
-                            "journalDate", "referenceNo", "sourceModule", "description"
-                        )
-                        VALUES (CURRENT_DATE, 'EXP-AUTO', 'Expenses', %s)
-                        RETURNING "journalID"
-                    """, (desc_text,))
-                    auto_journal_id = cur.fetchone()["journalID"]
+            # Insert into Expense
+            insert_cols = [f'"{e_cols.get("accountid", "accountID")}"', f'"{e_cols.get("amount", "amount")}"']
+            insert_vals = [payload.accountID, payload.amount]
 
-                    cur.execute("""
-                        UPDATE "JournalEntry"
-                        SET "referenceNo" = %s
-                        WHERE "journalID" = %s
-                    """, (f"EXP-{str(auto_journal_id).zfill(4)}", auto_journal_id))
+            if payload.productionID is not None and "productionid" in e_cols:
+                insert_cols.append(f'"{e_cols["productionid"]}"')
+                insert_vals.append(payload.productionID)
+            if auto_journal_id is not None and "postingid" in e_cols:
+                insert_cols.append(f'"{e_cols["postingid"]}"')
+                insert_vals.append(auto_journal_id)
 
-                    cur.execute("""
-                        INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit")
-                        VALUES (%s, %s, %s, 0)
-                    """, (auto_journal_id, payload.accountID, payload.amount))
-
-                    cur.execute("""
-                        INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit")
-                        VALUES (%s, %s, 0, %s)
-                    """, (auto_journal_id, cash_acc["id"], payload.amount))
-
-                    if gl_table:
-                        cur.execute("""
-                            INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
-                            VALUES (%s, %s, %s, 0, %s)
-                        """, (payload.accountID, auto_journal_id, payload.amount, payload.amount))
-                        cur.execute("""
-                            INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance")
-                            VALUES (%s, %s, 0, %s, %s)
-                        """, (cash_acc["id"], auto_journal_id, payload.amount, -payload.amount))
-
-            # Insert into Expense using ONLY existing columns (no description column needed on Expense)
-            insert_cols = []
-            insert_vals = []
-            field_map = {
-                "accountid": payload.accountID,
-                "productionid": payload.productionID,
-                "postingid": auto_journal_id,
-                "amount": payload.amount,
-            }
-
-            for key, val in field_map.items():
-                if key in e_cols and val is not None:
-                    insert_cols.append(f'"{e_cols[key]}"')
-                    insert_vals.append(val)
-
-            col_sql = ", ".join(insert_cols)
-            ph_sql = ", ".join(["%s"] * len(insert_vals))
-
-            cur.execute(f"""
-                INSERT INTO "{exp_table}" ({col_sql})
-                VALUES ({ph_sql})
-                RETURNING *
-            """, tuple(insert_vals))
+            ph = ", ".join(["%s"] * len(insert_vals))
+            cur.execute(f'INSERT INTO "{exp_table}" ({", ".join(insert_cols)}) VALUES ({ph}) RETURNING *', tuple(insert_vals))
             created = cur.fetchone()
             conn.commit()
             return created
@@ -439,51 +526,94 @@ def receive_production_expense(payload: ProductionCostRequest):
         conn.close()
 
 @router.get("/pricing-alerts")
-def get_production_pricing_alerts(margin_pct: float = 20.0):
-    """Returns the latest Unit Cost & Minimum Selling Price per productID for Sales (Team 4)."""
+def get_pricing_alerts(margin_pct: float = 20.0, vat_pct: float = 12.0):
+    """
+    Sends Sales the VAT-exclusive minimum selling price (unitCost + 20% margin)
+    and the 12% VAT-inclusive minimum price for every production batch.
+    """
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
-            auto_sync_external_expenses(cur)
-            conn.commit()
-
-            prod_table = get_exact_table_name(cur, "ProductionOrder")
-            if not prod_table:
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            exp_table = get_exact_table_name(cur, "Expense")
+            if not po_table:
                 return []
 
-            p_cols = get_exact_cols(cur, prod_table)
-            p_pk = p_cols.get("productionid", "productionID")
-            p_prod = p_cols.get("productid", "productID")
-            p_qty = p_cols.get("quantity", "quantity")
-            p_cost = p_cols.get("totalcost", "totalCost")
+            po_cols = get_exact_cols(cur, po_table)
+            po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+            po_prod = po_cols.get("productid") or po_cols.get("product_id") or po_cols.get("pm_id")
+            po_qty = po_cols.get("quantity") or po_cols.get("qty") or po_cols.get("quantityproduced")
+            po_cost = (
+                po_cols.get("totalcost")
+                or po_cols.get("total_cost")
+                or po_cols.get("cost")
+                or po_cols.get("amount")
+                or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+            )
 
-            cur.execute(f'SELECT * FROM "{prod_table}" ORDER BY "{p_pk}" DESC')
-            rows = cur.fetchall()
+            if not po_pk:
+                return []
 
-            latest_by_product = {}
-            for row in rows:
-                prod_id = row.get(p_prod)
-                if prod_id in latest_by_product:
-                    continue
+            prod_sel = f'po."{po_prod}" AS "productID"' if po_prod else 'NULL AS "productID"'
+            qty_sel = f'po."{po_qty}" AS "quantity"' if po_qty else '1 AS "quantity"'
 
-                qty = float(row.get(p_qty) or 0)
-                total = float(row.get(p_cost) or 0)
-                unit_cost = round(total / qty, 2) if qty > 0 else 0.0
-                min_price = round(unit_cost * (1 + (margin_pct / 100.0)), 2)
+            # Use ProductionOrder's cost column if present; otherwise fall back to linked Expense amount
+            if po_cost:
+                cur.execute(f"""
+                    SELECT
+                        po."{po_pk}" AS "productionID",
+                        {prod_sel},
+                        {qty_sel},
+                        COALESCE(po."{po_cost}", 0) AS "totalCost"
+                    FROM "{po_table}" po
+                    WHERE COALESCE(po."{po_cost}", 0) > 0
+                    ORDER BY po."{po_pk}" DESC
+                """)
+            elif exp_table:
+                e_cols = get_exact_cols(cur, exp_table)
+                e_prod = e_cols.get("productionid", "productionID")
+                e_amt = e_cols.get("amount", "amount")
+                cur.execute(f"""
+                    SELECT
+                        po."{po_pk}" AS "productionID",
+                        {prod_sel},
+                        {qty_sel},
+                        COALESCE(SUM(e."{e_amt}"), 0) AS "totalCost"
+                    FROM "{po_table}" po
+                    JOIN "{exp_table}" e ON e."{e_prod}" = po."{po_pk}"
+                    GROUP BY po."{po_pk}"{f', po."{po_prod}"' if po_prod else ''}{f', po."{po_qty}"' if po_qty else ''}
+                    HAVING COALESCE(SUM(e."{e_amt}"), 0) > 0
+                    ORDER BY po."{po_pk}" DESC
+                """)
+            else:
+                return []
 
-                latest_by_product[prod_id] = {
-                    "productionID": row.get(p_pk),
-                    "productID": prod_id,
+            alerts = []
+            for r in cur.fetchall():
+                qty = max(float(r["quantity"] or 1), 1.0)
+                total_cost = float(r["totalCost"] or 0)
+                unit_cost = total_cost / qty
+                min_price_vat_ex = unit_cost * (1.0 + (margin_pct / 100.0))
+                vat_amount = min_price_vat_ex * (vat_pct / 100.0)
+                min_price_vat_inc = min_price_vat_ex + vat_amount
+
+                alerts.append({
+                    "productionID": r["productionID"],
+                    "productID": r["productID"],
                     "quantity": qty,
-                    "totalCost": total,
-                    "unitCost": unit_cost,
-                    "marginPct": margin_pct,
-                    "minSellingPrice": min_price,
-                }
-
-            return list(latest_by_product.values())
+                    "totalBatchCost": round(total_cost, 2),
+                    "unitCost": round(unit_cost, 2),
+                    "targetMarginPct": margin_pct,
+                    "minSellingPrice": round(min_price_vat_ex, 2),
+                    "vatPct": vat_pct,
+                    "estimatedVatAmount": round(vat_amount, 2),
+                    "minSellingPriceVatInclusive": round(min_price_vat_inc, 2),
+                    "taxNote": "Sales adds markup on top of minSellingPrice (VAT-Ex), then applies 12% VAT into sales_invoice.tax_amount.",
+                })
+            return alerts
     finally:
         conn.close()
+
 
 @router.post("/from-payroll")
 def receive_payroll_request(payload: PayrollRequestPayload):
@@ -616,6 +746,7 @@ def pay_payroll(payload: PayPayrollPayload):
                         VALUES (%s, %s, %s, 0)
                     """, (journal_id, exp_acc["id"], amount))
 
+
                     cur.execute(f"""
                         INSERT INTO "{jel_table}" (
                             "{jel_cols.get('journalid', 'journalID')}",
@@ -631,6 +762,219 @@ def pay_payroll(payload: PayPayrollPayload):
                 "message": f"Payroll #{row[pid_col]} paid from Bank Account #{payload.bankAccountID}",
                 "amountPaid": amount,
                 "referenceNo": payroll_ref,
+            }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+
+
+@router.post("/batch-approve")
+def batch_approve_expenses(payload: BatchApproveExpensesPayload):
+    if not payload.expenseIds and not payload.payrollIds and not payload.productionOrderIds:
+        raise HTTPException(status_code=400, detail="Please select at least one pending item to approve.")
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            je_table = get_exact_table_name(cur, "JournalEntry")
+            jel_table = get_exact_table_name(cur, "JournalEntryLine")
+            gl_table = get_exact_table_name(cur, "GeneralLedger")
+            coa_table = get_exact_table_name(cur, "ChartOfAccounts")
+
+            cash_acc_id = None
+            inv_acc_id = None
+            sal_acc_id = None
+            cogs_acc_id = None
+
+            if coa_table:
+                c_cols = get_exact_cols(cur, coa_table)
+                c_id = c_cols.get("accountid", "accountID")
+                c_code = c_cols.get("accountcode", "accountCode")
+                c_name = c_cols.get("accountname", "accountName")
+                c_type = c_cols.get("accounttype", "accountType")
+
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('1020', '1010') OR "{c_name}" ILIKE '%Bank%' OR "{c_name}" ILIKE '%Cash%'
+                    ORDER BY "{c_code}" ASC LIMIT 1
+                """)
+                r = cur.fetchone()
+                cash_acc_id = r["id"] if r else None
+
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('1300', '1400', '2010') OR "{c_name}" ILIKE '%Inventory%' OR "{c_name}" ILIKE '%Payable%'
+                    ORDER BY "{c_code}" ASC LIMIT 1
+                """)
+                r2 = cur.fetchone()
+                inv_acc_id = r2["id"] if r2 else cash_acc_id
+
+                # Strictly select Salaries & Wages Expense (never Accrued/Payable Liability)
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE LOWER("{c_type}") LIKE 'expense%'
+                      AND "{c_name}" NOT ILIKE '%Payable%'
+                      AND "{c_name}" NOT ILIKE '%Accrued%'
+                      AND (
+                          "{c_name}" ILIKE '%Salar%'
+                          OR "{c_name}" ILIKE '%Wage%'
+                          OR "{c_name}" ILIKE '%Payroll%'
+                      )
+                    ORDER BY
+                        CASE WHEN "{c_name}" ILIKE '%Salar%' THEN 1
+                             WHEN "{c_name}" ILIKE '%Wage%' THEN 2
+                             ELSE 3 END,
+                        "{c_code}" ASC
+                    LIMIT 1
+                """)
+                r3 = cur.fetchone()
+                sal_acc_id = r3["id"] if r3 else None
+
+                # Select 5010 COGS / Production Cost Expense account
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('5010', '5000')
+                       OR "{c_name}" ILIKE '%Production%'
+                       OR "{c_name}" ILIKE '%Cost of Goods%'
+                    ORDER BY CASE WHEN "{c_code}" = '5010' THEN 1 ELSE 2 END, "{c_code}" ASC
+                    LIMIT 1
+                """)
+                r4 = cur.fetchone()
+                cogs_acc_id = r4["id"] if r4 else sal_acc_id
+
+            approved_prod = 0
+            approved_pay = 0
+            expense_ids = list(payload.expenseIds)
+
+            # 0. Convert any selected ProductionOrder rows (PO-#) into "Expense" rows first
+            exp_table = get_exact_table_name(cur, "Expense")
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            if po_table and exp_table and payload.productionOrderIds:
+                po_cols = get_exact_cols(cur, po_table)
+                po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+                po_cost = (
+                    po_cols.get("totalcost")
+                    or po_cols.get("total_cost")
+                    or po_cols.get("cost")
+                    or po_cols.get("amount")
+                    or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+                )
+                e_cols = get_exact_cols(cur, exp_table)
+                e_pk = e_cols.get("expenseid", "expenseID")
+                e_acc = e_cols.get("accountid", "accountID")
+                e_prod = e_cols.get("productionid", "productionID")
+                e_amt = e_cols.get("amount", "amount")
+
+
+                for poid in payload.productionOrderIds:
+                    cur.execute(f'SELECT "{e_pk}" AS eid FROM "{exp_table}" WHERE "{e_prod}" = %s LIMIT 1', (poid,))
+                    existing = cur.fetchone()
+                    if existing:
+                        if existing["eid"] not in expense_ids:
+                            expense_ids.append(existing["eid"])
+                        continue
+
+                    cur.execute(f'SELECT "{po_cost}" AS cost FROM "{po_table}" WHERE "{po_pk}" = %s', (poid,))
+                    po_row = cur.fetchone()
+                    if po_row and float(po_row["cost"] or 0) > 0 and cogs_acc_id:
+                        cur.execute(f"""
+                            INSERT INTO "{exp_table}" ("{e_acc}", "{e_prod}", "{e_amt}")
+                            VALUES (%s, %s, %s)
+                            RETURNING "{e_pk}" AS eid
+                        """, (cogs_acc_id, poid, float(po_row["cost"])))
+                        expense_ids.append(cur.fetchone()["eid"])
+
+                        # 1. Approve & Post Selected Production Expenses
+            if exp_table and expense_ids:
+                e_cols = get_exact_cols(cur, exp_table)
+                e_pk = e_cols.get("expenseid", "expenseID")
+                e_acc = e_cols.get("accountid", "accountID")
+                e_prod = e_cols.get("productionid", "productionID")
+                e_post = e_cols.get("postingid", "postingID")
+                e_amt = e_cols.get("amount", "amount")
+
+                for eid in expense_ids:
+                    cur.execute(f'SELECT * FROM "{exp_table}" WHERE "{e_pk}" = %s', (eid,))
+                    exp_row = cur.fetchone()
+                    if not exp_row or exp_row.get(e_post) is not None:
+                        continue
+
+                    amt = float(exp_row.get(e_amt) or 0)
+                    acc_id = exp_row.get(e_acc)
+                    prod_id = exp_row.get(e_prod)
+                    ref_no = f"PROD-{str(eid).zfill(4)}"
+                    desc = f"Approved Production Batch #{prod_id} Cost" if prod_id else f"Approved Expense #{eid}"
+
+                    if je_table and jel_table and acc_id and inv_acc_id and amt > 0:
+                        cur.execute(f"""
+                            INSERT INTO "{je_table}" ("journalDate", "referenceNo", "sourceModule", "description", "sourceID")
+                            VALUES (COALESCE(%s::date, CURRENT_DATE), %s, 'Production Cost', %s, %s)
+                            RETURNING "journalID"
+                        """, (payload.approvalDate, ref_no, desc, eid))
+                        jid = cur.fetchone()["journalID"]
+
+                        cur.execute(f'INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (jid, acc_id, amt))
+                        cur.execute(f'INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, inv_acc_id, amt))
+
+                        if gl_table:
+                            cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (acc_id, jid, amt, amt))
+                            cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (inv_acc_id, jid, amt, -amt))
+
+                        cur.execute(f'UPDATE "{exp_table}" SET "{e_post}" = %s WHERE "{e_pk}" = %s', (jid, eid))
+                        approved_prod += 1
+
+            # 2. Approve & Post Selected HR Payroll Runs (Direct to JournalEntry & GeneralLedger)
+            pay_table = get_exact_table_name(cur, "PayrollExpense")
+            if pay_table and payload.payrollIds:
+                p_cols = get_exact_cols(cur, pay_table)
+                pk_col = p_cols.get("payrollexpenseid", "payrollExpenseID")
+                pid_col = p_cols.get("payroll_id", "payroll_id")
+                amt_col = p_cols.get("amount", "amount")
+
+                for prid in payload.payrollIds:
+                    cur.execute(f'SELECT * FROM "{pay_table}" WHERE "{pk_col}" = %s', (prid,))
+                    prow = cur.fetchone()
+                    if not prow:
+                        continue
+
+                    if je_table:
+                        cur.execute(f'SELECT 1 FROM "{je_table}" WHERE "sourceModule" = \'Payroll\' AND "sourceID" = %s', (prid,))
+                        if cur.fetchone():
+                            continue
+
+                    amt = float(prow.get(amt_col) or 0)
+                    run_id = prow.get(pid_col)
+                    ref_no = f"PAYROLL-{run_id}"
+                    desc = f"Payroll Run #{run_id} Disbursed (BDO Corporate Checking -> BPI Payroll)"
+
+                    if je_table and jel_table and sal_acc_id and cash_acc_id and amt > 0:
+                        cur.execute(f"""
+                            INSERT INTO "{je_table}" ("journalDate", "referenceNo", "sourceModule", "description", "sourceID")
+                            VALUES (COALESCE(%s::date, CURRENT_DATE), %s, 'Payroll', %s, %s)
+                            RETURNING "journalID"
+                        """, (payload.approvalDate, ref_no, desc, prid))
+                        jid = cur.fetchone()["journalID"]
+
+                        cur.execute(f'INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (jid, sal_acc_id, amt))
+                        cur.execute(f'INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, cash_acc_id, amt))
+
+                        if gl_table:
+                            cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (sal_acc_id, jid, amt, amt))
+                            cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (cash_acc_id, jid, amt, -amt))
+
+                    approved_pay += 1
+
+            conn.commit()
+            return {
+                "message": f"Approved & posted {approved_prod} production expense(s) and {approved_pay} payroll run(s) to Journal Entries.",
+                "approvedProduction": approved_prod,
+                "approvedPayroll": approved_pay,
             }
     except HTTPException:
         conn.rollback()

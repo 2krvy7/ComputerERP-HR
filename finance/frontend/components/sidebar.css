@@ -208,7 +208,6 @@
 ===================================================== */
 .sub-menu {
   list-style: none;
-
   padding: 0;
   margin: 2px 0 8px;
 }
@@ -220,20 +219,13 @@
 .sub-menu li a {
   display: flex;
   align-items: center;
-
   height: 34px;
-
   padding-left: 52px;
-
   text-decoration: none;
-
   color: #6b7280;
-
   border-radius: 6px;
-
   font-size: 13px;
   font-weight: 400;
-
   transition: 0.2s;
 }
 
@@ -245,7 +237,8 @@
 .sub-menu li.active-link a {
   background: #eef2ff;
   color: #4f46e5;
-  font-weight: 500;
+  font-weight: 600;
+  border-left: 3px solid #4f46e5;
 }
 
 /* =====================================================

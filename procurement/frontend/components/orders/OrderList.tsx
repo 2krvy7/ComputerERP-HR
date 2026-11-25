@@ -5,8 +5,17 @@ import OrderPanel, { Badge, money } from "./OrderPanel";
 import type { Order } from "./OrderPanel";
 import Pagination from "@/components/Pagination"
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+const FILTERS = ["All", "Awaiting delivery", "Awaiting invoice", "Completed"] as const;
+=======
 const FILTERS = ["All", "Awaiting delivery", "Awaiting payment", "Completed"] as const;
 const PAGE_SIZE = 10;
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+const FILTERS = ["All", "Awaiting delivery", "Awaiting payment", "Completed"] as const;
+const PAGE_SIZE = 10;
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
 export default function OrderList({ limit }: { limit?: number }) {
   const [orders, setOrders] = useState<Order[]>([]);

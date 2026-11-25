@@ -29,13 +29,23 @@ export default function Transactions() {
     fetchData();
   }, []);
 
+  // FILE: finance/frontend/app/cash-bank/transactions/page.tsx (Lines 31–62)
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [txRes, bankRes] = await Promise.all([
-        fetch("http://127.0.0.1:8000/api/transactions/"),
-        fetch("http://127.0.0.1:8000/api/transactions/"),
+        // FETCH 1: GET http://127.0.0
+        // Backend File: finance/backend/routers/transactions.py -> get_bank_transactions()
+        // Database Tables: Reads "ARReceipt", "APPayment", and approved Payroll/Expenses from "JournalEntry"
+        // Purpose: Loads all bank inflows and outflows for the Bank Transaction Register
+        fetch("http://127.0.0.1:8000/api/transactions"),
+
+        // FETCH 2: GET http://127.0.0
+        // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
+        // Database Tables: Reads "BankAccount" with computed live balances
+        // Purpose: Populates the Bank Account filter dropdown and calculates the active Book Balance
+        fetch("http://127.0.0.1:8000/api/transactions"),
       ]);
 
       if (!txRes.ok) throw new Error(`Transactions API error: ${txRes.status}`);
@@ -53,7 +63,7 @@ export default function Transactions() {
     }
   }
 
-   const formatCurrency = (val: number) =>
+  const formatCurrency = (val: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
@@ -68,7 +78,7 @@ export default function Transactions() {
     });
   };
 
-  const enrichedTransactions = useMemo(() => {
+    const enrichedTransactions = useMemo(() => {
     return transactions.map((tx) => {
       const isReconciled = reconciledIds.includes(tx.id);
       const category = customCategories[tx.id] ?? tx.category ?? "Uncategorized";
@@ -117,9 +127,9 @@ export default function Transactions() {
       if (search) {
         const q = search.toLowerCase();
         const match =
-          tx.description.toLowerCase().includes(q) ||
-          tx.reference.toLowerCase().includes(q) ||
-          tx.category.toLowerCase().includes(q);
+          String(tx.description || "").toLowerCase().includes(q) ||
+          String(tx.reference || "").toLowerCase().includes(q) ||
+          String(tx.category || "").toLowerCase().includes(q);
         if (!match) return false;
       }
       return true;
@@ -163,7 +173,7 @@ export default function Transactions() {
     setSelectedIds([]);
   }
 
-   return (
+    return (
     <div className="transactions-page">
       {/* Header */}
       <div className="page-header">
@@ -203,7 +213,7 @@ export default function Transactions() {
         <div className="stat-card">
           <span>Matched Records</span>
           <h2>{loading ? "..." : stats.matchedCount}</h2>
-          <small>Linked to AP & AR invoices</small>
+          <small>Linked to AP, AR &amp; Payroll</small>
         </div>
 
         <div className="stat-card">
@@ -241,18 +251,18 @@ export default function Transactions() {
           onChange={(e) => setSelectedBankId(e.target.value)}
         >
           <option value="ALL">All Bank Accounts</option>
-{Array.from(
-  new Map(
-    bankAccounts.map((b) => [String(b.bankAccountID), b])
-  ).values()
-).map((b, idx) => (
-  <option
-    key={`${b.bankAccountID}-${idx}`}
-    value={String(b.bankAccountID)}
-  >
-    {b.bankName} - {b.accountNumber}
-  </option>
-))}
+          {Array.from(
+            new Map(
+              bankAccounts.map((b) => [String(b.bankAccountID), b])
+            ).values()
+          ).map((b, idx) => (
+            <option
+              key={`${b.bankAccountID}-${idx}`}
+              value={String(b.bankAccountID)}
+            >
+              {b.bankName} - {b.accountNumber}
+            </option>
+          ))}
         </select>
 
         <input
@@ -470,7 +480,7 @@ export default function Transactions() {
                   setInspectTx(null);
                 }}
               >
-                Save & Reconcile
+                Save &amp; Reconcile
               </button>
             </div>
           </div>

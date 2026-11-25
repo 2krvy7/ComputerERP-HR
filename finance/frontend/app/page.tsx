@@ -3,27 +3,40 @@
 import { useEffect, useState } from "react";
 import "./globals.css";
 
+interface CashFlowPoint {
+  date: string;
+  inflow: number;
+  outflow: number;
+}
+
+interface ReceivableHistoryItem {
+  id: number | string;
+  reference: string;
+  customerName: string;
+  amount: number;
+  dueDate: string;
+}
+
 interface DashboardData {
   summary: {
     totalAssets: number;
     totalLiabilities: number;
     cashBalance: number;
     netIncome: number;
-    totalRevenue: number;
-    totalExpense: number;
     operatingInflows: number;
     operatingOutflows: number;
   };
   recentEntries: any[];
+  cashFlowSeries: CashFlowPoint[];
   ap: {
     outstandingInvoices: number;
     totalDue: number;
     dueThisWeek: number;
   };
-  ar: {
-    outstandingInvoices: number;
-    totalReceivable: number;
-    pastDue: number;
+  arHistory: {
+    collectedCount: number;
+    totalCollected: number;
+    recentItems: ReceivableHistoryItem[];
   };
 }
 
@@ -31,6 +44,7 @@ export default function Home() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   async function fetchDashboard() {
     setLoading(true);
@@ -46,14 +60,14 @@ export default function Home() {
 
           // FETCH 2: GET http://127.0.0
           // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
-          // Database Tables: Reads "BankAccount" + sums "ARReceipt" inflows minus "APPayment" outflows
+          // Database Tables: Reads "BankAccount" + sums "ARReceipt" inflows minus "APPayment", Payroll & Expenses
           // Purpose: Computes live Cash Balance across all active bank accounts
           fetch("http://127.0.0.1:8000/api/bank"),
 
           // FETCH 3: GET http://127.0.0
           // Backend File: finance/backend/routers/journal.py -> get_journal_entries()
           // Database Tables: Reads "JournalEntry" joined with "JournalEntryLine"
-          // Purpose: Populates the Recent Journal Entries table on the Dashboard
+          // Purpose: Populates Recent Journal Entries and builds chronological Cash Flow line graph points
           fetch("http://127.0.0.1:8000/api/journal"),
 
           // FETCH 4: GET http://127.0.0
@@ -64,14 +78,14 @@ export default function Home() {
 
           // FETCH 5: GET http://127.0.0
           // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
-          // Database Table: Reads "ARInvoice"
-          // Purpose: Filters out 'Paid' customer invoices and sums remainingBalance + past due amounts
+          // Database Table: Reads "ARInvoice" joined with "Customer"
+          // Purpose: Builds the Receivables Collection History list for auto-collected Sales Invoices
           fetch("http://127.0.0.1:8000/api/arinvoices"),
 
           // FETCH 6: GET http://127.0.0
           // Backend File: finance/backend/routers/reports.py -> cash_flow()
-          // Database Tables: Sums "ARReceipt" inflows and "APPayment" outflows
-          // Purpose: Powers the Cash Flow summary bar on the Dashboard
+          // Database Tables: Sums "ARReceipt" inflows and "APPayment", Payroll & Expense outflows
+          // Purpose: Powers the Cash Flow Summary totals on the Dashboard
           fetch("http://127.0.0.1:8000/api/reports/cash-flow"),
         ]);
 
@@ -82,20 +96,16 @@ export default function Home() {
       const arJson = arRes.ok ? await arRes.json() : [];
       const cfJson = cfRes.ok ? await cfRes.json() : {};
 
-      // Live Cash Balance from Bank Accounts
       const liveCash = (Array.isArray(banksJson) ? banksJson : []).reduce(
         (sum: number, b: any) => sum + Number(b.balance || 0),
         0
       );
 
-      // Date helpers (safely executed inside async effect, never during SSR render)
       const now = new Date();
-      const todayIso = now.toISOString().split("T")[0];
       const nextWeek = new Date(now);
       nextWeek.setDate(now.getDate() + 7);
       const nextWeekIso = nextWeek.toISOString().split("T")[0];
 
-      // Filter ONLY unpaid AP Invoices (remainingBalance > 0 and status != 'Paid')
       const openAP = (Array.isArray(apJson) ? apJson : []).filter(
         (inv: any) => {
           const rem = Number(
@@ -131,44 +141,71 @@ export default function Home() {
           0
         );
 
-      // Filter ONLY unpaid AR Invoices (remainingBalance > 0 and status != 'Paid')
-      const openAR = (Array.isArray(arJson) ? arJson : []).filter(
-        (inv: any) => {
-          const rem = Number(
-            inv.remainingBalance ?? inv.remainingbalance ?? inv.amount ?? 0
-          );
-          const stat = String(inv.status ?? "unpaid").toLowerCase();
-          return rem > 0 && stat !== "paid";
-        }
+      const allAR = (Array.isArray(arJson) ? arJson : []).filter(
+        (inv: any) => Number(inv.arInvoiceID ?? inv.id ?? 0) !== 1
       );
 
-      const arTotalReceivable = openAR.reduce(
+      const totalCollectedAR = allAR.reduce(
         (sum: number, inv: any) =>
-          sum +
-          Number(
-            inv.remainingBalance ?? inv.remainingbalance ?? inv.amount ?? 0
-          ),
+          sum + Number(inv.totalPaid ?? inv.amount ?? 0),
         0
       );
 
-      const arPastDue = openAR
-        .filter((inv: any) => {
-          const d = inv.dueDate ?? inv.duedate ?? "";
-          if (!d) return false;
-          const iso = new Date(d).toISOString().split("T")[0];
-          return iso < todayIso;
-        })
-        .reduce(
-          (sum: number, inv: any) =>
-            sum +
-            Number(
-              inv.remainingBalance ?? inv.remainingbalance ?? inv.amount ?? 0
-            ),
-          0
-        );
+      const recentARItems: ReceivableHistoryItem[] = allAR
+        .slice(0, 3)
+        .map((inv: any, idx: number) => {
+          const id = inv.arInvoiceID ?? inv.id ?? idx + 1;
+          const sid = inv.salesInvoiceID ?? id;
+          return {
+            id,
+            reference: `INV-${String(sid).padStart(4, "0")}`,
+            customerName:
+              inv.customerName || `Customer #${inv.customerID ?? "-"}`,
+            amount: Number(inv.totalPaid ?? inv.amount ?? 0),
+            dueDate: inv.dueDate ?? "",
+          };
+        });
 
-      const totalAssets = Number(bsJson.totalAssets || 0) || liveCash + arTotalReceivable;
-      const totalLiabilities = Number(bsJson.totalLiabilities || 0) || apTotalDue;
+      const allJournals = Array.isArray(journalJson) ? journalJson : [];
+      const dailyMap = new Map<string, { inflow: number; outflow: number }>();
+
+      for (const je of allJournals) {
+        const mod = String(je.sourceModule || "").toLowerCase();
+        if (mod === "cash transfer" || mod === "production cost") continue;
+
+        const rawDate = je.journalDate ? String(je.journalDate).slice(0, 10) : "";
+        if (!rawDate) continue;
+
+        const amt = Number(je.totalDebit ?? je.amount ?? 0);
+        if (amt <= 0) continue;
+
+        const bucket = dailyMap.get(rawDate) || { inflow: 0, outflow: 0 };
+        if (mod === "ar collection" || mod === "opening capital") {
+          bucket.inflow += amt;
+        } else {
+          bucket.outflow += amt;
+        }
+        dailyMap.set(rawDate, bucket);
+      }
+
+      const sortedDates = Array.from(dailyMap.keys()).sort();
+      const series: CashFlowPoint[] = sortedDates.map((d) => ({
+        date: d,
+        inflow: dailyMap.get(d)!.inflow,
+        outflow: dailyMap.get(d)!.outflow,
+      }));
+
+      if (series.length === 0) {
+        series.push({
+          date: now.toISOString().slice(0, 10),
+          inflow: Number(cfJson.operatingInflows || 0),
+          outflow: Number(cfJson.operatingOutflows || 0),
+        });
+      }
+
+      const totalAssets = Number(bsJson.totalAssets || 0) || liveCash;
+      const totalLiabilities =
+        Number(bsJson.totalLiabilities || 0) || apTotalDue;
 
       setData({
         summary: {
@@ -176,24 +213,20 @@ export default function Home() {
           totalLiabilities,
           cashBalance: liveCash,
           netIncome: Number(bsJson.netIncome || 0),
-          totalRevenue: Number(cfJson.operatingInflows || 0),
-          totalExpense: Number(cfJson.operatingOutflows || 0),
           operatingInflows: Number(cfJson.operatingInflows || 0),
           operatingOutflows: Number(cfJson.operatingOutflows || 0),
         },
-        recentEntries: (Array.isArray(journalJson) ? journalJson : []).slice(
-          0,
-          5
-        ),
+        recentEntries: allJournals.slice(0, 5),
+        cashFlowSeries: series,
         ap: {
           outstandingInvoices: openAP.length,
           totalDue: apTotalDue,
           dueThisWeek: apDueThisWeek,
         },
-        ar: {
-          outstandingInvoices: openAR.length,
-          totalReceivable: arTotalReceivable,
-          pastDue: arPastDue,
+        arHistory: {
+          collectedCount: allAR.length,
+          totalCollected: totalCollectedAR,
+          recentItems: recentARItems,
         },
       });
     } catch (err: any) {
@@ -205,8 +238,6 @@ export default function Home() {
 
   useEffect(() => {
     fetchDashboard();
-
-    // Auto-refresh when returning to the Dashboard tab after paying a bill or recording a receipt
     const handleFocus = () => fetchDashboard();
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
@@ -221,44 +252,59 @@ export default function Home() {
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
-    return new Date(dateStr).toISOString().split("T")[0];
+    return String(dateStr).slice(0, 10);
   };
+
+
+    const series = data?.cashFlowSeries || [];
+  const chartW = 460;
+  const chartH = 165;
+  const padX = 28;
+  const padY = 20;
+  const maxVal = Math.max(
+    1,
+    ...series.flatMap((pt) => [pt.inflow, pt.outflow])
+  );
+
+  const getX = (idx: number) =>
+    series.length <= 1
+      ? chartW / 2
+      : padX + (idx / (series.length - 1)) * (chartW - padX * 2);
+
+  const getY = (val: number) =>
+    chartH - padY - (val / maxVal) * (chartH - padY * 2);
+
+  const inflowPoints = series
+    .map((pt, idx) => `${getX(idx)},${getY(pt.inflow)}`)
+    .join(" ");
+  const outflowPoints = series
+    .map((pt, idx) => `${getX(idx)},${getY(pt.outflow)}`)
+    .join(" ");
+
+  const activePoint =
+    hoveredIdx !== null && series[hoveredIdx]
+      ? series[hoveredIdx]
+      : series[series.length - 1] || null;
 
   return (
     <div className="dashboard">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "1rem",
-        }}
-      >
-        <h1 className="page-title" style={{ margin: 0 }}>
-          Finance Dashboard
-        </h1>
+      <div className="dashboard-header">
+        <h1 className="page-title">Finance Dashboard</h1>
         <button
+          type="button"
+          className="dash-refresh-btn"
           onClick={fetchDashboard}
-          style={{
-            padding: "0.5rem 1rem",
-            borderRadius: "8px",
-            border: "1px solid #d1d5db",
-            backgroundColor: "#ffffff",
-            cursor: "pointer",
-            fontWeight: 500,
-          }}
         >
-          Refresh Live Data
+          Refresh
         </button>
       </div>
 
       {error && (
-        <p style={{ color: "red", marginBottom: "1rem" }}>
+        <p className="dash-error-banner">
           Backend Connection Error: {error}
         </p>
       )}
 
-      {/* Summary Cards */}
       <div className="card-grid">
         <div className="summary-card">
           <h3>Total Assets</h3>
@@ -283,79 +329,139 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Live Cash Inflows vs Outflows Overview */}
       <div className="dashboard-row">
         <div className="panel">
-          <h2>Receivables vs Payables</h2>
-          <div style={{ padding: "1rem 0", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                <span>Open Accounts Receivable</span>
-                <strong>{formatCurrency(data?.ar.totalReceivable)}</strong>
-              </div>
-              <div style={{ height: "10px", backgroundColor: "#e5e7eb", borderRadius: "6px", marginTop: "4px" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width:
-                      (data?.ar.totalReceivable || 0) + (data?.ap.totalDue || 0) > 0
-                        ? `${((data?.ar.totalReceivable || 0) / ((data?.ar.totalReceivable || 0) + (data?.ap.totalDue || 0))) * 100}%`
-                        : "0%",
-                    backgroundColor: "#2563eb",
-                    borderRadius: "6px",
-                  }}
-                />
-              </div>
+          <div className="panel-header-row">
+            <h2>Cash Flow Trend</h2>
+            <div className="chart-legend">
+              <span>
+                <i className="legend-dot inflow" />
+                Inflows
+              </span>
+              <span>
+                <i className="legend-dot outflow" />
+                Outflows
+              </span>
             </div>
+          </div>
 
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem" }}>
-                <span>Open Accounts Payable</span>
-                <strong>{formatCurrency(data?.ap.totalDue)}</strong>
-              </div>
-              <div style={{ height: "10px", backgroundColor: "#e5e7eb", borderRadius: "6px", marginTop: "4px" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width:
-                      (data?.ar.totalReceivable || 0) + (data?.ap.totalDue || 0) > 0
-                        ? `${((data?.ap.totalDue || 0) / ((data?.ar.totalReceivable || 0) + (data?.ap.totalDue || 0))) * 100}%`
-                        : "0%",
-                    backgroundColor: "#dc2626",
-                    borderRadius: "6px",
-                  }}
+          <div className="line-chart-wrapper">
+            <svg
+              className="line-chart-svg"
+              viewBox={`0 0 ${chartW} ${chartH}`}
+              preserveAspectRatio="none"
+            >
+              {[0.25, 0.5, 0.75, 1].map((step) => (
+                <line
+                  key={step}
+                  x1={padX}
+                  x2={chartW - padX}
+                  y1={chartH - padY - step * (chartH - padY * 2)}
+                  y2={chartH - padY - step * (chartH - padY * 2)}
+                  stroke="#e2e8f0"
+                  strokeDasharray="4 4"
+                  strokeWidth="1"
                 />
+              ))}
+
+              {series.length > 1 && (
+                <polyline
+                  fill="none"
+                  stroke="#16a34a"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={inflowPoints}
+                />
+              )}
+
+              {series.length > 1 && (
+                <polyline
+                  fill="none"
+                  stroke="#dc2626"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={outflowPoints}
+                />
+              )}
+
+              {series.map((pt, idx) => {
+                const cx = getX(idx);
+                const cyIn = getY(pt.inflow);
+                const cyOut = getY(pt.outflow);
+                const isHovered = hoveredIdx === idx;
+                return (
+                  <g
+                    key={pt.date}
+                    className="chart-point-group"
+                    onMouseEnter={() => setHoveredIdx(idx)}
+                    onMouseLeave={() => setHoveredIdx(null)}
+                  >
+                    <circle
+                      cx={cx}
+                      cy={cyIn}
+                      r={isHovered ? 6 : 4}
+                      fill="#16a34a"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                    />
+                    <circle
+                      cx={cx}
+                      cy={cyOut}
+                      r={isHovered ? 6 : 4}
+                      fill="#dc2626"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                    />
+                  </g>
+                );
+              })}
+            </svg>
+
+            {activePoint && (
+              <div className="chart-tooltip-bar">
+                <span>
+                  <strong>Date:</strong> {activePoint.date}
+                </span>
+                <span className="cf-inflow-val">
+                  In: +{formatCurrency(activePoint.inflow)}
+                </span>
+                <span className="cf-outflow-val">
+                  Out: -{formatCurrency(activePoint.outflow)}
+                </span>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
         <div className="panel">
           <h2>Cash Flow Summary</h2>
-          <div style={{ padding: "1rem 0", display: "flex", flexDirection: "column", gap: "0.65rem", fontSize: "0.95rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <div className="cf-summary-list">
+            <div className="cf-summary-item">
               <span>Cash Inflows (Collections):</span>
-              <strong style={{ color: "#16a34a" }}>
+              <span className="cf-inflow-val">
                 +{formatCurrency(data?.summary.operatingInflows)}
-              </strong>
+              </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <div className="cf-summary-item">
               <span>Cash Outflows (Payments):</span>
-              <strong style={{ color: "#dc2626" }}>
+              <span className="cf-outflow-val">
                 -{formatCurrency(data?.summary.operatingOutflows)}
-              </strong>
+              </span>
             </div>
-            <hr style={{ borderColor: "#e5e7eb" }} />
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <hr className="cf-divider" />
+            <div className="cf-summary-item">
               <span>Ending Bank Cash:</span>
-              <strong>{formatCurrency(data?.summary.cashBalance)}</strong>
+              <span className="cf-ending-val">
+                {formatCurrency(data?.summary.cashBalance)}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Journal Entries */}
-      <div className="panel">
+      <div className="panel recent-je-panel">
         <h2>Recent Journal Entries</h2>
 
         <table className="table">
@@ -386,9 +492,11 @@ export default function Home() {
                     )}
                   </td>
                   <td>
-                    {entry.referenceNo ??
-                      entry.entryNumber ??
-                      `JE-${entry.journalID ?? idx + 1}`}
+                    <strong>
+                      {entry.referenceNo ??
+                        entry.entryNumber ??
+                        `JE-${entry.journalID ?? idx + 1}`}
+                    </strong>
                   </td>
                   <td>{entry.description ?? "-"}</td>
                   <td>
@@ -401,44 +509,69 @@ export default function Home() {
         </table>
       </div>
 
-      {/* AP/AR */}
       <div className="dashboard-row">
         <div className="panel">
           <h2>Accounts Payable</h2>
 
-          <ul>
+          <ul className="dash-stat-list">
             <li>
-              Outstanding Invoices:{" "}
-              {loading ? "..." : data?.ap.outstandingInvoices ?? 0}
+              <span>Outstanding Invoices:</span>
+              <strong>
+                {loading ? "..." : data?.ap.outstandingInvoices ?? 0}
+              </strong>
             </li>
             <li>
-              Total Due:{" "}
-              {loading ? "..." : formatCurrency(data?.ap.totalDue)}
+              <span>Total Due:</span>
+              <strong>
+                {loading ? "..." : formatCurrency(data?.ap.totalDue)}
+              </strong>
             </li>
             <li>
-              Due This Week:{" "}
-              {loading ? "..." : formatCurrency(data?.ap.dueThisWeek)}
+              <span>Due This Week:</span>
+              <strong>
+                {loading ? "..." : formatCurrency(data?.ap.dueThisWeek)}
+              </strong>
             </li>
           </ul>
         </div>
 
         <div className="panel">
-          <h2>Accounts Receivable</h2>
+          <h2>Receivables History (Auto-Collected)</h2>
 
-          <ul>
+          <ul className="dash-stat-list">
             <li>
-              Outstanding Invoices:{" "}
-              {loading ? "..." : data?.ar.outstandingInvoices ?? 0}
+              <span>Auto-Collected Sales Invoices:</span>
+              <strong>
+                {loading ? "..." : data?.arHistory.collectedCount ?? 0}
+              </strong>
             </li>
             <li>
-              Total Receivable:{" "}
-              {loading ? "..." : formatCurrency(data?.ar.totalReceivable)}
-            </li>
-            <li>
-              Past Due:{" "}
-              {loading ? "..." : formatCurrency(data?.ar.pastDue)}
+              <span>Total Sales Collected:</span>
+              <strong className="cf-inflow-val">
+                {loading
+                  ? "..."
+                  : formatCurrency(data?.arHistory.totalCollected)}
+              </strong>
             </li>
           </ul>
+
+          {data?.arHistory.recentItems &&
+            data.arHistory.recentItems.length > 0 && (
+              <div className="ar-history-list">
+                <span className="ar-history-title">
+                  Recent Collected Invoices
+                </span>
+                {data.arHistory.recentItems.map((item) => (
+                  <div key={item.id} className="ar-history-row">
+                    <span>
+                      <strong>{item.reference}</strong> · {item.customerName}
+                      <span className="ar-history-badge">Paid</span>
+                    </span>
+                    <strong>{formatCurrency(item.amount)}</strong>
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       </div>
     </div>
