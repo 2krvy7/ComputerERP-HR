@@ -35,7 +35,7 @@ import type {
   QuotationStatus,
 } from "../types/quotation";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
 
 export async function request<T>(
   endpoint: string,
@@ -45,24 +45,65 @@ export async function request<T>(
     throw new Error("NEXT_PUBLIC_API_URL is not configured.");
   }
 
-  const response = await fetch(endpoint, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    credentials: "include",
-  });
+  const normalizedEndpoint = endpoint.startsWith("/")
+    ? endpoint
+    : `/${endpoint}`;
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
+  const headers = new Headers(options.headers);
 
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${normalizedEndpoint}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
+  } catch {
     throw new Error(
-      error?.detail || `Request failed: ${response.status}`
+      "Unable to connect to the server. Check whether the backend is running."
     );
   }
 
-  return response.json() as Promise<T>;
+  const responseText = await response.text();
+
+  let responseData: any = null;
+
+  if (responseText.trim()) {
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      if (response.ok) {
+        throw new Error(
+          "The server returned an invalid response."
+        );
+      }
+    }
+  }
+
+  if (!response.ok) {
+    const errorMessage =
+      responseData?.detail ||
+      responseData?.message ||
+      responseText ||
+      `Request failed with status ${response.status}.`;
+
+    throw new Error(
+      typeof errorMessage === "string"
+        ? errorMessage
+        : JSON.stringify(errorMessage)
+    );
+  }
+
+  if (response.status === 204 || !responseText.trim()) {
+    return undefined as T;
+  }
+
+  return responseData as T;
 }
 
 // AUTHENTICATION

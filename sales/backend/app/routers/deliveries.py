@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -15,7 +15,10 @@ from app.core.roles import (
     STAFF_ROLE_ID,
     SUPERADMIN_ROLE_ID,
 )
-from app.dependencies.auth import get_current_user, require_password_change_completed
+from app.dependencies.auth import (
+    get_current_user,
+    require_password_change_completed,
+)
 from app.models.user import User
 from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
@@ -53,15 +56,32 @@ SALES_DEPT_ID = "SL"
 
 
 def normalize_status(value: str) -> str:
-    if value in ("Shipped", "Released by Inventory"):
-        return "Released"
+    if not isinstance(value, str):
+        return value
 
-    return value
+    normalized = value.strip().lower()
+
+    legacy_statuses = {
+        "shipped": "Released",
+        "released by inventory": "Released",
+        "released to sales": "Released",
+    }
+
+    return legacy_statuses.get(normalized, value.strip())
 
 
 def is_finished_goods_warehouse(name: str | None) -> bool:
-    normalized = re.sub(r"[^a-z0-9]", "", (name or "").lower())
-    is_finished_goods = "finishedgood" in normalized or normalized.startswith("fg")
+    normalized = re.sub(
+        r"[^a-z0-9]",
+        "",
+        (name or "").lower(),
+    )
+
+    is_finished_goods = (
+        "finishedgood" in normalized
+        or normalized.startswith("fg")
+    )
+
     return is_finished_goods and normalized.endswith(("a", "b"))
 
 
@@ -302,6 +322,8 @@ def deduct_delivery_stock(
         )
 
 
+# GET ALL DELIVERIES
+
 @router.get(
     "",
     response_model=list[DeliveryResponse],
@@ -310,34 +332,42 @@ def get_deliveries(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    statement = select(Delivery).order_by(
-        Delivery.delivery_id.desc()
+    statement = (
+        select(Delivery)
+        .order_by(Delivery.delivery_id.desc())
     )
 
     return db.scalars(statement).all()
 
+
+# GET FINISHED GOODS WAREHOUSES
 
 @router.get("/warehouses")
 def get_warehouses(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    statement = text("""
-        SELECT
-            "WH_ID",
-            "Warehouse_Name",
-            "Location"
-        FROM public."WAREHOUSE"
-        ORDER BY "Warehouse_Name"
-    """)
+    statement = (
+        select(Warehouse)
+        .order_by(Warehouse.Warehouse_Name)
+    )
 
-    warehouses = db.execute(statement).mappings().all()
+    warehouses = db.scalars(statement).all()
+
     return [
-        warehouse
+        {
+            "WH_ID": warehouse.WH_ID,
+            "Warehouse_Name": warehouse.Warehouse_Name,
+            "Location": warehouse.Location,
+        }
         for warehouse in warehouses
-        if is_finished_goods_warehouse(warehouse["Warehouse_Name"])
+        if is_finished_goods_warehouse(
+            warehouse.Warehouse_Name
+        )
     ]
 
+
+# GET DELIVERY BY ID
 
 @router.get(
     "/{delivery_id}",
@@ -358,6 +388,8 @@ def get_delivery(
 
     return delivery
 
+
+# CREATE DELIVERY
 
 @router.post(
     "",
@@ -435,10 +467,12 @@ def create_delivery(
         db.add(delivery)
         db.commit()
         db.refresh(delivery)
+
         return delivery
 
     except IntegrityError:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to create the delivery record.",
@@ -448,6 +482,8 @@ def create_delivery(
         db.rollback()
         raise
 
+
+# UPDATE DELIVERY STATUS
 
 @router.patch(
     "/{delivery_id}/status",
@@ -564,6 +600,7 @@ def update_delivery_status(
 
     except IntegrityError:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
