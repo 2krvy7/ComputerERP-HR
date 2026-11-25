@@ -1,3 +1,5 @@
+import os
+
 #APIs connecting to PostgreSQL inside Supabase
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
