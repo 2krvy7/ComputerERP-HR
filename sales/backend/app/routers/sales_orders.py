@@ -504,6 +504,7 @@ def create_order(
             tax_type=order_data.tax_type,
             tax_rate=tax_rate,
             tax_amount=tax_amount,
+            installment_months=order_data.installment_months,
         )
 
         db.add(order)

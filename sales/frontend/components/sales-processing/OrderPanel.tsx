@@ -79,6 +79,7 @@ export default function OrdersPage() {
   const [customerId, setCustomerId] = useState("");
   const [taxType, setTaxType] = useState<"VAT" | "Non-VAT" | "Tax-Exempt" | "Custom">("VAT");
   const [customTaxRate, setCustomTaxRate] = useState("0");
+  const [installmentMonths, setInstallmentMonths] = useState<1 | 3 | 6 | 12>(1);
 
   const [nextLineId, setNextLineId] = useState(2);
   const [lines, setLines] = useState<OrderLine[]>([
@@ -346,6 +347,7 @@ export default function OrdersPage() {
     setCustomerId("");
     setTaxType("VAT");
     setCustomTaxRate("0");
+    setInstallmentMonths(1);
     setLines([{ lineId: 1, IM_ID: 0, quantity: 1, discount: 0 }]);
     setNextLineId(2);
     setItemQueries({});
@@ -400,6 +402,7 @@ export default function OrdersPage() {
       customer_id: Number(customerId),
       tax_type: taxType,
       tax_rate: orderTaxRate,
+      installment_months: installmentMonths,
       details: lines.map((line) => ({
         IM_ID: line.IM_ID,
         quantity: line.quantity,
@@ -795,6 +798,25 @@ export default function OrdersPage() {
                   <strong className="text-slate-800">{money(estimatedTax)}</strong>
                 </div>
                 <p className="mt-1 text-xs text-slate-500">Tax details are saved with the order and carried into its invoice.</p>
+              </div>
+
+              <div>
+                <label htmlFor="order-installment" className="mb-2 block text-sm font-semibold text-slate-700">
+                  Payment Installment
+                </label>
+                <select
+                  id="order-installment"
+                  value={installmentMonths}
+                  onChange={(event) => setInstallmentMonths(Number(event.target.value) as 1 | 3 | 6 | 12)}
+                  disabled={saving}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800"
+                >
+                  <option value={1}>1 Month — 0% Interest</option>
+                  <option value={3}>3 Months — 3% Interest</option>
+                  <option value={6}>6 Months — 5% Interest</option>
+                  <option value={12}>1 Year — 10% Interest</option>
+                </select>
+                <p className="mt-1 text-xs text-slate-500">The invoice will use this installment term.</p>
               </div>
 
               <div>

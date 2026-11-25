@@ -187,7 +187,6 @@ export default function InvoicePanel() {
   const [orderId, setOrderId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [today, setToday] = useState("");
-  const [installmentMonths, setInstallmentMonths] = useState("1");
 
 
   useEffect(() => {
@@ -197,10 +196,9 @@ export default function InvoicePanel() {
     setInvoiceDate(currentDate);
   }, []);
 
-  const selectedMonths = Number(installmentMonths);
-  const interestRate = INTEREST_RATES[selectedMonths] ?? 0;
-
   const selectedOrder = orders.find((item) => item.order_id === Number(orderId));
+  const selectedMonths = selectedOrder?.installment_months ?? 1;
+  const interestRate = INTEREST_RATES[selectedMonths] ?? 0;
   const orderAmount = Number(selectedOrder?.total_amount ?? 0) || 0;
   const taxType = selectedOrder?.tax_type ?? "VAT";
   const taxRate = Number(selectedOrder?.tax_rate ?? 12);
@@ -321,7 +319,6 @@ export default function InvoicePanel() {
 
     setOrderId("");
     setInvoiceDate(today);
-    setInstallmentMonths("1");
     setShowForm(false);
     setError("");
   }
@@ -363,7 +360,6 @@ export default function InvoicePanel() {
 
       setOrderId("");
       setInvoiceDate(today);
-      setInstallmentMonths("1");
       setShowForm(false);
 
       await loadData();
@@ -1032,18 +1028,9 @@ export default function InvoicePanel() {
                   Payment Installment
                 </label>
 
-                <select
-                  value={installmentMonths}
-                  onChange={(event) =>
-                    setInstallmentMonths(event.target.value)
-                  }
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="1">1 Month — 0% Interest</option>
-                  <option value="3">3 Months — 3% Interest</option>
-                  <option value="6">6 Months — 5% Interest</option>
-                  <option value="12">1 Year — 10% Interest</option>
-                </select>
+                <p className="w-full rounded-lg border border-[#D1D5DB] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
+                  {selectedMonths === 12 ? "1 Year" : `${selectedMonths} Month${selectedMonths === 1 ? "" : "s"}`} — {interestRate}% Interest
+                </p>
 
                 <p className="mt-2 text-xs text-slate-600">
                   Calculated Due Date:{" "}
@@ -1052,6 +1039,9 @@ export default function InvoicePanel() {
                       calculateDueDate(invoiceDate, selectedMonths)
                     )}
                   </span>
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Installment terms are taken from the selected sales order.
                 </p>
               </div>
 

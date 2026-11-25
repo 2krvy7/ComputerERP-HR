@@ -31,6 +31,7 @@ class SalesOrderCreate(BaseModel):
     order_date: date | None = None
     tax_type: Literal["VAT", "Non-VAT", "Tax-Exempt", "Custom"] = "VAT"
     tax_rate: Decimal | None = None
+    installment_months: Literal[1, 3, 6, 12] = 1
     details: list[SalesOrderDetailCreate] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -68,6 +69,7 @@ class SalesOrderResponse(BaseModel):
     tax_type: str
     tax_rate: Decimal
     tax_amount: Decimal
+    installment_months: int
     details: list[SalesOrderDetailResponse]
 
 

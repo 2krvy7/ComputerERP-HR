@@ -108,7 +108,7 @@ def create_invoice(
             finance_alerts,
         )
 
-    months = invoice_data.installment_months
+    months = order.installment_months
     interest_rate = INTEREST_RATES[months]
 
     order_total = Decimal(str(order.total_amount))

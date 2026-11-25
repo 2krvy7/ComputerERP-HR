@@ -60,6 +60,10 @@ class SalesOrder(Base):
         server_default="0.00",
     )
 
+    installment_months: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+
     details = relationship(
         "SalesOrderDetail",
         back_populates="order",

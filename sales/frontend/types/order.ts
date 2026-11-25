@@ -26,6 +26,7 @@ export interface SalesOrder {
   tax_type: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
   tax_rate: string | number;
   tax_amount: string | number;
+  installment_months: number;
   details: SalesOrderDetail[];
 }
 
@@ -41,6 +42,7 @@ export interface SalesOrderCreate {
   order_date?: string;
   tax_type?: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
   tax_rate?: number;
+  installment_months?: 1 | 3 | 6 | 12;
   details: SalesOrderDetailCreate[];
 }
 

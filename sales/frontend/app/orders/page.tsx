@@ -47,6 +47,7 @@ export default function OrdersPage() {
   const [customerId, setCustomerId] = useState("");
   const [taxType, setTaxType] = useState<"VAT" | "Non-VAT" | "Tax-Exempt" | "Custom">("VAT");
   const [customTaxRate, setCustomTaxRate] = useState("0");
+  const [installmentMonths, setInstallmentMonths] = useState<1 | 3 | 6 | 12>(1);
   const [lines, setLines] = useState<OrderLine[]>([
     { IM_ID: 0, quantity: 1, discount: 0 },
   ]);
@@ -165,6 +166,7 @@ export default function OrdersPage() {
     setCustomerId("");
     setTaxType("VAT");
     setCustomTaxRate("0");
+    setInstallmentMonths(1);
     setLines([{ IM_ID: 0, quantity: 1, discount: 0 }]);
     setItemSearch("");
     setShowForm(false);
@@ -203,6 +205,7 @@ export default function OrdersPage() {
       customer_id: Number(customerId),
       tax_type: taxType,
       tax_rate: taxRate,
+      installment_months: installmentMonths,
       details: lines.map((line) => ({
         IM_ID: line.IM_ID,
         quantity: line.quantity,
@@ -473,6 +476,22 @@ export default function OrdersPage() {
                   />
                 )}
                 <p className="mt-1 text-xs text-gray-500">The invoice will use the tax saved on this order.</p>
+              </div>
+
+              <div>
+                <label htmlFor="order-installment" className="mb-2 block text-sm font-medium">Payment Installment</label>
+                <select
+                  id="order-installment"
+                  value={installmentMonths}
+                  onChange={(event) => setInstallmentMonths(Number(event.target.value) as 1 | 3 | 6 | 12)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                >
+                  <option value={1}>1 Month — 0% Interest</option>
+                  <option value={3}>3 Months — 3% Interest</option>
+                  <option value={6}>6 Months — 5% Interest</option>
+                  <option value={12}>1 Year — 10% Interest</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500">The invoice will use this installment term.</p>
               </div>
 
               <div>
