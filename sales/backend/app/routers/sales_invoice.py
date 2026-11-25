@@ -7,9 +7,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.finance_pricing import (
+    fetch_finance_pricing_alerts,
+    validate_sales_price_against_finance,
+)
 from app.dependencies.auth import require_password_change_completed
 from app.models.sales_invoice import SalesInvoice
 from app.models.sales_order import SalesOrder
+from app.models.sales_order_detail import SalesOrderDetail
 from app.models.accounts_receivable import AccountsReceivable
 from app.schemas.sales_invoice import (
     SalesInvoiceCreate,
@@ -82,6 +87,25 @@ def create_invoice(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This sales order already has an invoice.",
+        )
+
+    finance_alerts = fetch_finance_pricing_alerts()
+    order_details = db.scalars(
+        select(SalesOrderDetail).where(
+            SalesOrderDetail.order_id == order.order_id
+        )
+    ).all()
+
+    for detail in order_details:
+        unit_price = Decimal(str(detail.unit_price))
+        discount = Decimal(str(detail.discount))
+        discounted_vat_ex_price = unit_price * (
+            Decimal("1") - discount / Decimal("100")
+        )
+        validate_sales_price_against_finance(
+            detail.IM_ID,
+            discounted_vat_ex_price,
+            finance_alerts,
         )
 
     months = invoice_data.installment_months
