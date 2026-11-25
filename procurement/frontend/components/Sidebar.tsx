@@ -77,7 +77,6 @@ export default function Sidebar() {
             height: "2.65vw",
             borderRadius: "50%",
             objectFit: "cover",
-            backgroundColor: COLORS.logo,
             flexShrink: 0,
           }}
         />
