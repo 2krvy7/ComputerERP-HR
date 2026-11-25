@@ -70,7 +70,7 @@ export default function Sidebar() {
         }}
       >
         <img
-          src="/logo.png"
+          src="/favicon.ico"
           alt="Procurement logo"
           style={{
             width: "2.65vw",
