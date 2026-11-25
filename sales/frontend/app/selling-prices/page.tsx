@@ -44,7 +44,7 @@ export default function SellingPricesPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to load finished goods.",
+          : "Unable to load finished goods."
       );
     } finally {
       setLoading(false);
@@ -54,7 +54,7 @@ export default function SellingPricesPage() {
   useEffect(() => {
     const timeout = setTimeout(() => {
       setPage(1);
-      loadItems(search.trim());
+      void loadItems(search.trim());
     }, 300);
 
     return () => clearTimeout(timeout);
@@ -73,13 +73,15 @@ export default function SellingPricesPage() {
 
   const totalPages = Math.max(
     1,
-    Math.ceil(items.length / PAGE_SIZE),
+    Math.ceil(items.length / PAGE_SIZE)
   );
 
+  const safePage = Math.min(page, totalPages);
+
   const paginatedItems = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
+    const start = (safePage - 1) * PAGE_SIZE;
     return items.slice(start, start + PAGE_SIZE);
-  }, [items, page]);
+  }, [items, safePage]);
 
   const openEditor = (item: FinishedGoodItem) => {
     setSelectedItem(item);
@@ -87,7 +89,7 @@ export default function SellingPricesPage() {
       item.markup_percentage === null ||
         item.markup_percentage === undefined
         ? ""
-        : String(item.markup_percentage),
+        : String(item.markup_percentage)
     );
     setError("");
     setSuccess("");
@@ -109,7 +111,7 @@ export default function SellingPricesPage() {
       selectedItem.production_cost === undefined
     ) {
       setError(
-        "Production cost has not been provided by Finance for this item.",
+        "Production cost has not been provided by Finance for this item."
       );
       return;
     }
@@ -125,19 +127,19 @@ export default function SellingPricesPage() {
 
       const updatedItem = await salesOrderAPI.updateSellingPrice(
         selectedItem.IM_ID,
-        markupPercentage,
+        markupPercentage
       );
 
       setItems((currentItems) =>
         currentItems.map((item) =>
           item.IM_ID === selectedItem.IM_ID
             ? { ...item, ...updatedItem }
-            : item,
-        ),
+            : item
+        )
       );
 
       setSuccess(
-        `Selling price for ${selectedItem.Item_Name} was updated successfully.`,
+        `Selling price for ${selectedItem.Item_Name} was updated successfully.`
       );
 
       setSelectedItem(null);
@@ -146,7 +148,7 @@ export default function SellingPricesPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Unable to update the selling price.",
+          : "Unable to update the selling price."
       );
     } finally {
       setSaving(false);
@@ -154,182 +156,351 @@ export default function SellingPricesPage() {
   };
 
   const firstRecord =
-    items.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+    items.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
 
-  const lastRecord = Math.min(page * PAGE_SIZE, items.length);
+  const lastRecord = Math.min(
+    safePage * PAGE_SIZE,
+    items.length
+  );
 
   return (
-    <div className="min-h-full bg-green-50 p-6 text-[#374151]">
-      <div className="mb-6">
-        <p className="mt-1 text-sm text-gray-500">
+    <div className="min-w-0 space-y-5 bg-white text-[#374151]">
+      {/* Description */}
+      <div>
+        <p className="text-sm leading-relaxed text-gray-500">
           Set selling prices for finished goods using the production
           cost provided by Finance and your chosen markup percentage.
         </p>
       </div>
 
+      {/* Success Message */}
       {success && (
-        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {success}
+        <div
+          role="status"
+          className="flex items-start justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+        >
+          <span>{success}</span>
+
+          <button
+            type="button"
+            onClick={() => setSuccess("")}
+            aria-label="Dismiss success message"
+            className="shrink-0 font-semibold text-green-700 hover:text-green-900"
+          >
+            ✕
+          </button>
         </div>
       )}
 
+      {/* Error Message */}
       {error && !selectedItem && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           {error}
         </div>
       )}
 
-      <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5">
-        <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
+      {/* Finished Goods Section */}
+      <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
+        {/* Section Header and Search */}
+        <div className="mb-5 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-[#374151]">
               Finished Goods
             </h2>
-            <p className="text-sm text-gray-600">
+
+            <p className="mt-1 text-sm text-gray-600">
               Only finished goods are displayed in this list.
             </p>
           </div>
 
           <div className="w-full sm:max-w-xs">
-            <input
-              type="text"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search item name or SKU..."
-              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm outline-none transition focus:border-[#3F7657] focus:ring-2 focus:ring-[#3F7657]/20"
-            />
+            <label
+              htmlFor="finished-goods-search"
+              className="sr-only"
+            >
+              Search finished goods
+            </label>
+
+            <div className="relative">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+
+              <input
+                id="finished-goods-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search item name or SKU..."
+                className="w-full rounded-lg border border-[#D1D5DB] bg-white py-3 pl-10 pr-4 text-sm text-gray-800 outline-none transition focus:border-[#3F7657] focus:ring-2 focus:ring-[#3F7657]/20"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-lg border border-[#D1D5DB] bg-white">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead className="bg-[#244C3A] text-white">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Item</th>
-                <th className="px-4 py-3 text-right font-semibold">
-                  Selling Price
-                </th>
-                <th className="px-4 py-3 text-center font-semibold">
-                  Action
-                </th>
-              </tr>
-            </thead>
+        {/* Loading */}
+        {loading && (
+          <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-12 text-center text-sm text-gray-500">
+            Loading finished goods...
+          </div>
+        )}
 
-            <tbody className="divide-y divide-gray-200">
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="px-4 py-10 text-center text-gray-500"
-                  >
-                    Loading finished goods...
-                  </td>
-                </tr>
-              ) : paginatedItems.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={3}
-                    className="px-4 py-10 text-center text-gray-500"
-                  >
-                    No finished goods found.
-                  </td>
-                </tr>
-              ) : (
-                paginatedItems.map((item) => (
-                  <tr
-                    key={item.IM_ID}
-                    className="transition hover:bg-[#F3F6F4]"
-                  >
-                    <td className="px-4 py-3 font-medium text-gray-800">
+        {/* Load Error */}
+        {!loading && error && !selectedItem && (
+          <div className="rounded-lg border border-red-200 bg-white px-4 py-10 text-center">
+            <p className="text-sm text-red-600">{error}</p>
+
+            <button
+              type="button"
+              onClick={() => void loadItems(search.trim())}
+              className="mt-3 rounded-lg bg-[#3F7657] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#315F46]"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+
+        {/* Results */}
+        {!loading && !error && (
+          <>
+            {/* Mobile Finished Goods Cards */}
+            <div className="space-y-3 md:hidden">
+              {paginatedItems.map((item) => (
+                <div
+                  key={item.IM_ID}
+                  className="rounded-lg border border-[#D1D5DB] bg-white p-4 shadow-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-gray-500">
+                      Item Name
+                    </p>
+
+                    <h3 className="mt-1 break-words font-semibold text-gray-900">
                       {item.Item_Name}
-                    </td>
+                    </h3>
+                  </div>
 
-                    <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#244C3A]">
-                      {formatCurrency(item.Price)}
-                    </td>
+                  <div className="mt-4 flex items-end justify-between gap-3 border-t border-gray-200 pt-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500">
+                        Selling Price
+                      </p>
 
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => openEditor(item)}
-                        className="rounded-md bg-[#3F7657] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#315F46]"
-                      >
-                        Set Price
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      <p className="mt-1 break-words text-lg font-bold tabular-nums text-[#244C3A]">
+                        {formatCurrency(item.Price)}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => openEditor(item)}
+                      className="shrink-0 rounded-lg bg-[#3F7657] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46]"
+                    >
+                      Set Price
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {paginatedItems.length === 0 && (
+                <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-12 text-center text-sm text-gray-500">
+                  No finished goods found.
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-4 flex flex-col items-center justify-between gap-3 text-sm sm:flex-row">
-          <p className="text-gray-600">
-            Showing {firstRecord} to {lastRecord} of {items.length} items
-          </p>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled={page <= 1 || loading}
-              onClick={() =>
-                setPage((current) => Math.max(1, current - 1))
-              }
-              className="rounded-md border border-[#D1D5DB] bg-white px-3 py-2 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Previous
-            </button>
-
-            <span className="text-gray-600">
-              Page {page} of {totalPages}
-            </span>
-
-            <button
-              type="button"
-              disabled={page >= totalPages || loading}
-              onClick={() =>
-                setPage((current) => Math.min(totalPages, current + 1))
-              }
-              className="rounded-md border border-[#D1D5DB] bg-white px-3 py-2 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
-            <div className="rounded-t-xl bg-[#244C3A] px-6 py-4">
-              <h2 className="text-lg font-semibold text-white">
-                Set Selling Price
-              </h2>
-              <p className="mt-1 text-sm text-green-100">
-                {selectedItem.Item_Name} ({selectedItem.SKU})
-              </p>
             </div>
 
-            <div className="space-y-5 p-6">
+            {/* Desktop Finished Goods Table */}
+            <div className="hidden overflow-x-auto rounded-lg border border-[#D1D5DB] bg-white md:block">
+              <table className="w-full min-w-[520px] text-left text-sm">
+                <thead className="bg-[#244C3A] text-white">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">
+                      Item
+                    </th>
+
+                    <th className="px-4 py-3 text-right font-semibold">
+                      Selling Price
+                    </th>
+
+                    <th className="px-4 py-3 text-center font-semibold">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-200">
+                  {paginatedItems.map((item) => (
+                    <tr
+                      key={item.IM_ID}
+                      className="transition hover:bg-[#F3F6F4]"
+                    >
+                      <td className="px-4 py-3 font-medium text-gray-800">
+                        {item.Item_Name}
+                      </td>
+
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-[#244C3A]">
+                        {formatCurrency(item.Price)}
+                      </td>
+
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => openEditor(item)}
+                          className="rounded-md bg-[#3F7657] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#315F46]"
+                        >
+                          Set Price
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {paginatedItems.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-4 py-10 text-center text-gray-500"
+                      >
+                        No finished goods found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="mt-4 flex flex-col gap-3 border-t border-[#D1D5DB] pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-center text-gray-600 sm:text-left">
+                Showing{" "}
+                <span className="font-semibold text-gray-800">
+                  {firstRecord}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-gray-800">
+                  {lastRecord}
+                </span>{" "}
+                of{" "}
+                <span className="font-semibold text-gray-800">
+                  {items.length}
+                </span>{" "}
+                items
+              </p>
+
+              <div className="flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={safePage <= 1 || loading}
+                  onClick={() =>
+                    setPage((current) => Math.max(1, current - 1))
+                  }
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Previous
+                </button>
+
+                <span className="whitespace-nowrap text-sm text-gray-600">
+                  Page {safePage} of {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={safePage >= totalPages || loading}
+                  onClick={() =>
+                    setPage((current) =>
+                      Math.min(totalPages, current + 1)
+                    )
+                  }
+                  className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* Set Selling Price Modal */}
+      {selectedItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 p-0 sm:items-center sm:p-4"
+          role="presentation"
+          onClick={closeEditor}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="selling-price-title"
+            className="my-auto max-h-[95dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:max-h-[90vh] sm:rounded-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 rounded-t-xl bg-[#244C3A] px-4 py-4 sm:px-6">
+              <div className="min-w-0">
+                <h2
+                  id="selling-price-title"
+                  className="text-lg font-semibold text-white"
+                >
+                  Set Selling Price
+                </h2>
+
+                <p className="mt-1 break-words text-sm text-green-100">
+                  {selectedItem.Item_Name} ({selectedItem.SKU})
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeEditor}
+                disabled={saving}
+                aria-label="Close selling price form"
+                className="shrink-0 rounded-lg p-2 text-white transition hover:bg-white/10 disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="space-y-5 p-4 sm:p-6">
               {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700"
+                >
                   {error}
                 </div>
               )}
 
+              {/* Production Cost */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Production Cost
                 </label>
+
                 <div className="rounded-lg border border-[#D1D5DB] bg-gray-100 px-4 py-3 font-semibold text-gray-700">
                   {formatCurrency(selectedItem.production_cost)}
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
                   Provided by Finance. This value cannot be edited here.
                 </p>
               </div>
 
+              {/* Markup Percentage */}
               <div>
                 <label
                   htmlFor="markup"
@@ -337,24 +508,29 @@ export default function SellingPricesPage() {
                 >
                   Markup Percentage (%)
                 </label>
+
                 <input
                   id="markup"
                   type="number"
                   min="0"
                   step="0.01"
                   value={markupInput}
-                  onChange={(event) => setMarkupInput(event.target.value)}
+                  onChange={(event) =>
+                    setMarkupInput(event.target.value)
+                  }
                   placeholder="Enter markup percentage"
-                  className="w-full rounded-lg border border-[#D1D5DB] px-4 py-3 outline-none transition focus:border-[#3F7657] focus:ring-2 focus:ring-[#3F7657]/20"
+                  disabled={saving}
+                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-gray-800 outline-none transition focus:border-[#3F7657] focus:ring-2 focus:ring-[#3F7657]/20 disabled:bg-gray-100"
                 />
               </div>
 
+              {/* Calculated Selling Price */}
               <div className="rounded-lg border border-[#C8D8CC] bg-[#E8F0EA] p-4">
                 <p className="text-sm font-medium text-[#315F46]">
                   Calculated Selling Price
                 </p>
 
-                <p className="mt-1 text-2xl font-bold text-[#244C3A]">
+                <p className="mt-1 break-words text-2xl font-bold text-[#244C3A]">
                   {validMarkup &&
                   selectedItem.production_cost !== null &&
                   selectedItem.production_cost !== undefined
@@ -367,26 +543,27 @@ export default function SellingPricesPage() {
                 </p>
               </div>
 
-              <div className="flex justify-end gap-3 pt-2">
+              {/* Modal Actions */}
+              <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end sm:gap-3">
                 <button
                   type="button"
                   onClick={closeEditor}
                   disabled={saving}
-                  className="rounded-lg border border-[#D1D5DB] px-5 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50"
+                  className="w-full rounded-lg border border-[#D1D5DB] px-5 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-100 disabled:opacity-50 sm:w-auto sm:py-2.5"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="button"
-                  onClick={saveSellingPrice}
+                  onClick={() => void saveSellingPrice()}
                   disabled={
                     saving ||
                     !validMarkup ||
                     selectedItem.production_cost === null ||
                     selectedItem.production_cost === undefined
                   }
-                  className="rounded-lg bg-[#3F7657] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
                 >
                   {saving ? "Saving..." : "Save Selling Price"}
                 </button>

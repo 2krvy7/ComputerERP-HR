@@ -91,10 +91,10 @@ export default function CustomerForm({
   }
 
   const inputClass =
-    "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100";
+    "mt-1 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-3 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:py-2.5 sm:text-sm";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
       <div>
         <label className="text-sm font-semibold text-slate-700">
           Customer Name *
@@ -160,7 +160,7 @@ export default function CustomerForm({
             handleChange("contact", event.target.value)
           }
         />
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs leading-5 text-slate-500">
           Numbers only. Mobile phone or landline type will be identified automatically.
         </p>
       </div>
@@ -172,7 +172,7 @@ export default function CustomerForm({
         <textarea
           maxLength={255}
           rows={3}
-          className={inputClass}
+          className={`${inputClass} resize-y`}
           placeholder="Enter complete address"
           value={formData.address ?? ""}
           onChange={(event) =>
@@ -181,12 +181,12 @@ export default function CustomerForm({
         />
       </div>
 
-      <div className="flex justify-end gap-3 border-t border-slate-200 pt-4">
+      <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end sm:gap-3">
         <button
           type="button"
           onClick={onCancel}
           disabled={loading}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto sm:py-2.5"
         >
           Cancel
         </button>
@@ -194,7 +194,7 @@ export default function CustomerForm({
         <button
           type="submit"
           disabled={loading || !formData.name.trim()}
-          className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
         >
           {loading
             ? "Saving..."

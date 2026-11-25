@@ -26,6 +26,7 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const [hovered, setHovered] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
@@ -45,7 +46,8 @@ export default function Sidebar() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const collapsed = !hovered;
+  const collapsed = !hovered && !mobileOpen;
+
   const profileRoleName = profile
     ? getRoleName(profile.role_id)
     : "Unknown role";
@@ -53,6 +55,11 @@ export default function Sidebar() {
   const resetMessages = () => {
     setMessage("");
     setError("");
+  };
+
+  const closeMobileMenu = () => {
+    setMobileOpen(false);
+    setHovered(false);
   };
 
   const handleOpenProfile = async () => {
@@ -191,18 +198,59 @@ export default function Sidebar() {
   const inputClass =
     "mt-1.5 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-[#24363B] outline-none transition focus:border-[#315F68] focus:ring-2 focus:ring-[#315F68]/10";
 
-  const labelClass =
-    "text-xs font-semibold text-[#52666B]";
+  const labelClass = "text-xs font-semibold text-[#52666B]";
 
   return (
     <>
+      {/* Mobile menu button */}
+      <button
+        type="button"
+        onClick={() => {
+          setHovered(true);
+          setMobileOpen(true);
+        }}
+        aria-label="Open navigation menu"
+        aria-expanded={mobileOpen}
+        aria-controls="sales-sidebar"
+        className="fixed left-3 top-3 z-[70] flex h-11 w-11 items-center justify-center rounded-xl bg-[#315F68] text-white shadow-md md:hidden"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          className="h-6 w-6"
+        >
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      {/* Mobile sidebar overlay */}
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation menu"
+          onClick={closeMobileMenu}
+          className="fixed inset-0 z-[55] bg-black/40 md:hidden"
+        />
+      )}
+
+      {/* Sidebar */}
       <aside
+        id="sales-sidebar"
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className={`sticky top-3 z-40 my-3 ml-3 flex h-[calc(100vh-24px)] shrink-0 flex-col overflow-hidden rounded-[24px] bg-[#315F68] shadow-md transition-[width] duration-300 ease-in-out ${
-          collapsed ? "w-[72px]" : "w-[250px]"
+        onMouseLeave={() => {
+          if (!mobileOpen) setHovered(false);
+        }}
+        className={`fixed inset-y-0 left-0 z-[60] my-0 ml-0 flex h-dvh w-[280px] shrink-0 flex-col overflow-hidden rounded-none bg-[#315F68] shadow-xl transition-transform duration-300 ease-in-out md:sticky md:inset-auto md:top-3 md:my-3 md:ml-3 md:h-[calc(100dvh-24px)] md:rounded-[24px] md:shadow-md md:transition-[width] ${
+          mobileOpen
+            ? "translate-x-0"
+            : "-translate-x-full md:translate-x-0"
+        } ${
+          collapsed ? "md:w-[72px]" : "md:w-[250px]"
         }`}
       >
+        {/* Sidebar Header */}
         <div
           className={`flex h-[88px] shrink-0 items-center ${
             collapsed ? "justify-center" : "gap-3 px-5"
@@ -224,6 +272,7 @@ export default function Sidebar() {
           )}
         </div>
 
+        {/* Navigation */}
         <nav className="flex-1 space-y-1.5 overflow-x-hidden overflow-y-auto px-2.5 py-2">
           {menuItems
             .filter(
@@ -232,49 +281,54 @@ export default function Sidebar() {
                 isAdminRole(user?.role_id)
             )
             .map((item) => {
-            const active =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname === item.href ||
-                  pathname.startsWith(`${item.href}/`);
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname === item.href ||
+                    pathname.startsWith(`${item.href}/`);
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={collapsed ? item.name : undefined}
-                aria-current={active ? "page" : undefined}
-                className={`flex h-11 w-full shrink-0 items-center rounded-full text-[13px] font-semibold transition-colors duration-200 ${
-                  collapsed ? "justify-center" : "gap-3.5 px-4"
-                } ${
-                  active
-                    ? "bg-white text-[#315F68]"
-                    : "text-[#F2F7F8] hover:bg-[#426F77]"
-                }`}
-              >
-                <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center text-xl leading-none ${
-                    active ? "text-[#315F68]" : "text-[#C5E0E1]"
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={collapsed ? item.name : undefined}
+                  aria-current={active ? "page" : undefined}
+                  onClick={closeMobileMenu}
+                  className={`flex h-11 w-full shrink-0 items-center rounded-full text-[13px] font-semibold transition-colors duration-200 ${
+                    collapsed ? "justify-center" : "gap-3.5 px-4"
+                  } ${
+                    active
+                      ? "bg-white text-[#315F68]"
+                      : "text-[#F2F7F8] hover:bg-[#426F77]"
                   }`}
-                  aria-hidden="true"
                 >
-                  {item.icon}
-                </span>
-
-                {!collapsed && (
-                  <span className="min-w-0 truncate whitespace-nowrap">
-                    {item.name}
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center text-xl leading-none ${
+                      active ? "text-[#315F68]" : "text-[#C5E0E1]"
+                    }`}
+                    aria-hidden="true"
+                  >
+                    {item.icon}
                   </span>
-                )}
-              </Link>
-            );
+
+                  {!collapsed && (
+                    <span className="min-w-0 truncate whitespace-nowrap">
+                      {item.name}
+                    </span>
+                  )}
+                </Link>
+              );
             })}
         </nav>
 
+        {/* Account and Logout */}
         <div className="shrink-0 space-y-2 px-2.5 pb-4 pt-3">
           <button
             type="button"
-            onClick={handleOpenProfile}
+            onClick={() => {
+              closeMobileMenu();
+              handleOpenProfile();
+            }}
             title={collapsed ? "My Account" : undefined}
             className={`flex min-h-[58px] w-full items-center rounded-xl bg-[#527F87] text-left text-white transition-colors hover:bg-[#638F97] ${
               collapsed ? "justify-center px-0" : "gap-3 px-3"
@@ -329,9 +383,10 @@ export default function Sidebar() {
         </div>
       </aside>
 
+      {/* Account Profile Modal */}
       {profileOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-3 backdrop-blur-[2px] sm:p-4"
           onMouseEnter={() => setHovered(false)}
           onClick={handleCloseProfile}
         >
@@ -339,10 +394,10 @@ export default function Sidebar() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="profile-title"
-            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="max-h-[calc(100dvh-24px)] w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between bg-[#315F68] px-6 py-5">
+            <div className="flex items-center justify-between bg-[#315F68] px-5 py-4 sm:px-6 sm:py-5">
               <div>
                 <h2
                   id="profile-title"
@@ -366,7 +421,8 @@ export default function Sidebar() {
               </button>
             </div>
 
-            <div className="flex border-b border-gray-200 bg-[#F8FAFA] px-4">
+            {/* Profile Tabs */}
+            <div className="flex border-b border-gray-200 bg-[#F8FAFA] px-2 sm:px-4">
               {(
                 [
                   { id: "profile", label: "Profile" },
@@ -381,7 +437,7 @@ export default function Sidebar() {
                     setActiveTab(tab.id);
                     resetMessages();
                   }}
-                  className={`flex-1 border-b-2 px-2 py-3 text-xs font-semibold transition-colors ${
+                  className={`flex-1 border-b-2 px-1 py-3 text-xs font-semibold transition-colors sm:px-2 ${
                     activeTab === tab.id
                       ? "border-[#315F68] text-[#315F68]"
                       : "border-transparent text-gray-500 hover:text-[#315F68]"
@@ -392,7 +448,7 @@ export default function Sidebar() {
               ))}
             </div>
 
-            <div className="max-h-[65vh] overflow-y-auto p-6">
+            <div className="max-h-[calc(100dvh-210px)] overflow-y-auto p-4 sm:p-6">
               {profileLoading ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <div className="h-9 w-9 animate-spin rounded-full border-4 border-[#DCE7EA] border-t-[#315F68]" />
@@ -441,7 +497,7 @@ export default function Sidebar() {
                           {profile.username}
                         </h3>
 
-                        <p className="text-sm text-gray-500">
+                        <p className="break-all text-center text-sm text-gray-500">
                           {profile.email}
                         </p>
 
@@ -461,9 +517,9 @@ export default function Sidebar() {
                         ].map(([label, value]) => (
                           <div
                             key={label}
-                            className="flex items-center justify-between gap-4"
+                            className="flex items-start justify-between gap-4"
                           >
-                            <span className="text-sm text-gray-500">
+                            <span className="shrink-0 text-sm text-gray-500">
                               {label}
                             </span>
                             <span className="break-all text-right text-sm font-semibold text-[#24363B]">
@@ -601,7 +657,7 @@ export default function Sidebar() {
               ) : null}
             </div>
 
-            <div className="flex justify-end border-t border-gray-200 bg-gray-50 px-6 py-4">
+            <div className="flex justify-end border-t border-gray-200 bg-gray-50 px-4 py-3 sm:px-6 sm:py-4">
               <button
                 type="button"
                 onClick={handleCloseProfile}

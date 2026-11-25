@@ -18,20 +18,19 @@ export default function BillingCollectionsPage() {
   const [activeTab, setActiveTab] = useState<BillingTab>("invoices");
 
   const tabClass = (tab: BillingTab) =>
-    `rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
+    `min-h-11 shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
       activeTab === tab
-        ? "bg-green-700 text-white shadow-sm"
-        : "text-slate-600 hover:bg-slate-100 hover:text-blue-700"
+        ? "bg-blue-600 text-white shadow-sm"
+        : "text-slate-600 hover:bg-white hover:text-blue-700"
     }`;
 
   return (
-    <div className="min-h-full bg-green-50 p-5 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-
+    <main className="min-h-full w-full bg-white p-3 text-slate-900 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-4 sm:space-y-6">
         <div
           role="tablist"
           aria-label="Billing and collections sections"
-          className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-[#E5E7EB] p-2 shadow-sm"
+          className="flex w-full min-w-0 gap-2 overflow-x-auto rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-2 shadow-sm"
         >
           {tabs.map((tab) => (
             <button
@@ -53,7 +52,7 @@ export default function BillingCollectionsPage() {
           id={`billing-panel-${activeTab}`}
           role="tabpanel"
           aria-labelledby={`billing-tab-${activeTab}`}
-          className="min-w-0"
+          className="min-w-0 w-full"
         >
           {activeTab === "invoices" && <InvoicePanel />}
 
@@ -64,6 +63,6 @@ export default function BillingCollectionsPage() {
           {activeTab === "collections" && <CollectionsPanel />}
         </section>
       </div>
-    </div>
+    </main>
   );
 }
