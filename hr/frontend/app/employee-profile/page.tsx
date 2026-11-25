@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
 import "./employee-profile.css";
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 // Temporary employee ID for testing
 const CURRENT_EMPLOYEE_ID = 2;

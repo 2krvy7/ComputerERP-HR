@@ -4,7 +4,7 @@ import HRISSidebar from "@/components/HRISSidebar";
 import { useEffect, useRef, useState } from "react";
 import "./payroll.css";
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 type Employee = {
   employee_id: number;

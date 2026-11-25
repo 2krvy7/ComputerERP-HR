@@ -4,6 +4,8 @@ import HRISSidebar from "@/components/HRISSidebar";
 import { useEffect, useState } from "react";
 import "./employee.css";
 
+const API = process.env.NEXT_PUBLIC_API_URL!;
+
 type Employee = {
   employee_id: number;
   userid: string | null;
@@ -69,7 +71,7 @@ export default function EmployeesPage() {
 
   const fetchEmployees = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/employees/");
+      const response = await fetch(`${API}/employees/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch employees");
@@ -90,7 +92,7 @@ export default function EmployeesPage() {
 
   const fetchPositions = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/positions/");
+      const response = await fetch(`${API}/positions/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch positions");
@@ -169,7 +171,7 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${editingEmployeeId}`,
+        `${API}/employees/${editingEmployeeId}`,
         {
           method: "PUT",
           headers: {
@@ -226,7 +228,7 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${employee.employee_id}`,
+        `${API}/employees/${employee.employee_id}`,
         {
           method: "PUT",
           headers: {
@@ -282,7 +284,7 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${employee.employee_id}`,
+        `${API}/employees/${employee.employee_id}`,
         {
           method: "PUT",
           headers: {
