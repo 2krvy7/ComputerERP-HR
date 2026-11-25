@@ -15,8 +15,14 @@ type ProductionSummary = {
   status_breakdown: StatusBreakdown[];
 };
 
+type ProductComparison = {
+  item_name: string;
+  total_produced: number;
+};
+
 export default function ReportsPage() {
   const [report, setReport] = useState<ProductionSummary | null>(null);
+  const [productComparison, setProductComparison] = useState<ProductComparison[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -47,6 +53,27 @@ export default function ReportsPage() {
 
     fetchReport();
   }, []);
+    useEffect(() => {
+    const fetchProductComparison = async () => {
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/reports/product-comparison/"
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to retrieve product comparison.");
+        }
+
+        const data = await response.json();
+        setProductComparison(data);
+
+      } catch (error) {
+        console.error("Product comparison error:", error);
+      }
+    };
+
+    fetchProductComparison();
+  }, []);
 
   const summaryCards = [
     {
@@ -71,6 +98,10 @@ export default function ReportsPage() {
   report && report.total_quantity_required > 0
     ? (report.total_quantity_produced / report.total_quantity_required) * 100
     : 0;
+    const maxProduced = Math.max(
+    ...productComparison.map((item) => item.total_produced),
+    1
+  );
 
   return (
     <div className="p-8 space-y-6">
@@ -92,13 +123,13 @@ export default function ReportsPage() {
             {summaryCards.map((card) => (
               <div
                 key={card.title}
-                className="bg-white border border-gray-200 rounded-xl p-5"
+                className="bg-white border border-gray-200 rounded-xl px-4 py-2"
               >
                 <p className="text-sm text-gray-500">
                   {card.title}
                 </p>
 
-                <h2 className="text-2xl font-bold text-gray-800 mt-3">
+                <h2 className="text-2xl font-bold text-gray-800 mt-1">
                   {card.value.toLocaleString()}
                 </h2>
               </div>
@@ -140,8 +171,8 @@ export default function ReportsPage() {
               </span>
             </div>
           </div>
-
-                    {/* PRODUCT PRODUCTION COMPARISON */}
+          
+          {/* PRODUCT PRODUCTION COMPARISON */}
           <div className="bg-white border border-gray-200 rounded-xl p-6">
             <div className="mb-5">
               <h2 className="text-lg font-semibold text-gray-800">
@@ -153,57 +184,43 @@ export default function ReportsPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* OFFICE PC */}
-              <div className="border border-gray-200 rounded-lg p-5">
-                <p className="text-sm font-medium text-gray-700">
-                  Office PC
-                </p>
+            {productComparison.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {productComparison.map((item) => (
+                  <div
+                    key={item.item_name}
+                    className="border border-gray-200 rounded-lg p-5"
+                  >
+                    <p className="text-sm font-medium text-gray-700">
+                      {item.item_name}
+                    </p>
 
-                <h3 className="text-2xl font-bold text-gray-800 mt-3">
-                  —
-                </h3>
+                    <h3 className="text-2xl font-bold text-gray-800 mt-3">
+                      {item.total_produced.toLocaleString()}
+                    </h3>
 
-                <p className="text-xs text-gray-400 mt-1">
-                  Units produced
-                </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Units produced
+                    </p>
 
-                <div className="w-full bg-gray-200 rounded-full h-2 mt-4" />
+                    <div className="w-full bg-gray-200 rounded-full h-2 mt-4 overflow-hidden">
+                      <div
+                        className="bg-[#668d98] h-2 rounded-full transition-all duration-500"
+                        style={{
+                          width: `${(item.total_produced / maxProduced) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              {/* GAMING PC */}
-              <div className="border border-gray-200 rounded-lg p-5">
-                <p className="text-sm font-medium text-gray-700">
-                  Gaming PC
-                </p>
-
-                <h3 className="text-2xl font-bold text-gray-800 mt-3">
-                  —
-                </h3>
-
-                <p className="text-xs text-gray-400 mt-1">
-                  Units produced
-                </p>
-
-                <div className="w-full bg-gray-200 rounded-full h-2 mt-4" />
-              </div>
-            </div>
-
-            <div className="py-4 mt-5 border border-dashed border-gray-300 rounded-lg text-center">
-              <p className="text-sm font-semibold text-gray-600">
-                To be updated: Pie Chart
+            ) : (
+              <p className="py-8 text-center text-gray-500">
+                No product production records found.
               </p>
-
-              <p className="text-sm text-amber-600 font-medium mt-1">
-                Pending Input: Inventory
-              </p>
-            </div>
-
-            <p className="text-xs text-gray-400 mt-5 text-center">
-              Product comparison data will appear once production records are available.
-            </p>
+            )}
           </div>
-          
+
           {/* PRODUCTION STATUS */}
           <div className="bg-white border border-gray-200 rounded-xl p-6">
 
