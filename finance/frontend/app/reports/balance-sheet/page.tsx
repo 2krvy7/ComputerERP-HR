@@ -44,11 +44,16 @@ export default function BalanceSheet() {
   >("This month");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchBalanceSheet() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reports/balance-sheet");
+      const res = await fetch(`${API_URL}/api/reports/balance-sheet`);
       if (!res.ok) throw new Error(`Balance Sheet API error: ${res.status}`);
       const json = await res.json();
       setData({

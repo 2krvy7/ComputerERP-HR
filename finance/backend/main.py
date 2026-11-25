@@ -15,9 +15,7 @@ from routers.expense import router as expense_router
 from routers.reports import router as reports_router
 from routers.dashboard import router as dashboard_router
 
-
-
-app = FastAPI(title="Finance ERP")
+app = FastAPI(title="Finance ERP API")
 
 # Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
 origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]

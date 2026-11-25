@@ -36,12 +36,17 @@ export default function IncomeStatement() {
   >("This month");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchIncomeStatement() {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(
-        "http://127.0.0.1:8000/api/reports/income-statement/"
+        `${API_URL}/api/reports/income-statement/`
       );
       if (!res.ok)
         throw new Error(`Income Statement API error: ${res.status}`);

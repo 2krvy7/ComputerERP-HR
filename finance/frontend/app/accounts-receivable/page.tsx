@@ -30,6 +30,11 @@ export default function ARInvoices() {
   const [formAmount, setFormAmount] = useState("");
   const [formStatus, setFormStatus] = useState("Sent");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   useEffect(() => {
     setTodayStr(new Date().toISOString().split("T")[0]);
     fetchData();
@@ -44,19 +49,19 @@ export default function ARInvoices() {
         // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
         // Database Tables: Auto-syncs Team 4 Sales Invoices & ARReceipts, then reads "ARInvoice" joined with "Customer"
         // Purpose: Loads all customer receivables for the AR Invoices table and KPI cards
-        fetch("http://127.0.0.1:8000/api/arinvoices"),
+        fetch(`${API_URL}/api/arinvoices`),
 
         // FETCH 2: GET http://127.0.0customers
         // Backend File: finance/backend/routers/arinvoices.py -> get_customers()
         // Database Table: Reads Team 4 "Customer" table
         // Purpose: Populates the customer dropdown inside the Create AR Invoice modal
-        fetch("http://127.0.0.1:8000/api/arinvoices/customers"),
+        fetch(`${API_URL}/api/arinvoices/customers`),
 
         // FETCH 3: GET http://127.0.0receipts-summary
         // Backend File: finance/backend/routers/arinvoices.py -> get_receipts_summary()
         // Database Table: Aggregates "ARReceipt" (totalCollected and receiptCount)
         // Purpose: Displays total collections received on the AR Invoices summary card
-        fetch("http://127.0.01:8000/api/arinvoices/receipts-summary"),
+        fetch(`${API_URL}/api/arinvoices/receipts-summary`),
       ]);
 
       if (!invRes.ok) throw new Error(`AR API error: ${invRes.status}`);
@@ -196,7 +201,7 @@ export default function ARInvoices() {
       // Backend File: finance/backend/routers/arinvoices.py -> create_ar_invoice()
       // Database Table: Inserts a new customer invoice into "ARInvoice"
       // Purpose: Creates a new receivable record in PostgreSQL
-      const res = await fetch("http://127.0.0.1:8000/api/arinvoices", {
+      const res = await fetch(`${API_URL}/api/arinvoices`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -229,7 +234,7 @@ export default function ARInvoices() {
       // Database Table: Updates "ARInvoice" status ('Sent' or 'Paid') and sets remainingBalance = 0 when Paid
       // Purpose: Updates invoice status from the View Invoice modal
       const res = await fetch(
-        `http://127.0.01:8000/api/arinvoices/${rawId}/status?status=${newStatus}`,
+        `${API_URL}/api/arinvoices/${rawId}/status?status=${newStatus}`,
         { method: "PATCH" }
       );
       if (!res.ok) throw new Error("Failed to update invoice status");
@@ -247,7 +252,7 @@ export default function ARInvoices() {
       // Backend File: finance/backend/routers/arinvoices.py -> trigger_sales_sync()
       // Database Tables: Copies unimported rows from Team 4 "Sales Invoice" into Finance "ARInvoice"
       // Purpose: Pulls new customer invoices from Sales on demand
-      const res = await fetch("http://127.0.0.1:8000/api/arinvoices/sync-sales", {
+      const res = await fetch(`${API_URL}/api/arinvoices/sync-sales`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to sync from Sales");

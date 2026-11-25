@@ -19,6 +19,11 @@ export default function APPayments() {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchData() {
     setLoading(true);
     setError(null);
@@ -28,25 +33,25 @@ export default function APPayments() {
         // Backend File: finance/backend/routers/payments.py -> get_payments()
         // Database Tables: Reads "APPayment" joined with "APInvoice", "Supplier", and "BankAccount"
         // Purpose: Loads all recorded supplier disbursements for the main register table
-        fetch("http://127.0.0.1:8000/api/payments"),
+        fetch(`${API_URL}/api/payments`),
 
         // FETCH 2: GET http://127.0.0options
         // Backend File: finance/backend/routers/payments.py -> get_payment_options()
         // Database Tables: Reads unpaid "APInvoice" rows and registered "BankAccount" rows
         // Purpose: Populates the Record Payment modal dropdowns
-        fetch("http://127.0.0.1:8000/api/payments/options"),
+        fetch(`${API_URL}/api/payments/options`),
 
         // FETCH 3 (Fallback Invoices): GET http://127.0.0
         // Backend File: finance/backend/routers/apinvoices.py -> get_ap_invoices()
         // Database Tables: Reads "APInvoice" joined with "Supplier"
         // Purpose: Ensures open AP invoices still load if /options returns empty
-        fetch("http://127.0.0.1:8000/api/apinvoices"),
+        fetch(`${API_URL}/api/apinvoices`),
 
         // FETCH 4 (Fallback Bank Accounts): GET http://127.0.0
         // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
         // Database Tables: Reads "BankAccount" with active disbursement status
         // Purpose: Ensures active disbursement bank accounts always appear in the dropdown
-        fetch("http://127.0.0.1:8000/api/bank"),
+        fetch(`${API_URL}/api/bank`),
       ]);
 
       if (!payRes.ok) throw new Error(`Payments API error: ${payRes.status}`);
@@ -180,7 +185,7 @@ export default function APPayments() {
       // Backend File: finance/backend/routers/payments.py -> create_payment()
       // Database Tables: Inserts into "APPayment" and updates "APInvoice" (totalPaid, remainingBalance, status)
       // Purpose: Records supplier payment and deducts cash outflow from the chosen BankAccount
-      const res = await fetch("http://127.0.0.1:8000/api/payments", {
+      const res = await fetch(`${API_URL}/api/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

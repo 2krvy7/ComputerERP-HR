@@ -35,11 +35,16 @@ export default function TrialBalance() {
   const [nonZeroOnly, setNonZeroOnly] = useState(false);
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchTrialBalance() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reports/trial-balance/");
+      const res = await fetch(`${API_URL}/api/reports/trial-balance/`);
       if (!res.ok) throw new Error(`Trial Balance API error: ${res.status}`);
       const json = await res.json();
       setData({
