@@ -24,11 +24,16 @@ export default function CashFlowStatement() {
   >("This month");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchCashFlow() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reports/cash-flow/");
+      const res = await fetch(`${API_URL}/api/reports/cash-flow/`);
       if (!res.ok) throw new Error(`Cash Flow API error: ${res.status}`);
       const json = await res.json();
       setData({

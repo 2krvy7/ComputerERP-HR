@@ -27,15 +27,20 @@ export default function ExpensesPage() {
   const [formAmount, setFormAmount] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [expRes, optRes] = await Promise.all([
         // FETCH 1: GET http://127.0.0
-        fetch("http://127.0.0.1:8000/api/expense"),
+        fetch(`${API_URL}/api/expense`),
         // FETCH 2: GET http://127.0.0options
-        fetch("http://127.0.0.1:8000/api/expense/options"),
+        fetch(`${API_URL}/api/expense/options`),
       ]);
 
       if (!expRes.ok) throw new Error(`Expenses API error: ${expRes.status}`);
@@ -201,7 +206,7 @@ export default function ExpensesPage() {
       // FETCH 3: POST http://127.0.0.1:8000/api/expense/batch-approve
       // Backend File: finance/backend/routers/expense.py -> batch_approve_expenses()
       // Purpose: Approves ProductionOrder (PO-#) & Expense (EXP-#) to Journal Entries, and transfers Payroll (PR-#) to BPI Payroll
-      const res = await fetch("http://127.0.0.1:8000/api/expense/batch-approve", {
+      const res = await fetch(`${API_URL}/api/expense/batch-approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

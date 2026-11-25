@@ -55,6 +55,10 @@ export default function JournalEntries() {
   ]);
   const [submitting, setSubmitting] = useState(false);
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
   // Load journal entries and Chart of Accounts options from FastAPI backend
   async function fetchAll() {
     setLoading(true);
@@ -65,13 +69,13 @@ export default function JournalEntries() {
         // Backend File: finance/backend/routers/journal.py -> get_journal_entries()
         // Database Tables: Reads "JournalEntry" joined with "JournalEntryLine" and "ChartOfAccounts"
         // Purpose: Loads all posted journal entries, debit/credit totals, and line details
-        fetch("http://127.0.0.1:8000/api/journal"),
+        fetch(`${API_URL}/api/journal`),
 
         // FETCH 2: GET http://127.0.0
         // Backend File: finance/backend/routers/coa.py -> get_accounts()
         // Database Table: Reads "ChartOfAccounts"
         // Purpose: Populates account dropdowns inside the New Journal Entry modal
-        fetch("http://127.0.0.1:8000/api/journal"),
+        fetch(`${API_URL}/api/journal`),
       ]);
 
       if (!jRes.ok) throw new Error(`Server error: ${jRes.status}`);
@@ -263,7 +267,7 @@ export default function JournalEntries() {
       // Backend File: finance/backend/routers/journal.py -> create_journal_entry()
       // Database Tables: Inserts balanced entry into "JournalEntry", "JournalEntryLine", and "GeneralLedger"
       // Purpose: Posts a new manual journal entry to the accounting ledger
-      const res = await fetch("http://127.0.0.1:8000/api/journal", {
+      const res = await fetch(`${API_URL}/api/journal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -47,6 +47,11 @@ export default function ARAgingPage() {
   const [selectedCustomer, setSelectedCustomer] = useState("ALL");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchARAging() {
     setLoading(true);
     setError(null);
@@ -54,7 +59,7 @@ export default function ARAgingPage() {
       // FETCH: GET http://127.0.0
       // Backend File: finance/backend/routers/reports.py -> ar_aging()
       // Database Tables: Reads unpaid "ARInvoice" rows joined with Team 4 "Customer" and ages by CURRENT_DATE - dueDate
-      const res = await fetch("http://127.0.0.1:8000/api/reports/ar-aging");
+      const res = await fetch(`${API_URL}/api/reports/ar-aging`);
       if (!res.ok) throw new Error(`AR Aging API error: ${res.status}`);
       const data = await res.json();
       setItems(Array.isArray(data.items) ? data.items : []);

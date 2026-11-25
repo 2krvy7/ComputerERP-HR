@@ -15,13 +15,18 @@ export default function GeneralLedger() {
   const [endDate, setEndDate] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchLedgerData() {
     setLoading(true);
     setError(null);
     try {
       const [ledgerRes, accRes] = await Promise.all([
-        fetch("http://127.0.0.1:8000/api/ledger"),
-        fetch("http://127.0.0.1:8000/api/ledger"),
+        fetch(`${API_URL}/api/ledger`),
+        fetch(`${API_URL}/api/ledger`),
       ]);
 
       if (!ledgerRes.ok) throw new Error(`Ledger API error: ${ledgerRes.status}`);

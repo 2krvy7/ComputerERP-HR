@@ -14,16 +14,18 @@ from routers.expense import router as expense_router
 from routers.reports import router as reports_router
 from routers.dashboard import router as dashboard_router
 
-
-
-app = FastAPI(title="Finance ERP")
+app = FastAPI(title="Finance ERP API")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:3000",
+        "https://computer-erp-finance-backend.vercel.app",
+        # Add your exact Vercel frontend URL below once deployed, e.g.:
+        # "https://vercel.app",
     ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
