@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -111,6 +112,11 @@ export default function DeliveryPanel() {
   const [orderId, setOrderId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [pickupDate, setPickupDate] = useState("");
+
+  const [deliveryToConfirm, setDeliveryToConfirm] =
+    useState<Delivery | null>(null);
+  const [receivedBy, setReceivedBy] = useState("");
+  const [receivedByError, setReceivedByError] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -264,6 +270,14 @@ export default function DeliveryPanel() {
     setShowForm(false);
   }
 
+  function closeReceivedByModal() {
+    if (saving) return;
+
+    setDeliveryToConfirm(null);
+    setReceivedBy("");
+    setReceivedByError("");
+  }
+
   async function handleCreateDelivery() {
     setError("");
 
@@ -322,6 +336,68 @@ export default function DeliveryPanel() {
     }
   }
 
+  async function saveDeliveryStatus(
+    delivery: Delivery,
+    newStatus: DeliveryStatus,
+    customerName?: string
+  ) {
+    if (updatingId !== null) return;
+
+    setError("");
+    setUpdatingId(delivery.delivery_id);
+
+    try {
+      const updated = await deliveryAPI.updateStatus(
+        delivery.delivery_id,
+        newStatus,
+        customerName
+      );
+
+      setDeliveries((current) =>
+        current.map((item) =>
+          item.delivery_id === updated.delivery_id
+            ? updated
+            : item
+        )
+      );
+
+      if (newStatus === "Delivered") {
+        setDeliveryToConfirm(null);
+        setReceivedBy("");
+        setReceivedByError("");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update pickup status."
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleConfirmCollection() {
+    if (!deliveryToConfirm || saving) return;
+
+    const customerName = receivedBy.trim();
+
+    if (!customerName) {
+      setReceivedByError(
+        "Please enter the name of the customer who collected the items."
+      );
+      return;
+    }
+
+    setReceivedByError("");
+
+    await saveDeliveryStatus(
+      deliveryToConfirm,
+      "Delivered",
+      customerName
+    );
+  }
+
   async function handleStatusChange(
     delivery: Delivery,
     newStatus: DeliveryStatus
@@ -340,23 +416,12 @@ export default function DeliveryPanel() {
       return;
     }
 
-    let receivedBy: string | undefined;
-
     if (newStatus === "Delivered") {
-      const customerName = window.prompt(
-        "Enter the name of the customer who collected the items:"
-      );
-
-      if (customerName === null) return;
-
-      receivedBy = customerName.trim();
-
-      if (!receivedBy) {
-        setError(
-          "Enter the customer's name to confirm that the items were collected."
-        );
-        return;
-      }
+      setError("");
+      setReceivedBy("");
+      setReceivedByError("");
+      setDeliveryToConfirm(delivery);
+      return;
     }
 
     if (newStatus === "Cancelled") {
@@ -367,32 +432,7 @@ export default function DeliveryPanel() {
       if (!confirmed) return;
     }
 
-    setError("");
-    setUpdatingId(delivery.delivery_id);
-
-    try {
-      const updated = await deliveryAPI.updateStatus(
-        delivery.delivery_id,
-        newStatus,
-        receivedBy
-      );
-
-      setDeliveries((current) =>
-        current.map((item) =>
-          item.delivery_id === updated.delivery_id
-            ? updated
-            : item
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update pickup status."
-      );
-    } finally {
-      setUpdatingId(null);
-    }
+    await saveDeliveryStatus(delivery, newStatus);
   }
 
   function goToPage(page: number) {
@@ -535,7 +575,6 @@ export default function DeliveryPanel() {
           </div>
         ) : (
           <>
-            {/* Mobile pickup cards */}
             <div className="space-y-3 p-3 md:hidden">
               {paginatedDeliveries.map((delivery) => {
                 const order = orderMap.get(delivery.order_id);
@@ -614,7 +653,6 @@ export default function DeliveryPanel() {
               })}
             </div>
 
-            {/* Desktop pickup table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[850px] text-left text-sm">
                 <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
@@ -683,7 +721,6 @@ export default function DeliveryPanel() {
           </>
         )}
 
-        {/* Pagination */}
         <div className="flex min-w-0 flex-col gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
           <p className="text-center text-sm text-slate-600 md:text-left">
             Showing{" "}
@@ -861,6 +898,121 @@ export default function DeliveryPanel() {
                   {saving ? "Creating..." : "Create Pickup"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Customer Collection Modal */}
+      {deliveryToConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-slate-950/60 p-0 sm:items-center sm:p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="collection-modal-title"
+            className="my-auto w-full max-h-[95dvh] overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-xl sm:p-6"
+          >
+            <div className="mb-5">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-green-700">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-6 w-6"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="m5 12 4 4L19 6"
+                  />
+                </svg>
+              </div>
+
+              <h2
+                id="collection-modal-title"
+                className="text-lg font-bold text-slate-900"
+              >
+                Confirm Customer Collection
+              </h2>
+
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Enter the name of the customer who collected the items. This will mark the pickup as Delivered.
+              </p>
+            </div>
+
+            <div className="mb-5 rounded-lg border border-[#D1D5DB] bg-[#E5E7EB] p-3">
+              <p className="text-xs font-medium text-slate-500">
+                Pickup Reference
+              </p>
+              <p className="mt-1 font-semibold text-slate-900">
+                PICK-{String(deliveryToConfirm.delivery_id).padStart(4, "0")}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Order: SO-{String(deliveryToConfirm.order_id).padStart(4, "0")}
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="received-by"
+                className="mb-2 block text-sm font-semibold text-slate-700"
+              >
+                Customer / Authorized Collector Name
+              </label>
+
+              <input
+                id="received-by"
+                type="text"
+                autoFocus
+                value={receivedBy}
+                onChange={(e) => {
+                  setReceivedBy(e.target.value);
+                  setReceivedByError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleConfirmCollection();
+                  }
+                }}
+                placeholder="Enter full name"
+                maxLength={150}
+                disabled={saving}
+                className={`min-h-12 w-full rounded-lg border bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:ring-2 ${
+                  receivedByError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-100"
+                    : "border-slate-300 focus:border-[#4F8585] focus:ring-[#4F8585]/20"
+                }`}
+              />
+
+              {receivedByError && (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {receivedByError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeReceivedByModal}
+                disabled={saving}
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleConfirmCollection()}
+                disabled={saving}
+                className="min-h-11 rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Confirming..." : "Confirm Collection"}
+              </button>
             </div>
           </div>
         </div>
