@@ -8,7 +8,6 @@ import type {
   SalesOrder,
   SalesOrderCreate,
   SalesOrderItem,
-  SalesOrderStatus,
 } from "../../types/order";
 
 interface OrderLine {
@@ -16,14 +15,6 @@ interface OrderLine {
   quantity: number;
   discount: number;
 }
-
-const statuses: SalesOrderStatus[] = [
-  "Pending",
-  "Approved",
-  "Processing",
-  "Completed",
-  "Cancelled",
-];
 
 const money = (amount: string | number) =>
   `₱${Number(amount).toLocaleString("en-PH", {
@@ -45,6 +36,9 @@ export default function OrdersPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [customerId, setCustomerId] = useState("");
+  const [taxType, setTaxType] = useState<"VAT" | "Non-VAT" | "Tax-Exempt" | "Custom">("VAT");
+  const [customTaxRate, setCustomTaxRate] = useState("0");
+  const [installmentMonths, setInstallmentMonths] = useState<1 | 3 | 6 | 12>(1);
   const [lines, setLines] = useState<OrderLine[]>([
     { IM_ID: 0, quantity: 1, discount: 0 },
   ]);
@@ -136,8 +130,8 @@ export default function OrdersPage() {
     (order) => order.status === "Pending"
   ).length;
 
-  const completedOrders = orders.filter(
-    (order) => order.status === "Completed"
+  const acceptedOrders = orders.filter(
+    (order) => order.status === "Accepted" || order.status === "Approved"
   ).length;
 
   function updateLine(index: number, changes: Partial<OrderLine>) {
@@ -161,6 +155,9 @@ export default function OrdersPage() {
 
   function resetForm() {
     setCustomerId("");
+    setTaxType("VAT");
+    setCustomTaxRate("0");
+    setInstallmentMonths(1);
     setLines([{ IM_ID: 0, quantity: 1, discount: 0 }]);
     setItemSearch("");
     setShowForm(false);
@@ -188,8 +185,18 @@ export default function OrdersPage() {
       return;
     }
 
+    const taxRate = taxType === "VAT" ? 12 :
+      taxType === "Custom" ? Number(customTaxRate) : 0;
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+      setError("Tax rate must be between 0% and 100%.");
+      return;
+    }
+
     const data: SalesOrderCreate = {
       customer_id: Number(customerId),
+      tax_type: taxType,
+      tax_rate: taxRate,
+      installment_months: installmentMonths,
       details: lines.map((line) => ({
         IM_ID: line.IM_ID,
         quantity: line.quantity,
@@ -209,32 +216,6 @@ export default function OrdersPage() {
       );
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleStatusChange(
-    order: SalesOrder,
-    status: SalesOrderStatus
-  ) {
-    if (order.status === status) return;
-
-    setError("");
-
-    try {
-      const updated = await salesOrderAPI.updateStatus(
-        order.order_id,
-        status
-      );
-
-      setOrders((current) =>
-        current.map((item) =>
-          item.order_id === updated.order_id ? updated : item
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to update order status."
-      );
     }
   }
 
@@ -261,7 +242,7 @@ export default function OrdersPage() {
               onClick={() => setShowForm(true)}
               className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-700"
             >
-              + Create Sales Order
+              + Create Order Request
             </button>
           </div>
         </header>
@@ -294,9 +275,9 @@ export default function OrdersPage() {
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-sm text-gray-500">Completed Orders</p>
+            <p className="text-sm text-gray-500">Accepted Requests</p>
             <p className="mt-2 text-2xl font-semibold text-green-600">
-              {completedOrders}
+              {acceptedOrders}
             </p>
           </div>
         </section>
@@ -304,9 +285,9 @@ export default function OrdersPage() {
         <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="flex flex-col justify-between gap-4 border-b border-gray-200 p-5 sm:flex-row sm:items-center">
             <div>
-              <h2 className="font-semibold">Sales Order List</h2>
+              <h2 className="font-semibold">Sales Order Requests</h2>
               <p className="mt-1 text-sm text-gray-500">
-                View and update your sales orders.
+                Submit requested items to Inventory and track its decision.
               </p>
             </div>
 
@@ -363,23 +344,9 @@ export default function OrdersPage() {
                         {money(order.total_amount)}
                       </td>
                       <td className="px-5 py-4">
-                        <select
-                          value={order.status}
-                          onChange={(e) =>
-                            void handleStatusChange(
-                              order,
-                              e.target.value as SalesOrderStatus
-                            )
-                          }
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-gray-900"
-                          aria-label={`Status for order ${order.order_id}`}
-                        >
-                          {statuses.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
+                        <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${order.status === "Pending" ? "border-amber-200 bg-amber-50 text-amber-800" : ["Accepted", "Approved"].includes(order.status) ? "border-blue-200 bg-blue-50 text-blue-800" : order.status === "Cancelled" ? "border-red-200 bg-red-50 text-red-800" : "border-slate-300 bg-slate-100 text-slate-700"}`}>
+                          {order.status === "Pending" ? "Pending Inventory review" : order.status === "Approved" ? "Accepted" : order.status}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -395,7 +362,8 @@ export default function OrdersPage() {
           <div className="my-auto w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold">Create Sales Order</h2>
+                <h2 className="text-xl font-bold">Create Sales Order Request</h2>
+                <p className="mt-1 text-sm text-gray-500">Inventory will review the requested items before delivery can proceed.</p>
                 <p className="mt-1 text-sm text-gray-500">
                   Select a customer and add the items for this order.
                 </p>
@@ -433,6 +401,49 @@ export default function OrdersPage() {
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium">Order Tax</label>
+                <select
+                  value={taxType}
+                  onChange={(event) => setTaxType(event.target.value as typeof taxType)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                >
+                  <option value="VAT">VAT — 12%</option>
+                  <option value="Non-VAT">Non-VAT — 0%</option>
+                  <option value="Tax-Exempt">Tax-Exempt — 0%</option>
+                  <option value="Custom">Custom rate</option>
+                </select>
+                {taxType === "Custom" && (
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={customTaxRate}
+                    onChange={(event) => setCustomTaxRate(event.target.value)}
+                    aria-label="Custom tax rate percentage"
+                    className="mt-3 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                  />
+                )}
+                <p className="mt-1 text-xs text-gray-500">The invoice will use the tax saved on this order.</p>
+              </div>
+
+              <div>
+                <label htmlFor="order-installment" className="mb-2 block text-sm font-medium">Payment Installment</label>
+                <select
+                  id="order-installment"
+                  value={installmentMonths}
+                  onChange={(event) => setInstallmentMonths(Number(event.target.value) as 1 | 3 | 6 | 12)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                >
+                  <option value={1}>1 Month — 0% Interest</option>
+                  <option value={3}>3 Months — 3% Interest</option>
+                  <option value={6}>6 Months — 5% Interest</option>
+                  <option value={12}>1 Year — 10% Interest</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500">The invoice will use this installment term.</p>
               </div>
 
               <div>
@@ -537,7 +548,7 @@ export default function OrdersPage() {
                   disabled={saving}
                   className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
                 >
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving ? "Submitting..." : "Submit Order Request"}
                 </button>
               </div>
             </div>
