@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Pagination from "@/components/Pagination";
+import { getUser } from "@/components/AuthGate";
 
 const API = "http://127.0.0.1:8000";
 const PAGE_SIZE = 10;
@@ -176,6 +177,8 @@ function SupplierForm({
 
 /* ---------- The list ---------- */
 export default function SupplierList({ limit }: { limit?: number }) {
+  // Only admins can add, edit or archive (the backend enforces this too)
+  const canManage = ["Admin", "SuperAdmin"].includes(getUser()?.role ?? "");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -309,21 +312,23 @@ export default function SupplierList({ limit }: { limit?: number }) {
             <span style={{ fontSize: "0.8vw", color: "#668d98" }}>
               {suppliers.length} {suppliers.length === 1 ? "supplier" : "suppliers"}
             </span>
-            <button
-              onClick={() => setForm("new")}
-              style={{
-                border: "none",
-                cursor: "pointer",
-                padding: "0.5vw 1.2vw",
-                borderRadius: "99vw",
-                fontSize: "0.8vw",
-                fontWeight: 600,
-                backgroundColor: "#365f68",
-                color: "#ffffff",
-              }}
-            >
-              + Add supplier
-            </button>
+            {canManage && (
+              <button
+                onClick={() => setForm("new")}
+                style={{
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "0.5vw 1.2vw",
+                  borderRadius: "99vw",
+                  fontSize: "0.8vw",
+                  fontWeight: 600,
+                  backgroundColor: "#365f68",
+                  color: "#ffffff",
+                }}
+              >
+                + Add supplier
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -340,7 +345,7 @@ export default function SupplierList({ limit }: { limit?: number }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
             <thead>
               <tr>
-                {["Name", "Contact person", "Phone", "Email", "Address", ...(limit ? [] : [""])].map((h, i) => (
+                {["Name", "Contact person", "Phone", "Email", "Address", ...(limit || !canManage ? [] : [""])].map((h, i) => (
                   <th
                     key={i}
                     style={{
@@ -385,7 +390,7 @@ export default function SupplierList({ limit }: { limit?: number }) {
                   <td style={cell}>{s.Contact ?? empty}</td>
                   <td style={cell}>{s.Email ?? empty}</td>
                   <td style={{ ...cell, maxWidth: "16vw" }}>{s.Address ?? empty}</td>
-                  {!limit && (
+                  {!limit && canManage && (
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <div style={{ display: "flex", gap: "0.4vw" }}>
                         {smallButton("Edit", "#365f68", () => setForm(s))}

@@ -37,6 +37,7 @@ class QuotationDetailResponse(BaseModel):
     quotation_detail_id: int
     quotation_id: int
     IM_ID: int
+    Item_Name: str
     quantity: int
     unit_price: Decimal
     discount: Decimal

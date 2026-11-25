@@ -1,3 +1,4 @@
+
 export type SalesOrderStatus =
   | "Pending"
   | "Approved"
@@ -45,6 +46,21 @@ export interface SalesOrderItem {
   Category: string | null;
   Brand: string | null;
   unit_of_measure: string | null;
+  Price: string | number | null;
+  status: string | null;
+  stock_available: number;
+}
+
+export interface FinishedGoodItem {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  Category: string | null;
+  Brand: string | null;
+  ItemType: string | null;
+  unit_of_measure: string | null;
+  production_cost: string | number | null;
+  markup_percentage: string | number | null;
   Price: string | number | null;
   status: string | null;
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Badge, money, type Order } from "@/components/orders/OrderPanel";
+import { printReport } from "@/components/printReport";
 
 const API = "http://127.0.0.1:8000";
 
@@ -141,6 +142,56 @@ export default function Dashboard() {
   const ticks = [0, max / 2, max];
   const hp = hover !== null ? series[hover] : null;
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
+  function handlePrint() {
+    if (!value) return;
+    const p = PERIODS.find((x) => x.key === period)!;
+    const avg = (total: number, n: number) => (n ? money(total / n) : "—");
+
+    // Breakdown table: one row per day (week/month) or per month (year)
+    const breakdown = series.map((pt) => [pt.full, String(pt.orders), money(pt.total), avg(Number(pt.total), pt.orders)]);
+
+    // Week and month also list the orders themselves; the year would be too long, so it doesn't
+    let extra;
+    if (period !== "year") {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - ((period === "week" ? 7 : 30) - 1));
+      extra = {
+        heading: "Orders in this period",
+        headers: ["PO", "Supplier", "Item", "Qty", "Total", "Ordered", "Delivery", "Payment"],
+        rows: orders
+          .filter((o) => new Date(o.OrderDate) >= start)
+          .map((o) => [
+            `#${o.PO_ID}`, o.SupplierName, o.Item_Name, String(o.Quantity), money(o.Total_Amount),
+            date(o.OrderDate), o.goods_received ? "Received" : "Awaiting", o.invoiced ? "Paid" : "Unpaid",
+          ]),
+      };
+    }
+
+    printReport({
+      title: `Purchase Orders Report — ${p.sub}`,
+      subtitle: `${p.sub} · printed ${new Date().toLocaleDateString()}`,
+      summary: [
+        ["Total order value", money(value.total)],
+        ["Orders", String(value.orders)],
+        ["Average per order", avg(Number(value.total), value.orders)],
+      ],
+      heading: period === "year" ? "Monthly breakdown" : "Daily breakdown",
+      headers: [period === "year" ? "Month" : "Day", "Orders", "Total value", "Average"],
+      rows: breakdown,
+      extra,
+    });
+  }
+
+<<<<<<< HEAD
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "1.2vw" }}>
       {/* Row of 4 cards */}
@@ -153,13 +204,16 @@ export default function Dashboard() {
         <StatCard
           label="Purchase Orders"
           value={summary?.purchase_orders ?? "–"}
+        />
+        <StatCard
+          label="Goods Received"
+          value={summary?.goods_received ?? "–"}
           note={summary ? `awaiting delivery : ${summary.purchase_orders - summary.goods_received}` : ""}
         />
-        <StatCard label="Goods Received" value={summary?.goods_received ?? "–"} />
         <StatCard
-          label="Purchase Invoices"
+          label="Paid Orders"
           value={summary?.purchase_invoices ?? "–"}
-          note={summary ? `not invoiced yet : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
+          note={summary ? `unpaid : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
         />
       </div>
 
@@ -259,8 +313,25 @@ export default function Dashboard() {
           <div style={{ fontSize: "1.7vw", fontWeight: 700, color: "#24363b" }}>
             {value ? money(value.total) : "–"}
           </div>
-          <div style={{ fontSize: "0.78vw", color: "#668d98", marginBottom: "1vw" }}>
-            {PERIODS.find((p) => p.key === period)?.sub} · {value?.orders ?? 0} order{value?.orders === 1 ? "" : "s"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1vw" }}>
+            <span style={{ fontSize: "0.78vw", color: "#668d98" }}>
+              {PERIODS.find((p) => p.key === period)?.sub} · {value?.orders ?? 0} order{value?.orders === 1 ? "" : "s"}
+            </span>
+            <button
+              onClick={handlePrint}
+              style={{
+                border: "none",
+                cursor: "pointer",
+                padding: "0.3vw 0.9vw",
+                borderRadius: "99vw",
+                fontSize: "0.75vw",
+                fontWeight: 600,
+                backgroundColor: "#365f68",
+                color: "#ffffff",
+              }}
+            >
+              Print report
+            </button>
           </div>
 
           {/* The chart: plain divs, no library */}

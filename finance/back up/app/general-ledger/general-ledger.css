@@ -1,0 +1,139 @@
+.ledger-page {
+  background: #f5f7fb;
+  min-height: 100vh;
+  padding: 24px;
+  font-family: Inter, sans-serif;
+}
+
+.ledger-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ledger-header h1 {
+  font-size: 32px;
+  color: #111827;
+}
+
+.ledger-header p {
+  color: #6b7280;
+  margin-top: 5px;
+}
+
+.print-btn {
+  padding: 12px 20px;
+  background: #4361ee;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.ledger-filters {
+  margin-top: 24px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ledger-filters select,
+.ledger-filters button {
+  background: white;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.ledger-cards {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.ledger-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.ledger-card span {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.ledger-card h2 {
+  margin-top: 10px;
+  color: #111827;
+}
+
+.ledger-table-container {
+  margin-top: 25px;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.ledger-table-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ledger-table-header h3 {
+  color: #111827;
+}
+
+.ledger-table-header button {
+  background: #f3f4f6;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f8fafc;
+}
+
+th {
+  padding: 14px;
+  text-align: left;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+td {
+  padding: 14px;
+  border-top: 1px solid #f1f5f9;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
+}
+
+.totals-row {
+  border-top: 2px solid #e5e7eb;
+  padding: 18px 20px;
+  background: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.success-banner {
+  margin-top: 18px;
+  background: #dcfce7;
+  color: #15803d;
+  padding: 14px 18px;
+  border-radius: 12px;
+  border: 1px solid #bbf7d0;
+}

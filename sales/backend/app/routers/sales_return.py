@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.sales_return import SalesReturn
 from app.models.sales_order_detail import SalesOrderDetail
 from app.models.sales_invoice import SalesInvoice
@@ -17,6 +18,7 @@ from app.schemas.sales_return import (
 router = APIRouter(
     prefix="/api/returns",
     tags=["Sales Returns"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 

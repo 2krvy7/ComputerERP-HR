@@ -27,12 +27,22 @@ const money = (value: string | number) =>
     currency: "PHP",
   }).format(Number(value) || 0);
 
-const today = () => {
+const getToday = () => {
   const date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const formatPaymentDate = (value: string) => {
+  if (!value) return "—";
+
+  const [year, month, day] = value.slice(0, 10).split("-");
+
+  if (!year || !month || !day) return value;
+
+  return `${month}/${day}/${year}`;
 };
 
 export default function CollectionsPage() {
@@ -46,10 +56,17 @@ export default function CollectionsPage() {
 
   const [form, setForm] = useState<CollectionCreate>({
     AR_ID: 0,
-    payment_date: today(),
+    payment_date: "",
     payment_method: "Cash",
     amount_paid: 0,
   });
+
+  const handlePaymentDateFocus = () => {
+    setForm((previous) => ({
+      ...previous,
+      payment_date: previous.payment_date || getToday(),
+    }));
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -172,6 +189,11 @@ export default function CollectionsPage() {
       return;
     }
 
+    if (!form.payment_date) {
+      setError("Please select a payment date.");
+      return;
+    }
+
     if (form.amount_paid <= 0) {
       setError("Payment amount must be greater than zero.");
       return;
@@ -197,9 +219,10 @@ export default function CollectionsPage() {
       await paymentCollectionAPI.create(form);
 
       setSuccess("Payment successfully recorded.");
+
       setForm({
         AR_ID: 0,
-        payment_date: today(),
+        payment_date: "",
         payment_method: "Cash",
         amount_paid: 0,
       });
@@ -288,6 +311,7 @@ export default function CollectionsPage() {
               <input
                 type="date"
                 value={form.payment_date}
+                onFocus={handlePaymentDateFocus}
                 onChange={(event) =>
                   setForm({
                     ...form,
@@ -314,7 +338,6 @@ export default function CollectionsPage() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
                 <option value="Cash">Cash</option>
-                <option value="Bank Transfer">Bank Transfer</option>
                 <option value="E-Wallet">E-Wallet</option>
                 <option value="Other">Other</option>
               </select>
@@ -356,7 +379,11 @@ export default function CollectionsPage() {
             <div className="md:col-span-2">
               <button
                 type="submit"
-                disabled={saving || loading || receivables.every((record) => Number(record.balance) <= 0)}
+                disabled={
+                  saving ||
+                  loading ||
+                  receivables.every((record) => Number(record.balance) <= 0)
+                }
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Recording Payment..." : "Record Payment"}
@@ -380,6 +407,7 @@ export default function CollectionsPage() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm sm:max-w-xs"
               />
               <button
+                type="button"
                 onClick={loadData}
                 disabled={loading}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100 disabled:opacity-50"
@@ -429,9 +457,7 @@ export default function CollectionsPage() {
                         {record.customer_name}
                       </td>
                       <td className="px-4 py-3">
-                        {new Date(
-                          `${record.payment_date}T00:00:00`
-                        ).toLocaleDateString("en-PH")}
+                        {formatPaymentDate(String(record.payment_date))}
                       </td>
                       <td className="px-4 py-3 font-semibold">
                         {money(record.amount_paid)}

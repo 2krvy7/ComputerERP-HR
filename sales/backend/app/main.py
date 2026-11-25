@@ -1,8 +1,10 @@
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, DATABASE_URL, engine
+from app.database import DATABASE_URL
 
 # Models
 from app.models.customer import Customer
@@ -18,6 +20,9 @@ from app.models.accounts_receivable import AccountsReceivable
 from app.models.payment_collection import PaymentCollection
 from app.models.sales_return import SalesReturn
 
+# Authentication models
+from app.models.user import User
+
 # Routers
 from app.routers.customers import router as customers_router
 from app.routers.sales_quotations import router as quotations_router
@@ -28,6 +33,9 @@ from app.routers.accounts_receivable import router as accounts_receivable_router
 from app.routers.payment_collection import router as payment_collection_router
 from app.routers.sales_return import router as sales_return_router
 
+# Authentication routers
+from app.routers.auth import router as auth_router
+from app.routers.users import router as users_router
 
 app = FastAPI(
     title="Sales Module ERP API",
@@ -35,24 +43,34 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow requests from the Next.js frontend.
+# CORS configuration
+ALLOWED_ORIGINS = list(
+    dict.fromkeys(
+        origin.strip().rstrip("/")
+        for origin in [
+            *os.getenv("FRONTEND_ORIGINS", "").split(","),
+            "https://sales-kenethvivas22.vercel.app",
+            "https://sales-pink-iota.vercel.app",
+            "https://computer-erp-login.vercel.app",
+            "http://localhost:3000",
+        ]
+        if origin.strip()
+    )
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Create tables only for local SQLite development.
-if not DATABASE_URL:
-    Base.metadata.create_all(bind=engine)
+# Authentication endpoints
+app.include_router(auth_router)
+app.include_router(users_router)
 
-# Register routers.
-# Register routers.
+# ERP endpoints
 app.include_router(customers_router)
 app.include_router(quotations_router)
 app.include_router(orders_router)
@@ -67,6 +85,5 @@ app.include_router(sales_return_router)
 def home():
     return {
         "message": "Sales Module ERP API is running",
-        "docs": "/docs",
-        "database": "configured" if DATABASE_URL else "local SQLite",
+        "database": "configured" if DATABASE_URL else "not configured",
     }

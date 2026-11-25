@@ -1,3 +1,5 @@
+import os
+
 #APIs connecting to PostgreSQL inside Supabase
 import os
 from fastapi import FastAPI, HTTPException
@@ -22,20 +24,18 @@ from sidebar_features import reports
 app = FastAPI()
 
 #API router connecting different URL origins
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3003",
-    "http://127.0.0.1:3003",
-]
+# Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost:3003",
+        "http://127.0.0.1:3003"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
-)
+    allow_headers=["*"],)
 #API routers connecting frontend page and backend code
 app.include_router(
     dashboard.router,

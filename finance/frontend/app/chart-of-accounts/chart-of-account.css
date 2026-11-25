@@ -1,0 +1,492 @@
+/* =====================================================
+   1. PAGE CONTAINER & LAYOUT
+   Sets overall page background and spacing
+===================================================== */
+.coa-page {
+  margin-left: 0px;
+  padding: 24px 28px;
+  min-height: 100vh;
+  background: var(--body-color);
+}
+
+/* =====================================================
+   2. FIXED ALIGNED PAGE HEADER
+   Keeps title position identical across Dashboard, COA, and Journal Entries
+===================================================== */
+.coa-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 48px;
+  margin-bottom: 24px;
+}
+
+.coa-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* =====================================================
+   3. PRIMARY ACTION BUTTON (ADD ACCOUNT)
+===================================================== */
+.primary-btn {
+  background: var(--primary-color);
+  color: #ffffff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.primary-btn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* =====================================================
+   4. SUMMARY CARDS (ACTIVE, ASSETS, LIABILITIES, EQUITY)
+   Uniform card heights with clean metric display
+===================================================== */
+.coa-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.coa-card {
+  background: #ffffff;
+  padding: 20px 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.coa-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+}
+
+.coa-card h4 {
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.coa-card h2 {
+  color: var(--text-primary);
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0;
+}
+
+/* =====================================================
+   5. SEARCH BAR & ACCOUNT TYPE DROPDOWN FILTER
+===================================================== */
+.coa-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  align-items: center;
+}
+
+.search-box {
+  flex: 1;
+  padding: 10px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 14px;
+  background: #ffffff;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-box:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.type-select {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-primary);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  min-width: 165px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.type-select:hover,
+.type-select:focus {
+  border-color: var(--primary-color);
+}
+
+.refresh-btn {
+  padding: 10px 16px;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-primary);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.refresh-btn:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+/* =====================================================
+   6. DIRECTORY HEADER & INTERACTIVE SELECT / ARCHIVE BUTTONS
+===================================================== */
+.coa-table-container {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+}
+
+.table-header {
+  padding: 18px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.table-header h3 {
+  color: var(--text-primary);
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.table-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Interactive "Select" Button */
+.select-mode-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.select-mode-btn:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(59, 130, 246, 0.15);
+}
+
+.select-mode-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(37, 99, 235, 0.25);
+}
+
+/* Interactive "Archive" Button */
+.archive-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.archive-btn:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #b45309;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(245, 158, 11, 0.15);
+}
+
+/* Interactive "Move to Archive" Danger Button (Shown in Select Mode) */
+.archive-confirm-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.archive-confirm-btn:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(220, 38, 38, 0.25);
+}
+
+/* =====================================================
+   7. CENTERED CHART OF ACCOUNTS TABLE
+   Centers all headers and data cells cleanly
+===================================================== */
+.coa-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.coa-table th {
+  background: #f8fafc;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 14px 16px;
+}
+
+.coa-table td {
+  padding: 14px 16px;
+  border-top: 1px solid #eef2f7;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.coa-checkbox-col {
+  width: 48px;
+}
+
+.coa-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #2563eb;
+}
+
+.coa-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.coa-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.coa-table tbody tr.row-selected {
+  background: #eff6ff;
+}
+
+/* =====================================================
+   8. STATUS BADGES
+===================================================== */
+.status {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status.active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+/* =====================================================
+   9. MODALS (ADD ACCOUNT & ARCHIVE / RESTORE)
+===================================================== */
+.coa-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.coa-modal-card {
+  background-color: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+}
+
+.coa-modal-card.wide {
+  max-width: 580px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.coa-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.coa-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.coa-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coa-form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.coa-form-input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 14px;
+  outline: none;
+}
+
+.coa-form-input:focus {
+  border-color: var(--primary-color);
+}
+
+.coa-form-error {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 0;
+}
+
+.coa-empty-note {
+  color: #64748b;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.coa-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.coa-cancel-btn {
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.coa-cancel-btn:hover {
+  background: #f8fafc;
+}
+
+.coa-restore-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #2563eb;
+  background-color: #2563eb;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.coa-restore-btn:hover {
+  background-color: #1d4ed8;
+}
+
+.coa-restore-all-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid #16a34a;
+  background-color: #16a34a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coa-restore-all-btn:hover {
+  background-color: #15803d;
+}
+
+/* =====================================================
+   10. RESPONSIVE DESIGN
+===================================================== */
+@media (max-width: 1200px) {
+  .coa-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .coa-page {
+    padding: 16px;
+  }
+
+  .coa-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .coa-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .coa-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

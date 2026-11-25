@@ -21,6 +21,24 @@ const money = (amount: string | number) =>
     maximumFractionDigits: 2,
   })}`;
 
+const getTodayDate = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const formatReturnDate = (dateValue: string) => {
+  const datePart = String(dateValue).split("T")[0];
+  const [year, month, day] = datePart.split("-");
+
+  if (!year || !month || !day) return datePart;
+
+  return `${month}/${day}/${year}`;
+};
+
 export default function ReturnsPage() {
   const [returns, setReturns] = useState<SalesReturn[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -35,9 +53,7 @@ export default function ReturnsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [orderDetailId, setOrderDetailId] = useState("");
-  const [returnDate, setReturnDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [returnDate, setReturnDate] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [reason, setReason] = useState("");
   const [returnAmount, setReturnAmount] = useState("");
@@ -78,6 +94,7 @@ export default function ReturnsPage() {
   }, []);
 
   useEffect(() => {
+    setReturnDate(getTodayDate());
     void loadData();
   }, [loadData]);
 
@@ -171,17 +188,6 @@ export default function ReturnsPage() {
     if (!term) return returns;
 
     return returns.filter((record) => {
-      const order = orders.find(
-        (item) => item.order_id ===
-          orderMap.get(
-            orderMap.get(
-              invoices.find((invoice) =>
-                invoice.invoice_id === record.invoice_id
-              )?.order_id ?? -1
-            )?.order_id ?? -1
-          )?.order_id
-      );
-
       const relatedOrder = orders.find((item) =>
         item.details.some(
           (detail) =>
@@ -210,11 +216,11 @@ export default function ReturnsPage() {
         itemName.toLowerCase().includes(term)
       );
     });
-  }, [returns, orders, invoices, orderMap, customerMap, itemMap]);
+  }, [returns, orders, customerMap, itemMap]);
 
   function resetForm() {
     setOrderDetailId("");
-    setReturnDate(new Date().toISOString().slice(0, 10));
+    setReturnDate(getTodayDate());
     setQuantity("1");
     setReason("");
     setReturnAmount("");
@@ -284,23 +290,8 @@ export default function ReturnsPage() {
   return (
     <main className="min-h-screen bg-gray-50 p-6 text-gray-900 md:p-10">
       <div className="mx-auto max-w-7xl space-y-8">
-
         <header>
-          <p className="text-sm font-medium text-gray-500">
-            Sales Module / Sales Return
-          </p>
-
           <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                Sales Returns
-              </h1>
-
-              <p className="mt-2 text-sm text-gray-600">
-                Manage returned items and customer refund amounts.
-              </p>
-            </div>
-
             <button
               type="button"
               onClick={() => {
@@ -371,7 +362,6 @@ export default function ReturnsPage() {
                 <tr>
                   <th className="px-5 py-4 font-medium">Return No.</th>
                   <th className="px-5 py-4 font-medium">Order No.</th>
-                  <th className="px-5 py-4 font-medium">Invoice No.</th>
                   <th className="px-5 py-4 font-medium">Customer</th>
                   <th className="px-5 py-4 font-medium">Returned Item</th>
                   <th className="px-5 py-4 font-medium">Return Date</th>
@@ -383,13 +373,13 @@ export default function ReturnsPage() {
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500">
                       Loading sales returns...
                     </td>
                   </tr>
                 ) : filteredReturns.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-5 py-10 text-center text-gray-500">
                       No sales returns found.
                     </td>
                   </tr>
@@ -428,10 +418,6 @@ export default function ReturnsPage() {
                         </td>
 
                         <td className="px-5 py-4">
-                          SI-{String(record.invoice_id).padStart(4, "0")}
-                        </td>
-
-                        <td className="px-5 py-4">
                           {customer?.name ?? "Unknown customer"}
                         </td>
 
@@ -445,9 +431,7 @@ export default function ReturnsPage() {
                         </td>
 
                         <td className="px-5 py-4">
-                          {new Date(
-                            `${record.return_date}T00:00:00`
-                          ).toLocaleDateString("en-PH")}
+                          {formatReturnDate(record.return_date)}
                         </td>
 
                         <td className="px-5 py-4">{record.quantity}</td>
@@ -468,7 +452,6 @@ export default function ReturnsPage() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <div className="my-auto w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold">
@@ -487,12 +470,11 @@ export default function ReturnsPage() {
                 className="text-gray-500 hover:text-gray-900"
                 aria-label="Close form"
               >
-                ✕
+                ×
               </button>
             </div>
 
             <div className="space-y-5">
-
               <div>
                 <label className="mb-2 block text-sm font-medium">
                   Sales Order Item

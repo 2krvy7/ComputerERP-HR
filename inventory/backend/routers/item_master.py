@@ -1,14 +1,15 @@
-from dataclasses import fields
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field, field_validator
 from psycopg.rows import dict_row
 from psycopg import IntegrityError
 from psycopg.errors import ForeignKeyViolation
 from database import get_db_connection
 from typing import Literal
+from security import require_inventory_user, require_inventory_admin
 
 router = APIRouter(prefix="/item_master", tags=["Item Master"])
+
 
 class ItemMasterIn(BaseModel):
     sku: str = Field(min_length=1)
@@ -30,6 +31,7 @@ class ItemMasterIn(BaseModel):
             raise ValueError("This field cannot be empty.")
 
         return value
+
 
 class ItemMasterUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1)
@@ -55,6 +57,7 @@ class ItemMasterUpdate(BaseModel):
 
         return value
 
+
 COLUMNS = {
     "sku": "SKU",
     "item_name": "Item_Name",
@@ -74,8 +77,13 @@ SELECT = '''
     FROM public."ITEM_MASTER"
 '''
 
+
+# VIEW ALL ITEMS
 @router.get("/")
-def list_items(search: str | None = None):
+def list_items(
+    search: str | None = None,
+    user: dict = Depends(require_inventory_user)
+):
     query = SELECT
     params: tuple = ()
 
@@ -96,8 +104,13 @@ def list_items(search: str | None = None):
             cur.execute(query, params)
             return cur.fetchall()
 
+
+# VIEW ONE ITEM
 @router.get("/{im_id}")
-def get_item(im_id: int):
+def get_item(
+    im_id: int,
+    user: dict = Depends(require_inventory_user)
+):
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -114,8 +127,13 @@ def get_item(im_id: int):
 
     return item
 
+
+# CREATE ITEM - ADMIN ONLY
 @router.post("/", status_code=201)
-def create_item(item: ItemMasterIn):
+def create_item(
+    item: ItemMasterIn,
+    user: dict = Depends(require_inventory_admin)
+):
     try:
         with get_db_connection() as conn:
             with conn.cursor(row_factory=dict_row) as cur:
@@ -156,9 +174,15 @@ def create_item(item: ItemMasterIn):
             status_code=409,
             detail="This SKU already exists. Please use a different SKU."
         )
-        
+
+
+# UPDATE ITEM - ADMIN ONLY
 @router.patch("/{im_id}")
-def update_item(im_id: int, item: ItemMasterUpdate):
+def update_item(
+    im_id: int,
+    item: ItemMasterUpdate,
+    user: dict = Depends(require_inventory_admin)
+):
     fields = item.model_dump(exclude_unset=True)
 
     if not fields:
@@ -169,15 +193,15 @@ def update_item(im_id: int, item: ItemMasterUpdate):
 
     if "sku" in fields and fields["sku"] is None:
         raise HTTPException(
-        status_code=400,
-        detail="SKU cannot be NULL"
-    )
+            status_code=400,
+            detail="SKU cannot be NULL"
+        )
 
     if "item_name" in fields and fields["item_name"] is None:
         raise HTTPException(
-        status_code=400,
-        detail="Item Name cannot be NULL"
-    )
+            status_code=400,
+            detail="Item Name cannot be NULL"
+        )
 
     set_clause = ", ".join(
         f'"{COLUMNS[key]}" = %s' for key in fields
@@ -207,8 +231,13 @@ def update_item(im_id: int, item: ItemMasterUpdate):
 
     return updated_item
 
+
+# DELETE ITEM - ADMIN ONLY
 @router.delete("/{im_id}", status_code=204)
-def delete_item(im_id: int):
+def delete_item(
+    im_id: int,
+    user: dict = Depends(require_inventory_admin)
+):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
@@ -228,4 +257,3 @@ def delete_item(im_id: int):
             status_code=409,
             detail="Cannot delete this item because it is being used in other records."
         )
-

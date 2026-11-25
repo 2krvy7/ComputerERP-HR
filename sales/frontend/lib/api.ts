@@ -1,10 +1,10 @@
-import type { SalesQuotation } from "../types/quotation";
 
 import type {
   SalesOrder,
   SalesOrderCreate,
   SalesOrderStatus,
   SalesOrderItem,
+  FinishedGoodItem,
 } from "../types/order";
 
 import type {
@@ -20,37 +20,31 @@ import type {
 } from "../types/invoice";
 
 import type { AccountsReceivable } from "../types/accounts-receivable";
-
 import type { Collection, CollectionCreate } from "../types/payment";
-
 import type { SalesReturn, SalesReturnCreate } from "../types/return";
 
-
-export const quotationAPI = {
-  getAll: () =>
-    request<SalesQuotation[]>("/api/quotations"),
-
-  getById: (id: number) =>
-    request<SalesQuotation>(`/api/quotations/${id}`),
-};
 import type {
   Customer,
   CustomerCreate,
   CustomerUpdate,
 } from "../types/customer";
 
+import type {
+  SalesQuotation,
+  QuotationStatus,
+} from "../types/quotation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-if (!API_URL) {
-  throw new Error("NEXT_PUBLIC_API_URL is not configured.");
-}
 
 export async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  if (!API_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+
+  const response = await fetch(endpoint, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -61,6 +55,7 @@ export async function request<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => null);
+
     throw new Error(
       error?.detail || `Request failed: ${response.status}`
     );
@@ -68,6 +63,87 @@ export async function request<T>(
 
   return response.json() as Promise<T>;
 }
+
+// AUTHENTICATION
+
+export interface AuthUser {
+  user_id: string;
+  username: string;
+  email: string;
+  role_id: number;
+  role: "SuperAdmin" | "Admin" | "Staff";
+  dept_id: string | null;
+  must_change_password: boolean;
+}
+
+export interface ProfileUpdate {
+  username?: string;
+  email?: string;
+}
+
+export interface ChangePassword {
+  current_password: string;
+  new_password: string;
+}
+
+export const authAPI = {
+  login: (email: string, password: string) =>
+    request<AuthUser>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logout: () =>
+    request<{ message: string }>("/api/auth/logout", {
+      method: "POST",
+    }),
+
+  getMe: () =>
+    request<AuthUser>("/api/auth/me"),
+
+  updateProfile: (data: ProfileUpdate) =>
+    request<AuthUser>("/api/auth/me", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  changePassword: (data: ChangePassword) =>
+    request<{ message: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+};
+
+// USER MANAGEMENT
+
+export const userAPI = {
+  getAll: () =>
+    request<AuthUser[]>("/api/users"),
+
+  create: (data: {
+    full_name: string;
+    email: string;
+    password: string;
+  }) =>
+    request<AuthUser>("/api/users", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  update: (id: number, data: { full_name: string }) =>
+    request<AuthUser>(`/api/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  updateStatus: (id: number, status: boolean) =>
+    request<AuthUser>(`/api/users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+};
+
+// CUSTOMERS
 
 export const customerAPI = {
   getAll: (search = "") => {
@@ -107,6 +183,9 @@ export const customerAPI = {
       method: "DELETE",
     }),
 };
+
+// SALES ORDERS
+
 export const salesOrderAPI = {
   getAll: () =>
     request<SalesOrder[]>("/api/orders"),
@@ -130,7 +209,28 @@ export const salesOrderAPI = {
       method: "PATCH",
       body: JSON.stringify({ status }),
     }),
+
+  getFinishedGoods: (search = "") =>
+    request<FinishedGoodItem[]>(
+      `/api/orders/finished-goods?search=${encodeURIComponent(search)}`
+    ),
+
+  updateSellingPrice: (
+    itemId: number,
+    markupPercentage: number
+  ) =>
+    request<FinishedGoodItem>(
+      `/api/orders/items/${itemId}/selling-price`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          markup_percentage: markupPercentage,
+        }),
+      }
+    ),
 };
+
+// DELIVERIES
 
 export const deliveryAPI = {
   getAll: () =>
@@ -148,12 +248,21 @@ export const deliveryAPI = {
       body: JSON.stringify(data),
     }),
 
-  updateStatus: (id: number, status: DeliveryStatus) =>
+  updateStatus: (
+    id: number,
+    status: DeliveryStatus,
+    receivedBy?: string
+  ) =>
     request<Delivery>(`/api/deliveries/${id}/status`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        received_by: receivedBy,
+      }),
     }),
 };
+
+// SALES INVOICES
 
 export const invoiceAPI = {
   getAll: () =>
@@ -169,6 +278,8 @@ export const invoiceAPI = {
     }),
 };
 
+// ACCOUNTS RECEIVABLE
+
 export const accountsReceivableAPI = {
   getAll: () =>
     request<AccountsReceivable[]>("/api/accounts-receivable"),
@@ -176,6 +287,8 @@ export const accountsReceivableAPI = {
   getById: (id: number) =>
     request<AccountsReceivable>(`/api/accounts-receivable/${id}`),
 };
+
+// PAYMENT COLLECTIONS
 
 export const paymentCollectionAPI = {
   getAll: () =>
@@ -191,6 +304,8 @@ export const paymentCollectionAPI = {
     }),
 };
 
+// SALES RETURNS
+
 export const salesReturnAPI = {
   getAll: () =>
     request<SalesReturn[]>("/api/returns"),
@@ -202,5 +317,21 @@ export const salesReturnAPI = {
     request<SalesReturn>("/api/returns", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+};
+
+// SALES QUOTATIONS
+
+export const quotationAPI = {
+  getAll: () =>
+    request<SalesQuotation[]>("/api/quotations"),
+
+  getById: (id: number) =>
+    request<SalesQuotation>(`/api/quotations/${id}`),
+
+  updateStatus: (id: number, status: QuotationStatus) =>
+    request<SalesQuotation>(`/api/quotations/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
     }),
 };

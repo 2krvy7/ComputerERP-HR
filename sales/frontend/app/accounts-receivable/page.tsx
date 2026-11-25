@@ -25,6 +25,8 @@ type ARRow = {
   status: string;
 };
 
+const PAGE_SIZE = 10;
+
 const money = (value: number) =>
   new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -33,9 +35,24 @@ const money = (value: number) =>
 
 const amount = (value: string | number) => Number(value) || 0;
 
+const formatDate = (value: string | null) => {
+  if (!value) return "—";
+
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-PH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
 export default function AccountsReceivablePage() {
   const [records, setRecords] = useState<ARRow[]>([]);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -97,6 +114,7 @@ export default function AccountsReceivablePage() {
       );
 
       setRecords(rows);
+      setPage(1);
     } catch (err) {
       setError(
         err instanceof Error
@@ -109,22 +127,25 @@ export default function AccountsReceivablePage() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
   const filteredRecords = useMemo(() => {
-    const keyword = search.toLowerCase();
+    const keyword = search.trim().toLowerCase();
+
+    if (!keyword) return records;
 
     return records.filter(
       (record) =>
         String(record.AR_ID).includes(keyword) ||
         String(record.invoice_id).includes(keyword) ||
-        record.customer_name.toLowerCase().includes(keyword)
+        record.customer_name.toLowerCase().includes(keyword) ||
+        record.status.toLowerCase().includes(keyword)
     );
   }, [records, search]);
 
-  const totals = useMemo(() => {
-    return {
+  const totals = useMemo(
+    () => ({
       amountDue: records.reduce(
         (sum, record) => sum + record.amount_due,
         0
@@ -140,170 +161,217 @@ export default function AccountsReceivablePage() {
       unpaid: records.filter(
         (record) => record.status !== "Paid"
       ).length,
-    };
-  }, [records]);
+    }),
+    [records]
+  );
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredRecords.length / PAGE_SIZE)
+  );
+
+  const currentPage = Math.min(page, totalPages);
+
+  const paginatedRecords = useMemo(() => {
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+
+    return filteredRecords.slice(
+      startIndex,
+      startIndex + PAGE_SIZE
+    );
+  }, [filteredRecords, currentPage]);
+
+  const startRecord =
+    filteredRecords.length === 0
+      ? 0
+      : (currentPage - 1) * PAGE_SIZE + 1;
+
+  const endRecord = Math.min(
+    currentPage * PAGE_SIZE,
+    filteredRecords.length
+  );
 
   const statusStyle = (status: string) => {
     switch (status) {
       case "Paid":
         return "bg-green-100 text-green-700";
       case "Partially Paid":
-        return "bg-yellow-100 text-yellow-700";
+        return "bg-amber-100 text-amber-700";
       default:
         return "bg-red-100 text-red-700";
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 p-6 text-gray-900 md:p-10">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-500">
-              Sales Module
-            </p>
-            <h1 className="text-3xl font-bold">
-              Accounts Receivable
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Monitor customer balances and outstanding invoices.
-            </p>
-          </div>
-
-          <button
-            onClick={loadData}
-            disabled={loading}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-100 disabled:opacity-50"
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-
+    <main className="min-h-full bg-white p-5 text-gray-900 md:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard
             title="Total Receivables"
             value={money(totals.amountDue)}
-            color="text-blue-600"
           />
           <SummaryCard
             title="Amount Collected"
             value={money(totals.amountPaid)}
-            color="text-green-600"
           />
           <SummaryCard
             title="Outstanding Balance"
             value={money(totals.balance)}
-            color="text-red-600"
           />
           <SummaryCard
             title="Unpaid Accounts"
             value={String(totals.unpaid)}
-            color="text-orange-600"
           />
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">
-              Receivable Records
-            </h2>
+        <section className="overflow-hidden rounded-xl border border-gray-300 bg-gray-200">
+          <div className="flex flex-col gap-3 border-b border-gray-300 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold text-gray-900">
+                Receivable Records
+              </h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Monitor outstanding customer balances.
+              </p>
+            </div>
 
             <input
               type="text"
-              placeholder="Search invoice or customer..."
+              placeholder="Search AR, invoice, or customer..."
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-blue-500 sm:max-w-xs"
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-gray-500 sm:max-w-sm"
             />
           </div>
 
           {error && (
-            <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <div className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {error}
             </div>
           )}
 
           {loading ? (
-            <p className="py-10 text-center text-sm text-gray-500">
+            <div className="py-12 text-center text-sm text-gray-600">
               Loading accounts receivable...
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-4 py-3">AR No.</th>
-                    <th className="px-4 py-3">Invoice No.</th>
-                    <th className="px-4 py-3">Customer</th>
-                    <th className="px-4 py-3">Due Date</th>
-                    <th className="px-4 py-3">Amount Due</th>
-                    <th className="px-4 py-3">Amount Paid</th>
-                    <th className="px-4 py-3">Balance</th>
-                    <th className="px-4 py-3">Status</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-gray-100">
-                  {filteredRecords.map((record) => (
-                    <tr
-                      key={record.AR_ID}
-                      className="hover:bg-gray-50"
-                    >
-                      <td className="px-4 py-3 font-medium">
-                        AR-{record.AR_ID}
-                      </td>
-                      <td className="px-4 py-3">
-                        INV-{record.invoice_id}
-                      </td>
-                      <td className="px-4 py-3">
-                        {record.customer_name}
-                      </td>
-                      <td className="px-4 py-3">
-                        {record.due_date
-                          ? new Date(
-                              `${record.due_date}T00:00:00`
-                            ).toLocaleDateString("en-PH")
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {money(record.amount_due)}
-                      </td>
-                      <td className="px-4 py-3 text-green-700">
-                        {money(record.amount_paid)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold">
-                        {money(record.balance)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-medium ${statusStyle(record.status)}`}
-                        >
-                          {record.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {filteredRecords.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={8}
-                        className="px-4 py-10 text-center text-gray-500"
-                      >
-                        {search
-                          ? "No matching records found."
-                          : "No accounts receivable records yet."}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
             </div>
-          )}
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[950px] text-left text-sm">
+                  <thead className="bg-gray-100 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3 text-center">AR No.</th>
+                      <th className="px-4 py-3 text-center">Invoice No.</th>
+                      <th className="px-4 py-3">Customer</th>
+                      <th className="px-4 py-3">Due Date</th>
+                      <th className="px-4 py-3 text-right">Amount Due</th>
+                      <th className="px-4 py-3 text-right">Amount Paid</th>
+                      <th className="px-4 py-3 text-right">Balance</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                    </tr>
+                  </thead>
 
-          <div className="mt-4 text-sm text-gray-500">
-            Showing {filteredRecords.length} of {records.length} records
-          </div>
+                  <tbody className="divide-y divide-gray-300">
+                    {paginatedRecords.map((record) => (
+                      <tr
+                        key={record.AR_ID}
+                        className="transition-colors hover:bg-gray-100"
+                      >
+                        <td className="px-4 py-3 text-center font-medium">
+                          AR-{record.AR_ID}
+                        </td>
+                        <td className="px-4 py-3 text-center font-medium">
+                          INV-{record.invoice_id}
+                        </td>
+                        <td className="px-4 py-3">
+                          {record.customer_name}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                          {formatDate(record.due_date)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums">
+                          {money(record.amount_due)}
+                        </td>
+                        <td className="px-4 py-3 text-right tabular-nums text-green-700">
+                          {money(record.amount_paid)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold tabular-nums">
+                          {money(record.balance)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${statusStyle(record.status)}`}
+                          >
+                            {record.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+
+                    {paginatedRecords.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-12 text-center text-gray-600"
+                        >
+                          {search
+                            ? "No matching records found."
+                            : "No accounts receivable records yet."}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t border-gray-300 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-600">
+                  Showing{" "}
+                  <span className="font-semibold text-gray-900">
+                    {startRecord} to {endRecord}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-semibold text-gray-900">
+                    {filteredRecords.length}
+                  </span>{" "}
+                  records
+                </p>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((current) => Math.max(1, current - 1))
+                    }
+                    disabled={currentPage === 1}
+                    className="rounded-lg border border-gray-400 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+
+                  <span className="min-w-20 text-center text-sm font-medium text-gray-700">
+                    Page {currentPage} of {totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPage((current) =>
+                        Math.min(totalPages, current + 1)
+                      )
+                    }
+                    disabled={currentPage === totalPages}
+                    className="rounded-lg border border-gray-400 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       </div>
     </main>
@@ -313,16 +381,14 @@ export default function AccountsReceivablePage() {
 function SummaryCard({
   title,
   value,
-  color,
 }: {
   title: string;
   value: string;
-  color: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-gray-500">{title}</p>
-      <p className={`mt-2 text-2xl font-bold ${color}`}>
+    <div className="rounded-xl border border-gray-300 bg-gray-200 p-5">
+      <p className="text-sm text-gray-600">{title}</p>
+      <p className="mt-2 text-xl font-bold text-gray-900">
         {value}
       </p>
     </div>

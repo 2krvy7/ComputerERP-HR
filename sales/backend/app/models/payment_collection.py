@@ -15,6 +15,7 @@ class PaymentCollection(Base):
         Integer,
         primary_key=True,
         autoincrement=True,
+        index=True,
     )
 
     AR_ID: Mapped[int] = mapped_column(
@@ -29,11 +30,16 @@ class PaymentCollection(Base):
     )
 
     payment_method: Mapped[str | None] = mapped_column(
-        String,
+        String(50),
+        nullable=True,
+    )
+
+    transaction_number: Mapped[str | None] = mapped_column(
+        String(100),
         nullable=True,
     )
 
     amount_paid: Mapped[Decimal] = mapped_column(
-        Numeric,
+        Numeric(12, 2),
         nullable=False,
     )

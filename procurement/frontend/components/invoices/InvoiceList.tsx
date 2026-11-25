@@ -1,24 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Pagination from "@/components/Pagination"
+import { printReport } from "@/components/printReport";
 
+// One row per purchase order, taken from Finance's payable (APInvoice). Read-only.
 type Invoice = {
-  PI_ID: number;
+  apInvoiceID: number;
   PO_ID: number;
-  InvoiceDate: string | null;
-  TaxAmount: number | null;
-  TotalDue: number | null;
+  OrderDate: string;
   order_total: number;
   SupplierName: string;
   Item_Name: string;
-  apInvoiceID: number | null;      // null = Finance hasn't picked it up yet
-  payment_status: string | null;   // whatever text Finance stores in APInvoice.status
+  Quantity: number;
+  amount: number | null;
   totalPaid: number | null;
   remainingBalance: number | null;
+  payment_status: string | null;   // whatever text Finance stores in APInvoice.status
   dueDate: string | null;
 };
 
+<<<<<<< HEAD
+<<<<<<< HEAD
 const FILTERS = ["All", "Awaiting Finance", "Outstanding", "Paid"] as const;
+=======
+const PAGE_SIZE = 10;
+const FILTERS = ["All", "Outstanding", "Paid"] as const;
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+const PAGE_SIZE = 10;
+const FILTERS = ["All", "Outstanding", "Paid"] as const;
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
 const money = (n: number | null) =>
   n === null || n === undefined
@@ -31,7 +43,6 @@ const isPaid = (i: Invoice) => (i.payment_status ?? "").toLowerCase() === "paid"
 
 // Colors for the payment pill. Finance decides the status words, so unknown ones still show up.
 function paymentBadge(i: Invoice) {
-  if (i.apInvoiceID === null) return { label: "Awaiting Finance", bg: "#e4e9ec", text: "#55656b" };
   const s = (i.payment_status ?? "").toLowerCase();
   if (s === "paid") return { label: i.payment_status!, bg: "#dff1ec", text: "#2a7a66" };
   if (s === "overdue") return { label: i.payment_status!, bg: "#f6e1e1", text: "#a14646" };
@@ -44,6 +55,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -64,8 +76,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
   const filtered = invoices.filter((i) => {
     const matchesFilter =
       filter === "All" ||
-      (filter === "Awaiting Finance" && i.apInvoiceID === null) ||
-      (filter === "Outstanding" && i.apInvoiceID !== null && !isPaid(i)) ||
+      (filter === "Outstanding" && !isPaid(i)) ||
       (filter === "Paid" && isPaid(i));
     const matchesSearch =
       !text ||
@@ -73,7 +84,44 @@ export default function InvoiceList({ limit }: { limit?: number }) {
       i.Item_Name.toLowerCase().includes(text);
     return matchesFilter && matchesSearch;
   });
+<<<<<<< HEAD
+<<<<<<< HEAD
   const shown = limit ? filtered.slice(0, limit) : filtered;
+=======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
+  const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  function handlePrint() {
+    const total = filtered.reduce((s, i) => s + Number(i.amount ?? 0), 0);
+    const paid = filtered.reduce((s, i) => s + Number(i.totalPaid ?? 0), 0);
+    const balance = filtered.reduce((s, i) => s + Number(i.remainingBalance ?? 0), 0);
+    printReport({
+      title: "Purchase Invoices Report",
+      subtitle: `Filter: ${filter}${search ? ` · Search: "${search}"` : ""}`,
+      summary: [
+        ["Invoices", String(filtered.length)],
+        ["Total amount", money(total)],
+        ["Paid", money(paid)],
+        ["Outstanding balance", money(balance)],
+      ],
+      headers: ["Invoice", "Order", "Supplier", "Item", "Ordered", "Amount", "Paid", "Balance", "Payment", "Due date"],
+      rows: filtered.map((i) => [
+        `#${i.apInvoiceID}`, `#${i.PO_ID}`, i.SupplierName, i.Item_Name, date(i.OrderDate),
+        money(i.amount), money(i.totalPaid), money(i.remainingBalance),
+        paymentBadge(i).label, date(i.dueDate),
+      ]),
+    });
+  }
+
+  useEffect(() => {
+    const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    if (page > pages) setPage(pages);
+  }, [filtered.length, page]);
+<<<<<<< HEAD
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -112,7 +160,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             {FILTERS.map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setPage(1); }}
                 style={{
                   padding: "0.4vw 1vw",
                   borderRadius: "99vw",
@@ -131,7 +179,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           <div style={{ display: "flex", alignItems: "center", gap: "1vw" }}>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search supplier or item..."
               style={{
                 width: "15vw",
@@ -147,6 +195,15 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             <span style={{ fontSize: "0.8vw", color: "#668d98", whiteSpace: "nowrap" }}>
               {filtered.length} {filtered.length === 1 ? "invoice" : "invoices"}
             </span>
+            <button
+              onClick={handlePrint}
+              style={{
+                border: "none", cursor: "pointer", padding: "0.45vw 1.1vw", borderRadius: "99vw",
+                fontSize: "0.8vw", fontWeight: 600, backgroundColor: "#365f68", color: "#ffffff",
+              }}
+            >
+              Print report
+            </button>
           </div>
         </div>
       )}
@@ -158,12 +215,12 @@ export default function InvoiceList({ limit }: { limit?: number }) {
         ) : error ? (
           note(`Failed to load: ${error}`)
         ) : shown.length === 0 ? (
-          note(invoices.length === 0 ? "No invoices yet. They appear once Finance processes an order." : "No invoices match.")
+          note(invoices.length === 0 ? "No invoices yet. They appear when a purchase order is created." : "No invoices match.")
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85vw" }}>
             <thead>
               <tr>
-                {["Invoice", "Order", "Supplier", "Date", "Tax", "Total due", "Balance", "Payment", "Due date"].map((h) => (
+                {["Invoice", "Order", "Supplier", "Ordered", "Amount", "Paid", "Balance", "Payment", "Due date"].map((h) => (
                   <th
                     key={h}
                     style={{
@@ -185,17 +242,17 @@ export default function InvoiceList({ limit }: { limit?: number }) {
               {shown.map((i) => {
                 const b = paymentBadge(i);
                 return (
-                  <tr key={i.PI_ID} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td style={{ ...cell, color: "#888" }}>#{i.PI_ID}</td>
+                  <tr key={i.apInvoiceID} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                    <td style={{ ...cell, color: "#888" }}>#{i.apInvoiceID}</td>
                     <td style={{ ...cell, color: "#888" }}>#{i.PO_ID}</td>
                     <td style={cell}>
                       <div style={{ fontWeight: 500 }}>{i.SupplierName}</div>
                       <div style={{ fontSize: "0.7vw", color: "#999" }}>{i.Item_Name}</div>
                     </td>
-                    <td style={cell}>{date(i.InvoiceDate)}</td>
-                    <td style={cell}>{money(i.TaxAmount)}</td>
-                    <td style={{ ...cell, fontWeight: 500 }}>{money(i.TotalDue)}</td>
-                    <td style={cell}>{i.apInvoiceID === null ? "—" : money(i.remainingBalance)}</td>
+                    <td style={cell}>{date(i.OrderDate)}</td>
+                    <td style={{ ...cell, fontWeight: 500 }}>{money(i.amount)}</td>
+                    <td style={cell}>{money(i.totalPaid)}</td>
+                    <td style={cell}>{money(i.remainingBalance)}</td>
                     <td style={cell}>
                       <span
                         style={{
@@ -219,6 +276,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           </table>
         )}
       </div>
+      {!limit && <Pagination total={filtered.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
     </div>
   );
 }

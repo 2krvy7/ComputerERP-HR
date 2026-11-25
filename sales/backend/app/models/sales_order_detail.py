@@ -1,6 +1,7 @@
+
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Integer, Numeric
+from sqlalchemy import ForeignKey, Integer, Numeric, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -46,6 +47,12 @@ class SalesOrderDetail(Base):
     line_total: Mapped[Decimal] = mapped_column(
         Numeric,
         nullable=False,
+    )
+
+    stock_allocations: Mapped[list[dict] | None] = mapped_column(
+        JSON,
+        nullable=True,
+        default=None,
     )
 
     order = relationship(
