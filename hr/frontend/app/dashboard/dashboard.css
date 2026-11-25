@@ -123,6 +123,19 @@ body {
   box-shadow: 0 2px 7px rgba(39, 82, 91, 0.04);
 }
 
+/* =========================
+   FIXED RECENT EMPLOYEES CARD
+========================= */
+
+.dashboard-grid .employee-card:first-child {
+  height: 310px;
+  overflow: hidden;
+}
+
+/* =========================
+   CARD HEADER
+========================= */
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -158,12 +171,34 @@ body {
 ========================= */
 
 .table-wrapper {
-  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
-table {
+.table-wrapper table {
   width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
+}
+
+/* EMPLOYEE */
+.table-wrapper th:nth-child(1),
+.table-wrapper td:nth-child(1) {
+  width: 48%;
+}
+
+/* POSITION */
+.table-wrapper th:nth-child(2),
+.table-wrapper td:nth-child(2) {
+  width: 29%;
+}
+
+/* STATUS */
+.table-wrapper th:nth-child(3),
+.table-wrapper td:nth-child(3) {
+  width: 23%;
 }
 
 thead {
@@ -177,6 +212,7 @@ th {
   font-size: 9px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 td {
@@ -185,6 +221,7 @@ td {
   color: #3e626b;
   font-size: 10px;
   white-space: nowrap;
+  overflow: hidden;
 }
 
 tbody tr:hover {
@@ -199,11 +236,13 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 9px;
+  min-width: 0;
 }
 
 .employee-avatar {
   width: 30px;
   height: 30px;
+  min-width: 30px;
   border-radius: 50%;
   background: #dceef0;
   color: #2f6570;
@@ -214,10 +253,18 @@ tbody tr:hover {
   font-weight: bold;
 }
 
+.employee-name > div:last-child {
+  min-width: 0;
+  overflow: hidden;
+}
+
 .employee-name strong {
   display: block;
   color: #285b66;
   font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .employee-name small {
@@ -225,11 +272,26 @@ tbody tr:hover {
   color: #91a8ad;
   font-size: 8px;
   margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* =========================
+   POSITION COLUMN
+========================= */
+
+.table-wrapper td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* =========================
    STATUS
 ========================= */
+
+.table-wrapper td:nth-child(3) {
+  overflow: visible;
+  white-space: nowrap;
+}
 
 .status {
   display: inline-block;
@@ -237,6 +299,7 @@ tbody tr:hover {
   padding: 5px 9px;
   font-size: 8px;
   font-weight: bold;
+  white-space: nowrap;
 }
 
 .status.active {
@@ -476,6 +539,10 @@ tbody tr:hover {
 
   .bottom-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid .employee-card:first-child {
+    height: 310px;
   }
 }
 
