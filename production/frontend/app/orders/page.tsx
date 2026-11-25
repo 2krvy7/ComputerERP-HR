@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -14,6 +15,7 @@ type ProductionOrder = {
   QuantityProduced: number;
   StartDate: string | null;
   Deadline: string | null;
+  CompletionDate: string | null;
   status: string;
 };
 
@@ -92,11 +94,15 @@ export default function OrdersPage() {
       const response = await fetch(`${API_URL}/orders/finance`);
 
       if (!response.ok) {
-        throw new Error("Failed to retrieve completed orders for Price Review.");
+        throw new Error(
+          "Failed to retrieve completed orders for Price Review."
+        );
       }
 
       const data: FinanceOrder[] = await response.json();
+      console.log("FINANCE ORDERS:", data);
       setFinanceOrders(data);
+
     } catch (err) {
       setFinanceError(
         err instanceof Error ? err.message : "Something went wrong."
@@ -117,7 +123,9 @@ export default function OrdersPage() {
       );
 
       if (!response.ok) {
-        throw new Error("Failed to retrieve production batches for handoff.");
+        throw new Error(
+          "Failed to retrieve production batches for handoff."
+        );
       }
 
       const data: HandoffOrder[] = await response.json();
@@ -180,11 +188,7 @@ export default function OrdersPage() {
     if (activeTab === "Product Handoff") {
       fetchHandoffOrders();
     }
-  }, [
-    activeTab,
-    fetchFinanceOrders,
-    fetchHandoffOrders,
-  ]);
+  }, [activeTab, fetchFinanceOrders, fetchHandoffOrders]);
 
   const filteredOrders = orders.filter((order) => {
     const search = searchTerm.toLowerCase();
@@ -273,7 +277,7 @@ export default function OrdersPage() {
             </div>
           )}
 
-          <div className="p-5 border-b border-gray-200">
+          <div className="p-5 border-b border-gray-200 flex flex-wrap gap-3">
             <input
               type="text"
               value={searchTerm}
@@ -320,20 +324,23 @@ export default function OrdersPage() {
 
                 <tbody className="divide-y divide-gray-100">
                   {loading ? (
-                    <tr>
+                    <tr key="loading-production-orders">
                       <td colSpan={7} className="px-5 py-8 text-center text-gray-500">
                         Loading production orders...
                       </td>
                     </tr>
                   ) : filteredOrders.length === 0 ? (
-                    <tr>
+                    <tr key="empty-production-orders">
                       <td colSpan={7} className="px-5 py-8 text-center text-gray-500">
                         No production orders found.
                       </td>
                     </tr>
                   ) : (
                     paginatedOrders.map((order) => (
-                      <tr key={order.Production_ID} className="hover:bg-gray-50">
+                      <tr
+                        key={order.Production_ID}
+                        className="hover:bg-gray-50"
+                      >
                         <td className="px-5 py-3 font-semibold text-gray-700">
                           {order.ProductionOrder_ID
                             ? `PO-${String(order.ProductionOrder_ID).padStart(4, "0")}`
@@ -384,7 +391,9 @@ export default function OrdersPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    onClick={() =>
+                      setCurrentPage((page) => Math.max(1, page - 1))
+                    }
                     disabled={currentPage === 1}
                     className="px-3 py-1.5 text-sm border rounded-lg disabled:opacity-40"
                   >
@@ -444,20 +453,23 @@ export default function OrdersPage() {
 
               <tbody className="divide-y divide-gray-100">
                 {financeLoading ? (
-                  <tr>
+                  <tr key="loading-finance-orders">
                     <td colSpan={5} className="px-5 py-8 text-center text-gray-500">
                       Loading completed orders...
                     </td>
                   </tr>
                 ) : financeOrders.length === 0 ? (
-                  <tr>
+                  <tr key="empty-finance-orders">
                     <td colSpan={5} className="px-5 py-8 text-center text-gray-500">
                       No completed orders available for price review.
                     </td>
                   </tr>
                 ) : (
-                  financeOrders.map((order) => (
-                    <tr key={order.Production_ID} className="hover:bg-gray-50">
+                  financeOrders.map((order, index) => (
+                    <tr
+                      key={`${order.Production_ID ?? order.ProductionOrder_ID ?? "finance"}-${index}`}
+                      className="hover:bg-gray-50"
+                    >
                       <td className="px-5 py-3 font-semibold text-gray-700">
                         {order.ProductionOrder_ID
                           ? `PO-${String(order.ProductionOrder_ID).padStart(4, "0")}`
@@ -628,7 +640,9 @@ export default function OrdersPage() {
                       </p>
                     </div>
 
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium w-fit ${getStatusStyle(order.status)}`}>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium w-fit ${getStatusStyle(order.status)}`}
+                    >
                       Released
                     </span>
                   </div>
