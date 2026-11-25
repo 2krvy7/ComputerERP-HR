@@ -22,3 +22,5 @@ venv/
 __pycache__/
 *.pyc
 sales/backend/env
+__pycache__/
+*.pyc
