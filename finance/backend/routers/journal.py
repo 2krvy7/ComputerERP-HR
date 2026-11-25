@@ -23,8 +23,8 @@ class NewJournalPayload(BaseModel):
 
 def auto_sync_journal_entries(cur):
     """
-    Automatically collects all unposted AP Payments, AR Receipts, and Direct Expenses
-    and posts balanced double-entry lines into JournalEntry, JournalEntryLine, and GeneralLedger.
+    Automatically collects all unposted AP Payments, AR Receipts (with Sales Revenue & Output VAT split),
+    and Direct Expenses, and posts balanced double-entry lines into JournalEntry, JournalEntryLine, and GeneralLedger.
     """
     # 1. Auto-detect core Chart of Accounts IDs safely
     cur.execute("""
@@ -50,16 +50,30 @@ def auto_sync_journal_entries(cur):
 
     cur.execute("""
         SELECT "accountID" FROM "ChartOfAccounts"
-        WHERE "accountCode" IN ('1100', '1200')
-           OR "accountName" ILIKE '%Receivable%'
-        ORDER BY "accountCode" ASC
+        WHERE "accountCode" IN ('4010', '4000')
+           OR "accountName" ILIKE '%Sales%'
+           OR "accountName" ILIKE '%Revenue%'
+           OR LOWER("accountType") = 'revenue'
+        ORDER BY CASE WHEN "accountCode" = '4010' THEN 1
+                      WHEN "accountName" ILIKE '%Sales%' THEN 2
+                      ELSE 3 END, "accountCode" ASC
         LIMIT 1
     """)
-    ar_row = cur.fetchone()
+    rev_row = cur.fetchone()
+
+    cur.execute("""
+        SELECT "accountID" FROM "ChartOfAccounts"
+        WHERE LOWER("accountType") = 'liability'
+          AND ("accountName" ILIKE '%VAT%' OR "accountName" ILIKE '%Tax%' OR "accountCode" = '2200')
+        ORDER BY CASE WHEN "accountName" ILIKE '%VAT%' THEN 1 ELSE 2 END, "accountCode" ASC
+        LIMIT 1
+    """)
+    vat_row = cur.fetchone()
 
     cash_id = cash_row["accountID"] if cash_row else None
     ap_id = ap_row["accountID"] if ap_row else None
-    ar_id = ar_row["accountID"] if ar_row else cash_id
+    rev_id = rev_row["accountID"] if rev_row else cash_id
+    vat_id = vat_row["accountID"] if vat_row else ap_id
 
     if not cash_id:
         return
@@ -92,34 +106,58 @@ def auto_sync_journal_entries(cur):
             cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (ap_id, jid, amt, -amt))
             cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (cash_id, jid, amt, -amt))
 
-    # 3. Auto-post all unposted AR Receipts (excluding seed arInvoiceID = 1)
-    if ar_id:
+
+    # 3. Auto-post AR Receipts grouped per ARInvoice (Splits Sales Revenue & Output VAT Payable)
+    if rev_id:
         cur.execute("""
-            SELECT r."receiptID", r."arInvoiceID", r."paymentDate", r."amount"
+            SELECT 
+                a."arInvoiceID",
+                a."salesInvoiceID",
+                MAX(r."paymentDate") AS payment_date,
+                COALESCE(SUM(r."amount"), 0) AS total_received,
+                COALESCE(SUM(CASE WHEN b."bankName" ILIKE '%Tax%' THEN r."amount" ELSE 0 END), 0) AS tax_received
             FROM "ARReceipt" r
+            JOIN "ARInvoice" a ON r."arInvoiceID" = a."arInvoiceID"
+            LEFT JOIN "BankAccount" b ON r."bankAccountID" = b."bankAccountID"
             WHERE COALESCE(r."amount", 0) > 0
-              AND r."arInvoiceID" != 1
+              AND a."arInvoiceID" != 1
               AND NOT EXISTS (
                   SELECT 1 FROM "JournalEntry" j
-                  WHERE j."sourceModule" = 'AR Collection' AND j."sourceID" = r."receiptID"
+                  WHERE j."sourceModule" = 'AR Collection' AND j."sourceID" = a."arInvoiceID"
               )
-            ORDER BY r."receiptID" ASC
+            GROUP BY a."arInvoiceID", a."salesInvoiceID"
+            ORDER BY a."arInvoiceID" ASC
         """)
         for rec in cur.fetchall():
-            rid = rec["receiptID"]
-            amt = float(rec["amount"])
-            ref = f"REC-{str(rid).zfill(4)}"
+            aid = rec["arInvoiceID"]
+            total_amt = round(float(rec["total_received"] or 0), 2)
+            tax_amt = round(float(rec["tax_received"] or 0), 2)
+            net_sales = round(max(total_amt - tax_amt, 0.0), 2)
+
+            ref = f"REC-{str(aid).zfill(4)}"
+            si_label = f" (Sales Invoice #{rec['salesInvoiceID']})" if rec["salesInvoiceID"] else ""
+            desc = f"AR Collection{si_label} — Net Sales: {net_sales:,.2f} (BPI Sales), Output VAT: {tax_amt:,.2f} (BPI Tax Pay)"
+
             cur.execute("""
                 INSERT INTO "JournalEntry" ("journalDate", "referenceNo", "sourceModule", "description", "sourceID")
                 VALUES (%s, %s, 'AR Collection', %s, %s)
                 RETURNING "journalID"
-            """, (rec["paymentDate"], ref, f"Customer collection for AR Invoice #{rec['arInvoiceID']}", rid))
+                """, (rec["payment_date"], ref, desc, aid))
             jid = cur.fetchone()["journalID"]
 
-            cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (jid, cash_id, amt))
-            cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, ar_id, amt))
-            cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (cash_id, jid, amt, amt))
-            cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (ar_id, jid, amt, -amt))
+            # Line 1: Debit Cash in Bank (Total received across BPI Sales + BPI Tax Pay)
+            cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (jid, cash_id, total_amt))
+            cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (cash_id, jid, total_amt, total_amt))
+
+            # Line 2: Credit Sales Revenue (Net sales in BPI Sales)
+            if net_sales > 0:
+                cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, rev_id, net_sales))
+                cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (rev_id, jid, net_sales, net_sales))
+
+            # Line 3: Credit Output VAT Payable (Separated tax in BPI Tax Pay)
+            if tax_amt > 0 and vat_id:
+                cur.execute('INSERT INTO "JournalEntryLine" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, vat_id, tax_amt))
+                cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (vat_id, jid, tax_amt, tax_amt))
 
     # 4. Auto-post any unposted Direct Expenses (where postingID IS NULL and productionID IS NULL)
     cur.execute("""
@@ -145,6 +183,7 @@ def auto_sync_journal_entries(cur):
         cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (exp["accountID"], jid, amt, amt))
         cur.execute('INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (cash_id, jid, amt, -amt))
         cur.execute('UPDATE "Expense" SET "postingID" = %s WHERE "expenseID" = %s', (jid, eid))
+
 
 @router.get("/")
 def get_journal_entries():

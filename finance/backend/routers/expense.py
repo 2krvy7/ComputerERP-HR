@@ -857,13 +857,20 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
             po_table = get_exact_table_name(cur, "ProductionOrder")
             if po_table and exp_table and payload.productionOrderIds:
                 po_cols = get_exact_cols(cur, po_table)
-                po_pk = po_cols.get("productionid", "productionID")
-                po_cost = po_cols.get("totalcost") or po_cols.get("total_cost") or "totalCost"
+                po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+                po_cost = (
+                    po_cols.get("totalcost")
+                    or po_cols.get("total_cost")
+                    or po_cols.get("cost")
+                    or po_cols.get("amount")
+                    or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+                )
                 e_cols = get_exact_cols(cur, exp_table)
                 e_pk = e_cols.get("expenseid", "expenseID")
                 e_acc = e_cols.get("accountid", "accountID")
                 e_prod = e_cols.get("productionid", "productionID")
                 e_amt = e_cols.get("amount", "amount")
+
 
                 for poid in payload.productionOrderIds:
                     cur.execute(f'SELECT "{e_pk}" AS eid FROM "{exp_table}" WHERE "{e_prod}" = %s LIMIT 1', (poid,))

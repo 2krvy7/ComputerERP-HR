@@ -40,7 +40,7 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     return row["table_name"] if row else None
 
 def auto_sync_sales_invoices(cur):
-    """Automatically pulls new rows from public.sales_invoice (joining order_id for customer_id) and deposits into BPI Sales."""
+    """Pulls rows from public.sales_invoice and creates 2 ARReceipts: Net Sales -> BPI Sales, Tax -> BPI Tax Pay."""
     ar_table = get_exact_table_name(cur, "ARInvoice")
     rec_table = get_exact_table_name(cur, "ARReceipt")
     bank_table = get_exact_table_name(cur, "BankAccount")
@@ -48,19 +48,33 @@ def auto_sync_sales_invoices(cur):
     if not (ar_table and sales_table):
         return 0
 
-    # Find BPI Sales receiver bank ID
+    # 1. Locate BPI Sales & BPI Tax Pay bank accounts
     bpi_sales_id = None
+    bpi_tax_id = None
     if bank_table:
         b_cols = get_exact_cols(cur, bank_table)
         b_pk = b_cols.get("bankaccountid", "bankAccountID")
         b_name = b_cols.get("bankname", "bankName")
         b_rec = b_cols.get("isreceiver")
-        cond = f'"{b_name}" ILIKE \'%BPI Sales%\' OR COALESCE("{b_rec}", FALSE) = TRUE' if b_rec else f'"{b_name}" ILIKE \'%BPI Sales%\''
-        cur.execute(f'SELECT "{b_pk}" AS id FROM "{bank_table}" WHERE {cond} ORDER BY "{b_pk}" ASC LIMIT 1')
-        b_row = cur.fetchone()
-        bpi_sales_id = b_row["id"] if b_row else None
 
-    # Auto-detect parent orders table linked to sales_invoice.order_id for customer_id
+        cur.execute(
+            f'SELECT "{b_pk}" AS id FROM "{bank_table}" WHERE "{b_name}" ILIKE \'%BPI Tax Pay%\' OR "{b_name}" ILIKE \'%Tax%\' ORDER BY "{b_pk}" ASC LIMIT 1'
+        )
+        t_row = cur.fetchone()
+        bpi_tax_id = t_row["id"] if t_row else None
+
+        rec_cond = (
+            f'("{b_name}" ILIKE \'%BPI Sales%\' OR COALESCE("{b_rec}", FALSE) = TRUE)'
+            if b_rec
+            else f'"{b_name}" ILIKE \'%BPI Sales%\''
+        )
+        cur.execute(
+            f'SELECT "{b_pk}" AS id FROM "{bank_table}" WHERE {rec_cond} AND "{b_name}" NOT ILIKE \'%Tax%\' ORDER BY "{b_pk}" ASC LIMIT 1'
+        )
+        s_row = cur.fetchone()
+        bpi_sales_id = s_row["id"] if s_row else None
+
+    # 2. Join sales_invoice.order_id to parent orders table for customer_id
     cur.execute("""
         SELECT ccu.table_name AS ord_tbl, ccu.column_name AS ord_pk
         FROM information_schema.table_constraints tc
@@ -81,11 +95,16 @@ def auto_sync_sales_invoices(cur):
             ord_join = f'LEFT JOIN "{fk_row["ord_tbl"]}" o ON si."order_id" = o."{fk_row["ord_pk"]}"'
             cust_expr = f'COALESCE(o."{o_cust}", 1)'
 
+    si_cols = get_exact_cols(cur, sales_table)
+    tax_col = si_cols.get("tax_amount") or si_cols.get("tax_ammount") or si_cols.get("vat_amount")
+    tax_select = f'COALESCE(si."{tax_col}", 0) AS tax_amt,' if tax_col else "0 AS tax_amt,"
+
     cur.execute(f"""
         SELECT
             si."invoice_id" AS sid,
             {cust_expr} AS cid,
             COALESCE(si."total_due", 0) AS amt,
+            {tax_select}
             COALESCE(si."invoice_date"::date, CURRENT_DATE) AS inv_date,
             COALESCE(si."due_date"::date, CURRENT_DATE + INTERVAL '30 days') AS due_date
         FROM "{sales_table}" si
@@ -100,24 +119,41 @@ def auto_sync_sales_invoices(cur):
 
     synced = 0
     for r in rows:
-        amt = float(r["amt"])
+        total_amt = round(float(r["amt"] or 0), 2)
+        tax_amt = round(float(r["tax_amt"] or 0), 2)
+        net_sales_amt = round(max(total_amt - tax_amt, 0.0), 2)
+
         cur.execute(f"""
             INSERT INTO "{ar_table}" (
                 "customerID", "salesInvoiceID", "amount", "totalPaid", "remainingBalance", "status", "dueDate"
             )
             VALUES (%s, %s, %s, %s, 0, 'Paid', %s)
             RETURNING "arInvoiceID" AS new_id
-        """, (r["cid"], r["sid"], amt, amt, r["due_date"]))
+        """, (r["cid"], r["sid"], total_amt, total_amt, r["due_date"]))
         new_ar_id = cur.fetchone()["new_id"]
 
         if rec_table and bpi_sales_id:
-            cur.execute(f"""
-                INSERT INTO "{rec_table}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
-                VALUES (%s, %s, %s, %s)
-            """, (new_ar_id, bpi_sales_id, r["inv_date"], amt))
+            if bpi_tax_id and tax_amt > 0:
+                # Receipt #1: Net Sales Revenue -> BPI Sales
+                if net_sales_amt > 0:
+                    cur.execute(f"""
+                        INSERT INTO "{rec_table}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
+                        VALUES (%s, %s, %s, %s)
+                    """, (new_ar_id, bpi_sales_id, r["inv_date"], net_sales_amt))
+                # Receipt #2: Separated Tax -> BPI Tax Pay
+                cur.execute(f"""
+                    INSERT INTO "{rec_table}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
+                    VALUES (%s, %s, %s, %s)
+                """, (new_ar_id, bpi_tax_id, r["inv_date"], tax_amt))
+            else:
+                cur.execute(f"""
+                    INSERT INTO "{rec_table}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
+                    VALUES (%s, %s, %s, %s)
+                """, (new_ar_id, bpi_sales_id, r["inv_date"], total_amt))
         synced += 1
 
     return synced
+
 
 
 
@@ -226,10 +262,11 @@ def get_receipts_summary():
                 b_rec = b_cols.get("isreceiver")
 
                 role_filter = (
-                    f'(b."{b_name}" ILIKE \'%BPI Sales%\' OR COALESCE(b."{b_rec}", FALSE) = TRUE)'
+                    f'(b."{b_name}" ILIKE \'%BPI Sales%\' OR b."{b_name}" ILIKE \'%Tax%\' OR COALESCE(b."{b_rec}", FALSE) = TRUE)'
                     if b_rec
-                    else f'b."{b_name}" ILIKE \'%BPI Sales%\''
+                    else f'(b."{b_name}" ILIKE \'%BPI Sales%\' OR b."{b_name}" ILIKE \'%Tax%\')'
                 )
+
 
                 cur.execute(f"""
                     SELECT 

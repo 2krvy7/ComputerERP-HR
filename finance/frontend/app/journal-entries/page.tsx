@@ -563,11 +563,19 @@ export default function JournalEntries() {
                     }
                   >
                     <option value="">-- Select Account --</option>
-                    {coaAccounts.map((acc) => (
-                      <option key={acc.accountID} value={acc.accountID}>
-                        {acc.accountCode} - {acc.accountName}
-                      </option>
-                    ))}
+                    {Array.from(
+                      new Map(
+                        coaAccounts.map((acc) => [String(acc.accountID ?? acc.accountCode), acc])
+                      ).values()
+                    ).map((acc, aIdx) => {
+                      const val = String(acc.accountID ?? acc.accountCode);
+                      return (
+                        <option key={`${val}-${aIdx}`} value={val}>
+                          {acc.accountCode} - {acc.accountName}
+                        </option>
+                      );
+                    })}
+
                   </select>
 
                   <input

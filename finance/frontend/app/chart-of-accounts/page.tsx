@@ -41,7 +41,11 @@ export default function ChartOfAccounts() {
       // Purpose: Loads active Chart of Accounts records from PostgreSQL
       const res = await fetch("http://127.0.0.1:8000/api/coa");
       const data = await res.json();
-      setAccounts(Array.isArray(data) ? data : []);
+      const sorted = Array.isArray(data)
+        ? [...data].sort((a, b) => Number(b.accountID || 0) - Number(a.accountID || 0))
+        : [];
+      setAccounts(sorted);
+      
     } catch (err) {
       console.error("Error fetching accounts:", err);
     } finally {
