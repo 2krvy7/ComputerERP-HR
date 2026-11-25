@@ -1,0 +1,180 @@
+.ar-page {
+  padding: 24px;
+  min-height: 100vh;
+  background: #f6f8fc;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin: 24px 0;
+}
+
+.summary-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.summary-card span {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.summary-card h2 {
+  margin: 10px 0;
+  color: #111827;
+}
+
+.success {
+  color: #10b981;
+}
+
+.warning {
+  color: #f59e0b;
+}
+
+.ar-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.ar-tabs button {
+  border: none;
+  background: #fff;
+  padding: 10px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ar-tabs .active {
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.filter-bar input {
+  flex: 1;
+}
+
+.filter-bar input,
+.filter-bar select,
+.filter-bar button {
+  border: 1px solid #dbe2ea;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: white;
+}
+
+.table-card {
+  background: white;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.table-header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.table-header p {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.secondary-btn {
+  background: #f3f4f6;
+  border: none;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f9fafb;
+}
+
+thead th {
+  text-align: left;
+  padding: 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+tbody td {
+  padding: 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
+}
+
+tbody td p {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.status {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status.sent {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.status.overdue {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status.paid {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.view-btn {
+  border: none;
+  background: transparent;
+  color: #4361ee;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.collection-note {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.create-btn {
+  background: #4361ee;
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+}

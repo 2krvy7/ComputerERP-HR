@@ -1,21 +1,23 @@
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from psycopg.rows import dict_row
 from database import get_db_connection
+from datetime import date, timedelta
+from security import require_inventory_user
 
 router = APIRouter(
     prefix="/stock_ledger",
     tags=["Stock Ledger"]
 )
 
-from datetime import date, timedelta
 
 @router.get("/")
 def get_stock_ledger(
     transaction_type: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    search: str | None = None
+    search: str | None = None,
+    user: dict = Depends(require_inventory_user)
 ):
     conditions = []
     params = []
@@ -52,40 +54,57 @@ def get_stock_ledger(
     if conditions:
         where_clause = "WHERE " + " AND ".join(conditions)
 
-    
     query = f"""
-        WITH ledger_balance AS (
-            SELECT
-                s."LogID",
-                s."IM_ID",
-                s."WH_ID",
+        
+WITH ledger_balance AS (
+    SELECT
+        s."LogID",
+        s."IM_ID",
+        s."WH_ID",
 
-                CASE
-                    WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
-                         AND s."Quantity" > 0
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    ELSE 0
-                END AS stock_in,
+        CASE
+            WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
+            THEN ABS(s."Quantity")
 
-                CASE
-                    WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
-                         AND s."Quantity" < 0
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    ELSE 0
-                END AS stock_out,
+            WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                 AND s."Quantity" > 0
+            THEN s."Quantity"
 
-                SUM(s."Quantity") OVER (
-                    PARTITION BY s."IM_ID", s."WH_ID"
-                    ORDER BY s."LogDate", s."LogID"
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS balance
+            ELSE 0
+        END AS stock_in,
 
-            FROM public."STOCK_LEDGER" AS s
-        )
+        CASE
+            WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
+            THEN ABS(s."Quantity")
+
+            WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                 AND s."Quantity" < 0
+            THEN ABS(s."Quantity")
+
+            ELSE 0
+        END AS stock_out,
+
+        SUM(
+            CASE
+                WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
+                THEN s."Quantity"
+
+                WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
+                THEN s."Quantity"
+
+                WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                THEN s."Quantity"
+
+                ELSE 0
+            END
+        ) OVER (
+            PARTITION BY s."IM_ID", s."WH_ID"
+            ORDER BY s."LogDate", s."LogID"
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS balance
+
+    FROM public."STOCK_LEDGER" AS s
+)
 
         SELECT
             s."LogID" AS log_id,
@@ -134,15 +153,18 @@ def get_stock_ledger(
 
         ORDER BY s."LogDate" DESC, s."LogID" DESC
     """
+
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(query, params)
             return cur.fetchall()
 
+
 @router.get("/summary")
 def get_stock_ledger_summary(
     start_date: date | None = None,
-    end_date: date | None = None
+    end_date: date | None = None,
+    user: dict = Depends(require_inventory_user)
 ):
     conditions = []
     params = []
@@ -164,25 +186,29 @@ def get_stock_ledger_summary(
             COUNT(*) AS total_transactions,
 
             COALESCE(SUM(
-                CASE WHEN "TransactionType" = 'STOCK_IN'
-                THEN ABS(COALESCE("ActualQuantity", "Quantity"))
-                ELSE 0 END
+                CASE
+                    WHEN "TransactionType" = 'STOCK_IN'
+                    THEN "Quantity"
+                    ELSE 0
+                END
             ), 0) AS total_stock_in,
 
             COALESCE(SUM(
-                CASE WHEN "TransactionType" = 'STOCK_OUT'
-                THEN ABS(COALESCE("ActualQuantity", "Quantity"))
-                ELSE 0 END
+                CASE
+                    WHEN "TransactionType" = 'STOCK_OUT'
+                    THEN ABS("Quantity")
+                    ELSE 0
+                END
             ), 0) AS total_stock_out,
 
             COALESCE(SUM(
                 CASE WHEN "TransactionType" = 'STOCK_ADJUSTMENT'
-                THEN ABS(COALESCE("ActualQuantity", "Quantity"))
+                THEN "Quantity"
                 ELSE 0 END
             ), 0) AS total_adjustments,
 
             COUNT(*) FILTER (
-                WHERE "TransactionType" IN ('TRANSFER_IN', 'TRANSFER_OUT')
+                WHERE "TransactionType" = 'TRANSFER_OUT'
             ) AS total_transfers
 
         FROM public."STOCK_LEDGER"
@@ -194,3 +220,70 @@ def get_stock_ledger_summary(
             cur.execute(query, params)
             return cur.fetchone()
 
+
+
+@router.get("/{log_id}")
+def get_stock_ledger_details(
+    log_id: int,
+    user: dict = Depends(require_inventory_user)
+):
+    query = """
+        SELECT
+            s."LogID" AS log_id,
+            s."IM_ID" AS im_id,
+            i."SKU" AS sku,
+            i."Item_Name" AS item_name,
+            s."WH_ID" AS wh_id,
+            w."Warehouse_Name" AS warehouse_name,
+            s."Target_WH_ID" AS target_wh_id,
+            tw."Warehouse_Name" AS target_warehouse_name,
+            s."TransactionType" AS transaction_type,
+            s."Quantity" AS quantity,
+            s."ActualQuantity" AS actual_quantity,
+
+            gr."ItemCondition" AS item_condition,
+            gr."QuantityReceived" AS quantity_received,
+            gr."Remarks" AS receiving_remarks,
+
+            s."ReferenceNo" AS reference_no,
+            s."LoggedBy" AS logged_by_id,
+            lu."Username" AS logged_by,
+            au."Username" AS approved_by,
+            s."LogDate" AS log_date,
+            s."Remarks" AS remarks
+
+        FROM public."STOCK_LEDGER" AS s
+
+        INNER JOIN public."ITEM_MASTER" AS i
+            ON s."IM_ID" = i."IM_ID"
+
+        INNER JOIN public."WAREHOUSE" AS w
+            ON s."WH_ID" = w."WH_ID"
+
+        LEFT JOIN public."WAREHOUSE" AS tw
+            ON s."Target_WH_ID" = tw."WH_ID"
+
+        LEFT JOIN public."User" AS lu
+            ON s."LoggedBy" = lu."UserID"
+
+        LEFT JOIN public."User" AS au
+            ON s."ApprovedBy" = au."UserID"
+
+        LEFT JOIN public."GoodsReceived" AS gr
+            ON s."ReferenceNo" = 'GR-' || gr."GR_ID"::text
+
+        WHERE s."LogID" = %s
+    """
+
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(query, (log_id,))
+            result = cur.fetchone()
+
+            if not result:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Stock ledger transaction not found."
+                )
+
+            return result

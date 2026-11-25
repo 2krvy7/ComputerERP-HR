@@ -142,6 +142,11 @@ export default function Dashboard() {
   const ticks = [0, max / 2, max];
   const hp = hover !== null ? series[hover] : null;
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   function handlePrint() {
     if (!value) return;
     const p = PERIODS.find((x) => x.key === period)!;
@@ -158,12 +163,12 @@ export default function Dashboard() {
       start.setDate(start.getDate() - ((period === "week" ? 7 : 30) - 1));
       extra = {
         heading: "Orders in this period",
-        headers: ["PO", "Supplier", "Item", "Qty", "Total", "Ordered", "Delivery", "Invoice"],
+        headers: ["PO", "Supplier", "Item", "Qty", "Total", "Ordered", "Delivery", "Payment"],
         rows: orders
           .filter((o) => new Date(o.OrderDate) >= start)
           .map((o) => [
             `#${o.PO_ID}`, o.SupplierName, o.Item_Name, String(o.Quantity), money(o.Total_Amount),
-            date(o.OrderDate), o.goods_received ? "Received" : "Awaiting", o.invoiced ? "Invoiced" : "Awaiting",
+            date(o.OrderDate), o.goods_received ? "Received" : "Awaiting", o.invoiced ? "Paid" : "Unpaid",
           ]),
       };
     }
@@ -183,6 +188,10 @@ export default function Dashboard() {
     });
   }
 
+<<<<<<< HEAD
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "1.2vw" }}>
       {/* Row of 4 cards */}
@@ -202,9 +211,9 @@ export default function Dashboard() {
           note={summary ? `awaiting delivery : ${summary.purchase_orders - summary.goods_received}` : ""}
         />
         <StatCard
-          label="Purchase Invoices"
+          label="Paid Orders"
           value={summary?.purchase_invoices ?? "–"}
-          note={summary ? `not invoiced yet : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
+          note={summary ? `unpaid : ${summary.purchase_orders - summary.purchase_invoices}` : ""}
         />
       </div>
 

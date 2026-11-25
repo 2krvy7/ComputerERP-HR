@@ -1,49 +1,143 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import "./general-ledger.css";
 
-const ledgerData = [
-  {
-    date: "Oct 1, 2026",
-    description: "Opening Balance",
-    reference: "Prior Period",
-    debit: "-",
-    credit: "-",
-    balance: "$93,140.00",
-  },
-  {
-    date: "Oct 10, 2026",
-    description: "Customer Receipts",
-    reference: "18 posted receipts",
-    debit: "$38,000.00",
-    credit: "-",
-    balance: "$131,140.00",
-  },
-  {
-    date: "Oct 11, 2026",
-    description: "October Payroll",
-    reference: "PAY-1026",
-    debit: "-",
-    credit: "$18,500.00",
-    balance: "$95,920.00",
-  },
-  {
-    date: "Oct 12, 2026",
-    description: "Software Subscription",
-    reference: "EXP-0164",
-    debit: "-",
-    credit: "$240.00",
-    balance: "$95,680.00",
-  },
-  {
-    date: "Oct 21, 2026",
-    description: "Business Loan Drawdown",
-    reference: "BANK-0086",
-    debit: "$5,000.00",
-    credit: "-",
-    balance: "$98,800.00",
-  },
-];
-
 export default function GeneralLedger() {
+  const [rawRows, setRawRows] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filter states
+  const [selectedAccount, setSelectedAccount] = useState<string>("ALL");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
+  async function fetchLedgerData() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [ledgerRes, accRes] = await Promise.all([
+        fetch(`${API_URL}/api/ledger`),
+        fetch(`${API_URL}/api/ledger`),
+      ]);
+
+      if (!ledgerRes.ok) throw new Error(`Ledger API error: ${ledgerRes.status}`);
+      const ledgerJson = await ledgerRes.json();
+      setRawRows(Array.isArray(ledgerJson) ? ledgerJson : []);
+
+      if (accRes.ok) {
+        const accJson = await accRes.json();
+        setAccounts(Array.isArray(accJson) ? accJson : []);
+      }
+    } catch (err: any) {
+      setError(err.message || "Failed to load General Ledger");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchLedgerData();
+  }, []);
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(val);
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  // Compute filtered rows, running balance, and period totals
+  const { processedRows, openingBalance, totalDebits, totalCredits, closingBalance } = useMemo(() => {
+    // 1. Filter by account and status first
+    const accountAndStatusFiltered = rawRows.filter((row) => {
+      const rowAccId = String(row.accountID ?? row.accountId ?? row.accountCode ?? "");
+      const matchesAccount = selectedAccount === "ALL" || rowAccId === selectedAccount;
+
+      const rowStatus = String(row.status ?? "Posted").toLowerCase();
+      const matchesStatus = statusFilter === "ALL" || rowStatus === statusFilter.toLowerCase();
+
+      return matchesAccount && matchesStatus;
+    });
+
+    // 2. Calculate Opening Balance from transactions strictly before startDate
+    let opening = 0;
+    const periodTransactions: any[] = [];
+
+    for (const row of accountAndStatusFiltered) {
+      const txDateRaw = row.transactionDate ?? row.date ?? row.createdAt;
+      const txDate = txDateRaw ? new Date(txDateRaw).toISOString().split("T")[0] : "";
+      const debit = Number(row.debit ?? row.debitAmount ?? 0);
+      const credit = Number(row.credit ?? row.creditAmount ?? 0);
+
+      if (startDate && txDate && txDate < startDate) {
+        opening += debit - credit;
+      } else if (endDate && txDate && txDate > endDate) {
+        continue;
+      } else {
+        periodTransactions.push(row);
+      }
+    }
+
+    // 3. Build chronological rows with running balance
+    let running = opening;
+    let debitsSum = 0;
+    let creditsSum = 0;
+
+    const rowsWithBalance = periodTransactions.map((row) => {
+      const debit = Number(row.debit ?? row.debitAmount ?? 0);
+      const credit = Number(row.credit ?? row.creditAmount ?? 0);
+
+      debitsSum += debit;
+      creditsSum += credit;
+      running += debit - credit;
+
+      return {
+        id: row.ledgerID ?? row.id ?? Math.random(),
+        date: formatDate(row.transactionDate ?? row.date ?? row.createdAt),
+        description: row.description ?? row.remarks ?? "Journal Posting",
+        reference: row.reference ?? row.referenceNo ?? (row.journalID ? `JE-${row.journalID}` : "-"),
+        debit,
+        credit,
+        balance: running,
+      };
+    });
+
+    return {
+      processedRows: rowsWithBalance,
+      openingBalance: opening,
+      totalDebits: debitsSum,
+      totalCredits: creditsSum,
+      closingBalance: running,
+    };
+  }, [rawRows, selectedAccount, startDate, endDate, statusFilter]);
+
+  const activeAccountLabel = useMemo(() => {
+    if (selectedAccount === "ALL") return "All Accounts";
+    const found = accounts.find(
+      (a) => String(a.accountID ?? a.accountCode) === selectedAccount
+    );
+    return found
+      ? `${found.accountCode ?? ""} - ${found.accountName ?? found.name ?? ""}`
+      : selectedAccount;
+  }, [accounts, selectedAccount]);
+
   return (
     <div className="ledger-page">
       <div className="ledger-header">
@@ -55,104 +149,168 @@ export default function GeneralLedger() {
           </p>
         </div>
 
-        <button className="print-btn">
+        <button className="print-btn" onClick={() => window.print()}>
           Print Ledger
         </button>
       </div>
 
       {/* Filters */}
       <div className="ledger-filters">
-        <select>
-          <option>Oct 1 - 31, 2026</option>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          title="Start Date"
+        />
+
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          title="End Date"
+        />
+
+        <select
+          value={selectedAccount}
+          onChange={(e) => setSelectedAccount(e.target.value)}
+        >
+          <option value="ALL">All Accounts</option>
+          {Array.from(
+            new Map(
+              accounts.map((acc) => [String(acc.accountID ?? acc.accountCode), acc])
+            ).values()
+          ).map((acc, idx) => {
+            const val = String(acc.accountID ?? acc.accountCode);
+            return (
+              <option key={`${val}-${idx}`} value={val}>
+                {acc.accountCode} - {acc.accountName ?? acc.name}
+              </option>
+            );
+          })}
         </select>
 
-        <select>
-          <option>1000 - Cash & Bank</option>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="ALL">All Entries</option>
+          <option value="Posted">Posted Entries</option>
+          <option value="Draft">Draft Entries</option>
         </select>
 
-        <select>
-          <option>Posted Entries</option>
-        </select>
-
-        <button>Update Report</button>
+        <button onClick={fetchLedgerData}>Update Report</button>
       </div>
 
       {/* Summary Cards */}
       <div className="ledger-cards">
         <div className="ledger-card">
           <span>Opening Balance</span>
-          <h2>$93,140.00</h2>
+          <h2>{loading ? "..." : formatCurrency(openingBalance)}</h2>
         </div>
 
         <div className="ledger-card">
           <span>Total Debits</span>
-          <h2>$92,680.00</h2>
+          <h2>{loading ? "..." : formatCurrency(totalDebits)}</h2>
         </div>
 
         <div className="ledger-card">
           <span>Total Credits</span>
-          <h2>$61,240.00</h2>
+          <h2>{loading ? "..." : formatCurrency(totalCredits)}</h2>
         </div>
 
         <div className="ledger-card">
           <span>Closing Balance</span>
-          <h2>$124,580.00</h2>
+          <h2>{loading ? "..." : formatCurrency(closingBalance)}</h2>
         </div>
       </div>
 
       {/* Ledger Table */}
       <div className="ledger-table-container">
         <div className="ledger-table-header">
-          <h3>1000 - Cash & Bank</h3>
-          <button>Expand All</button>
+          <h3>{activeAccountLabel}</h3>
+          <button
+            onClick={() => {
+              setSelectedAccount("ALL");
+              setStartDate("");
+              setEndDate("");
+              setStatusFilter("ALL");
+            }}
+          >
+            Reset Filters
+          </button>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Reference</th>
-              <th>Debit</th>
-              <th>Credit</th>
-              <th>Running Balance</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {ledgerData.map((item, index) => (
-              <tr key={index}>
-                <td>{item.date}</td>
-                <td>{item.description}</td>
-                <td>{item.reference}</td>
-                <td>{item.debit}</td>
-                <td>{item.credit}</td>
-                <td>{item.balance}</td>
+        {loading ? (
+          <p style={{ padding: "1rem" }}>Loading general ledger...</p>
+        ) : error ? (
+          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Reference</th>
+                <th>Debit</th>
+                <th>Credit</th>
+                <th>Running Balance</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {/* Opening Balance Row */}
+              <tr>
+                <td>{startDate ? formatDate(startDate) : "Beginning"}</td>
+                <td>Opening Balance</td>
+                <td>Prior Period</td>
+                <td>-</td>
+                <td>-</td>
+                <td>{formatCurrency(openingBalance)}</td>
+              </tr>
+
+              {processedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: "center", padding: "1rem" }}>
+                    No ledger transactions found for the selected filters.
+                  </td>
+                </tr>
+              ) : (
+                processedRows.map((item, idx) => (
+                  <tr key={`${item.id ?? "row"}-${idx}`}>
+                    <td>{item.date}</td>
+                    <td>{item.description}</td>
+                    <td>{item.reference}</td>
+                    <td>{item.debit > 0 ? formatCurrency(item.debit) : "-"}</td>
+                    <td>{item.credit > 0 ? formatCurrency(item.credit) : "-"}</td>
+                    <td>{formatCurrency(item.balance)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
 
         <div className="totals-row">
           <span>Period Totals</span>
 
           <div>
-            <strong>Debit:</strong> $92,680.00
+            <strong>Debit:</strong> {formatCurrency(totalDebits)}
           </div>
 
           <div>
-            <strong>Credit:</strong> $61,240.00
+            <strong>Credit:</strong> {formatCurrency(totalCredits)}
           </div>
 
           <div>
-            <strong>Balance:</strong> $124,580.00
+            <strong>Balance:</strong> {formatCurrency(closingBalance)}
           </div>
         </div>
       </div>
 
       <div className="success-banner">
-        ✓ Closing cash balance agrees with Bank Accounts, Trial Balance and Cash Flow Statement.
+        ✓ Closing balance agrees with General Ledger posted entries.
       </div>
     </div>
   );
 }
+

@@ -11,18 +11,25 @@
 
   background: #fff;
   border-right: 1px solid var(--border-color);
+
   transition: 0.3s;
 
-  overflow-y: auto;
- 
+  display: flex;
+  flex-direction: column;
 
+  overflow: hidden;
+}
+
+/* Toggle Button */
+.sidebar header {
+  position: relative;
 }
 
 .sidebar header .toggle {
-  position: Absolute;
+  position: absolute;
 
   top: 22px;
-  right: 0px; /* pushes outside sidebar */
+  right: 0;
 
   width: 32px;
   height: 32px;
@@ -38,12 +45,10 @@
 
   cursor: pointer;
 
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 
   z-index: 1001;
 }
-
-
 
 .sidebar.closed {
   width: 90px;
@@ -55,7 +60,8 @@
 .sidebar.closed .sidebar-section,
 .sidebar.closed .sub-menu,
 .sidebar.closed .user-info,
-.sidebar.closed .help-link {
+.sidebar.closed .help-link,
+.sidebar.closed .arrow {
   display: none;
 }
 
@@ -66,12 +72,14 @@
   display: flex;
   align-items: center;
   gap: 10px;
+
   padding: 18px 16px;
 }
 
 .logo-icon {
   width: 34px;
   height: 34px;
+
   border-radius: 8px;
 
   background: var(--primary-color);
@@ -82,11 +90,14 @@
   justify-content: center;
 
   font-weight: bold;
+
+  flex-shrink: 0;
 }
 
 .logo-text h2 {
   font-size: 28px;
   color: var(--text-primary);
+  margin: 0;
 }
 
 .logo-text span {
@@ -99,8 +110,28 @@
 ===================================================== */
 .menu-links {
   list-style: none;
+
   padding: 0 10px;
+  margin: 0;
+
   flex: 1;
+
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Scrollbar */
+.menu-links::-webkit-scrollbar {
+  width: 6px;
+}
+
+.menu-links::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+
+.menu-links::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .nav-link {
@@ -117,6 +148,7 @@
   color: #4b5563;
 
   border-radius: 10px;
+
   transition: 0.2s;
 }
 
@@ -131,6 +163,7 @@
 
 .icon {
   min-width: 40px;
+
   font-size: 18px;
 
   display: flex;
@@ -141,16 +174,42 @@
   font-size: 14px;
 }
 
+/* =====================================================
+   PARENT MENU (EXPAND/COLLAPSE)
+===================================================== */
+.menu-parent {
+  display: flex;
+  align-items: center;
 
+  height: 42px;
 
-/* ==========================
+  border-radius: 10px;
+
+  cursor: pointer;
+  color: #4b5563;
+
+  transition: 0.2s;
+}
+
+.menu-parent:hover {
+  background: #f4f6fb;
+}
+
+.arrow {
+  margin-left: auto;
+  padding-right: 12px;
+  font-size: 18px;
+
+  transition: 0.3s;
+}
+
+/* =====================================================
    SUB MENU
-========================== */
-
+===================================================== */
 .sub-menu {
   list-style: none;
-  margin: 2px 0 8px 0;
   padding: 0;
+  margin: 2px 0 8px;
 }
 
 .sub-menu li {
@@ -160,46 +219,58 @@
 .sub-menu li a {
   display: flex;
   align-items: center;
-
   height: 34px;
-
-  padding-left: 52px; /* indentation */
-
+  padding-left: 52px;
+  text-decoration: none;
+  color: #6b7280;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 400;
-
-  color: #6b7280;
-  text-decoration: none;
-
-  border-radius: 6px;
-
-  transition: background 0.2s;
+  transition: 0.2s;
 }
 
 .sub-menu li a:hover {
-  background: #f5f7fb;
+  background: #f4f6fb;
 }
 
-.sub-menu li.active  a {
-  background: #e9edf5;
-  color: #374151;
-  font-weight: 500;
+.sub-menu li a.active,
+.sub-menu li.active-link a {
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 600;
+  border-left: 3px solid #4f46e5;
 }
-
 
 /* =====================================================
    SIDEBAR FOOTER
 ===================================================== */
 .sidebar-footer {
   margin-top: auto;
+
   padding: 15px;
+
   border-top: 1px solid #f1f5f9;
+
+  background: #fff;
+
+  flex-shrink: 0;
 }
 
 .help-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
   margin-bottom: 18px;
+
   font-size: 13px;
   color: #9ca3af;
+
+  cursor: pointer;
+}
+
+.help-link:hover {
+  color: #4f46e5;
 }
 
 .user-box {
@@ -223,6 +294,8 @@
 
   font-size: 12px;
   font-weight: 600;
+
+  flex-shrink: 0;
 }
 
 .user-info {

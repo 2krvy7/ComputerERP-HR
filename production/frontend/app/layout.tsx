@@ -1,3 +1,4 @@
+import AuthGate from "@/components/AuthGate";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -20,22 +21,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-  <html
-    lang="en"
+  <html lang="en"
     className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
   >
     <body className="min-h-full flex flex-col">
-      <Sidebar />
-      <main
-        style={{
-          flex: 1,
-          marginLeft: "18.4vw",
-          padding: "1.14vw 1.14vw 1.14vw 0",
-          boxSizing: "border-box",
-        }}
-      >
-        {children}
-      </main>
+      <AuthGate>
+        <Sidebar />
+        <main
+          style={{
+            flex: 1,
+            marginLeft: "18.4vw",
+            padding: "1.14vw 1.14vw 1.14vw 0",
+            boxSizing: "border-box",
+          }}
+        >
+          {children}
+        </main>
+      </AuthGate>
     </body>
   </html>
 );}

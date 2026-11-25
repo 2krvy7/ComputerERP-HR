@@ -1,13 +1,16 @@
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from psycopg.rows import dict_row
 from database import get_db_connection
+from security import require_inventory_user
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("/summary")
-def get_dashboard_summary():
+def get_dashboard_summary(
+    user: dict = Depends(require_inventory_user)
+):
 
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -110,7 +113,6 @@ def get_dashboard_summary():
 
             recent_activities = cur.fetchall()
 
-                    
             # 7. Stock distribution by item type
             cur.execute("""
                 SELECT
@@ -148,7 +150,6 @@ def get_dashboard_summary():
             """)
 
             stock_movement = cur.fetchall()
-
 
     return {
         "summary": {
