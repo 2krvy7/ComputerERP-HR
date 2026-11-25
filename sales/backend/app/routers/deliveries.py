@@ -77,12 +77,10 @@ def is_finished_goods_warehouse(name: str | None) -> bool:
         (name or "").lower(),
     )
 
-    is_finished_goods = (
-        "finishedgood" in normalized
-        or normalized.startswith("fg")
-    )
-
-    return is_finished_goods and normalized.endswith(("a", "b"))
+    return normalized in {
+        "warehouseafinishedgoods",
+        "warehousebfinishedgoods",
+    }
 
 
 def is_admin(user: User) -> bool:
@@ -322,8 +320,6 @@ def deduct_delivery_stock(
         )
 
 
-# GET ALL DELIVERIES
-
 @router.get(
     "",
     response_model=list[DeliveryResponse],
@@ -339,8 +335,6 @@ def get_deliveries(
 
     return db.scalars(statement).all()
 
-
-# GET FINISHED GOODS WAREHOUSES
 
 @router.get("/warehouses")
 def get_warehouses(
@@ -367,8 +361,6 @@ def get_warehouses(
     ]
 
 
-# GET DELIVERY BY ID
-
 @router.get(
     "/{delivery_id}",
     response_model=DeliveryResponse,
@@ -388,8 +380,6 @@ def get_delivery(
 
     return delivery
 
-
-# CREATE DELIVERY
 
 @router.post(
     "",
@@ -437,7 +427,7 @@ def create_delivery(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Deliveries must use Finished Goods Warehouse A or B."
+                "Deliveries must use a Finished Goods Warehouse."
             ),
         )
 
@@ -482,8 +472,6 @@ def create_delivery(
         db.rollback()
         raise
 
-
-# UPDATE DELIVERY STATUS
 
 @router.patch(
     "/{delivery_id}/status",
