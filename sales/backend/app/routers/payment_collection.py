@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.accounts_receivable import AccountsReceivable
 from app.models.payment_collection import PaymentCollection
 from app.schemas.payment_collection import (
@@ -16,6 +17,7 @@ from app.schemas.payment_collection import (
 router = APIRouter(
     prefix="/api/payment-collections",
     tags=["Payment Collections"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 

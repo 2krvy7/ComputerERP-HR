@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.core.roles import ADMIN_ROLE_IDS
+from app.dependencies.auth import get_current_user, require_password_change_completed
 from app.models.user import User
 from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
@@ -25,6 +26,7 @@ from app.schemas.delivery import (
 router = APIRouter(
     prefix="/api/deliveries",
     tags=["Deliveries"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 FINISHED_GOODS_TYPES = {
@@ -40,7 +42,6 @@ ALLOWED_TRANSITIONS = {
     "Cancelled": [],
 }
 
-ADMIN_ROLE_ID = 1
 INVENTORY_DEPT_ID = "IN"
 SALES_DEPT_ID = "SL"
 
@@ -53,7 +54,7 @@ def normalize_status(value: str) -> str:
 
 
 def is_admin(user: User) -> bool:
-    return user.role_id == ADMIN_ROLE_ID
+    return user.role_id in ADMIN_ROLE_IDS
 
 
 def require_sales_or_admin(user: User):

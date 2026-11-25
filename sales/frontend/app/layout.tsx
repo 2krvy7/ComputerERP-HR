@@ -1,6 +1,7 @@
 
 import type { Metadata } from "next";
-import Sidebar from "@/components/sidebar";
+import AppShell from "@/components/app-shell";
+import { AuthProvider } from "@/contexts/auth-context";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -29,14 +30,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
-      <body className="h-screen w-screen overflow-hidden">
-        <div className="flex h-screen w-screen overflow-hidden bg-[#8FB1B8]">
-          <Sidebar />
-
-          <main className="m-3 ml-2 h-[calc(100vh-24px)] min-w-0 flex-1 overflow-x-hidden overflow-y-auto rounded-xl bg-white">
-            {children}
-          </main>
-        </div>
+      <body className="min-h-screen w-full">
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -1,4 +1,6 @@
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -41,22 +43,34 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type"],
+# CORS configuration
+ALLOWED_ORIGINS = list(
+    dict.fromkeys(
+        origin.strip().rstrip("/")
+        for origin in [
+            *os.getenv("FRONTEND_ORIGINS", "").split(","),
+            "https://sales-kenethvivas22.vercel.app",
+            "https://sales-pink-iota.vercel.app",
+            "https://computer-erp-login.vercel.app",
+            "http://localhost:3000",
+        ]
+        if origin.strip()
+    )
 )
 
-# Authentication endpoints remain available
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Authentication endpoints
 app.include_router(auth_router)
 app.include_router(users_router)
 
-# ERP endpoints - temporarily accessible without login
+# ERP endpoints
 app.include_router(customers_router)
 app.include_router(quotations_router)
 app.include_router(orders_router)

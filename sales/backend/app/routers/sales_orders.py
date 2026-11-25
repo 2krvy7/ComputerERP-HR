@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
+from app.dependencies.auth import require_admin, require_password_change_completed
 from app.models.customer import Customer
 from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
@@ -29,6 +30,7 @@ from app.schemas.sales_order import (
 router = APIRouter(
     prefix="/api/orders",
     tags=["Sales Orders"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 
@@ -131,7 +133,7 @@ def get_order_items(
     ]
 
 
-@router.get("/finished-goods")
+@router.get("/finished-goods", dependencies=[Depends(require_admin)])
 def get_finished_goods(
     search: str | None = Query(default=None, max_length=150),
     db: Session = Depends(get_db),
@@ -162,7 +164,10 @@ def get_finished_goods(
     ]
 
 
-@router.patch("/items/{item_id}/selling-price")
+@router.patch(
+    "/items/{item_id}/selling-price",
+    dependencies=[Depends(require_admin)],
+)
 def update_selling_price(
     item_id: int,
     price_data: SellingPriceUpdate,

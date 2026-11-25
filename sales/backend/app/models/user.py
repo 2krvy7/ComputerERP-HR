@@ -1,5 +1,5 @@
 
-from sqlalchemy import Integer, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -42,4 +42,11 @@ class User(Base):
         "DeptID",
         String,
         nullable=True,
+    )
+
+    must_change_password: Mapped[bool] = mapped_column(
+        "must_change_password",
+        Boolean,
+        nullable=False,
+        default=True,
     )
