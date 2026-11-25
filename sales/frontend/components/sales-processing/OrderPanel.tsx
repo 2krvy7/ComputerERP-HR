@@ -4,13 +4,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { customerAPI, salesOrderAPI } from "../../lib/api";
 
-import {
-  fetchFinanceFloorPrices,
-  validateSellingPrice,
-} from "../../lib/finance";
-
-import type { PricingAlert } from "../../lib/finance";
-
 import type { Customer } from "../../types/customer";
 import type {
   SalesOrder,
@@ -31,14 +24,6 @@ interface StockIssue {
   itemName: string;
   requested: number;
   available: number;
-}
-
-interface PricingIssue {
-  IM_ID: number;
-  itemName: string;
-  sellingPrice: number;
-  minimumPrice: number;
-  message: string;
 }
 
 const PAGE_SIZE = 10;
@@ -91,6 +76,8 @@ export default function OrdersPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [customerId, setCustomerId] = useState("");
+  const [taxType, setTaxType] = useState<"VAT" | "Non-VAT" | "Tax-Exempt" | "Custom">("VAT");
+  const [customTaxRate, setCustomTaxRate] = useState("0");
 
   const [nextLineId, setNextLineId] = useState(2);
   const [lines, setLines] = useState<OrderLine[]>([
@@ -100,14 +87,14 @@ export default function OrdersPage() {
   const [itemQueries, setItemQueries] = useState<Record<number, string>>({});
   const [activeItemLine, setActiveItemLine] = useState<number | null>(null);
 
-  // Finance pricing states
-  const [pricingAlerts, setPricingAlerts] = useState<PricingAlert[]>([]);
-  const [loadingPricing, setLoadingPricing] = useState(false);
-  const [pricingLoaded, setPricingLoaded] = useState(false);
-  const [pricingError, setPricingError] = useState("");
-
   const customerSelected = customerId !== "";
-
+  const selectedTaxRate = taxType === "VAT" ? 12 :
+    taxType === "Custom" ? Number(customTaxRate) : 0;
+  const estimatedOrderSubtotal = lines.reduce((sum, line) => {
+    const price = Number(itemCatalog[line.IM_ID]?.Price ?? 0);
+    return sum + price * line.quantity * (1 - line.discount / 100);
+  }, 0);
+  const estimatedTax = Number((estimatedOrderSubtotal * selectedTaxRate / 100).toFixed(2));
   const loadOrders = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -167,46 +154,6 @@ export default function OrdersPage() {
     void loadItems();
   }, [loadOrders, loadCustomers, loadItems]);
 
-  // Fetch Finance minimum selling prices when the order form opens.
-  useEffect(() => {
-    if (!showForm) return;
-
-    let cancelled = false;
-
-    async function loadPricing() {
-      setLoadingPricing(true);
-      setPricingLoaded(false);
-      setPricingError("");
-
-      try {
-        const alerts = await fetchFinanceFloorPrices();
-
-        if (!cancelled) {
-          setPricingAlerts(alerts);
-          setPricingLoaded(true);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPricingAlerts([]);
-          setPricingError(
-            err instanceof Error
-              ? err.message
-              : "Unable to retrieve Finance pricing rules."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingPricing(false);
-        }
-      }
-    }
-
-    void loadPricing();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showForm]);
 
   const customerMap = useMemo(
     () =>
@@ -306,50 +253,6 @@ export default function OrdersPage() {
 
   const hasStockIssues = stockIssues.length > 0;
 
-  // Validate each selected item's discounted unit price.
-  const pricingIssues = useMemo<PricingIssue[]>(() => {
-    if (!pricingLoaded) return [];
-
-    return lines.flatMap((line) => {
-      if (line.IM_ID <= 0) return [];
-
-      const item = itemCatalog[line.IM_ID];
-
-      if (!item) return [];
-
-      const originalPrice = Number(item.Price ?? 0);
-
-      const discountedPrice =
-        originalPrice * (1 - line.discount / 100);
-
-      const validation = validateSellingPrice(
-        line.IM_ID,
-        discountedPrice,
-        pricingAlerts
-      );
-
-      if (validation.allowed) return [];
-
-      const pricingRule = pricingAlerts.find(
-        (alert) => Number(alert.productID) === Number(line.IM_ID)
-      );
-
-      return [
-        {
-          IM_ID: line.IM_ID,
-          itemName: item.Item_Name,
-          sellingPrice: discountedPrice,
-          minimumPrice: Number(pricingRule?.minSellingPrice ?? 0),
-          message:
-            validation.message ??
-            "Selling price is below the Finance minimum.",
-        },
-      ];
-    });
-  }, [lines, itemCatalog, pricingAlerts, pricingLoaded]);
-
-  const hasPricingIssues = pricingIssues.length > 0;
-
   const selectItems = useMemo(() => {
     const combined = new Map<number, SalesOrderItem>();
 
@@ -440,6 +343,8 @@ export default function OrdersPage() {
 
   function resetForm() {
     setCustomerId("");
+    setTaxType("VAT");
+    setCustomTaxRate("0");
     setLines([{ lineId: 1, IM_ID: 0, quantity: 1, discount: 0 }]);
     setNextLineId(2);
     setItemQueries({});
@@ -473,24 +378,10 @@ export default function OrdersPage() {
       return;
     }
 
-    // Do not allow order creation until Finance rules are available.
-    if (loadingPricing || !pricingLoaded || pricingError) {
-      setError(
-        pricingError ||
-          "Please wait until Finance minimum selling prices have loaded."
-      );
-      return;
-    }
-
-    if (hasPricingIssues) {
-      setError(
-        `Finance minimum selling-price policy violation: ${pricingIssues
-          .map(
-            (issue) =>
-              `${issue.itemName}: ${issue.message}`
-          )
-          .join(" ")}`
-      );
+    const orderTaxRate = taxType === "VAT" ? 12 :
+      taxType === "Custom" ? Number(customTaxRate) : 0;
+    if (!Number.isFinite(orderTaxRate) || orderTaxRate < 0 || orderTaxRate > 100) {
+      setError("Tax rate must be between 0% and 100%.");
       return;
     }
 
@@ -506,6 +397,8 @@ export default function OrdersPage() {
 
     const data: SalesOrderCreate = {
       customer_id: Number(customerId),
+      tax_type: taxType,
+      tax_rate: orderTaxRate,
       details: lines.map((line) => ({
         IM_ID: line.IM_ID,
         quantity: line.quantity,
@@ -565,9 +458,6 @@ export default function OrdersPage() {
 
   const itemFieldsDisabled =
     !customerSelected || saving || loadingItems;
-
-  const pricingBlocked =
-    loadingPricing || !pricingLoaded || Boolean(pricingError);
 
   return (
     <div className="min-h-full space-y-5 bg-gray text-slate-800">
@@ -831,34 +721,6 @@ export default function OrdersPage() {
             </div>
 
             <div className="space-y-5">
-              {/* Finance pricing status */}
-              <div
-                className={`rounded-lg border p-3 text-sm ${
-                  pricingError
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : loadingPricing
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : pricingLoaded
-                        ? "border-green-200 bg-green-50 text-green-700"
-                        : "border-slate-200 bg-white text-slate-600"
-                }`}
-              >
-                {loadingPricing
-                  ? "Loading minimum selling prices from Finance..."
-                  : pricingError
-                    ? `Finance pricing unavailable: ${pricingError}`
-                    : pricingLoaded
-                      ? "Finance minimum selling-price rules loaded."
-                      : "Waiting for Finance pricing rules..."}
-              </div>
-
-              {pricingLoaded && (
-                <p className="text-xs text-slate-600">
-                  Item prices are checked after discounts against the minimum
-                  selling prices provided by Finance.
-                </p>
-              )}
-
               <div>
                 <label
                   htmlFor="order-customer"
@@ -890,6 +752,45 @@ export default function OrdersPage() {
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div className="rounded-lg border border-[#D1D5DB] bg-white p-4">
+                <label htmlFor="order-tax-type" className="mb-2 block text-sm font-semibold text-slate-700">
+                  Order Tax
+                </label>
+                <select
+                  id="order-tax-type"
+                  value={taxType}
+                  onChange={(event) => setTaxType(event.target.value as typeof taxType)}
+                  disabled={saving}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800"
+                >
+                  <option value="VAT">VAT — 12%</option>
+                  <option value="Non-VAT">Non-VAT — 0%</option>
+                  <option value="Tax-Exempt">Tax-Exempt — 0%</option>
+                  <option value="Custom">Custom rate</option>
+                </select>
+                {taxType === "Custom" && (
+                  <div className="mt-3">
+                    <label htmlFor="order-custom-tax" className="mb-1 block text-xs font-medium text-slate-600">Custom tax rate (%)</label>
+                    <input
+                      id="order-custom-tax"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={customTaxRate}
+                      onChange={(event) => setCustomTaxRate(event.target.value)}
+                      disabled={saving}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                    />
+                  </div>
+                )}
+                <div className="mt-3 flex justify-between text-sm">
+                  <span className="text-slate-600">Estimated tax ({selectedTaxRate || 0}%)</span>
+                  <strong className="text-slate-800">{money(estimatedTax)}</strong>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Tax details are saved with the order and carried into its invoice.</p>
               </div>
 
               <div>
@@ -948,17 +849,6 @@ export default function OrdersPage() {
 
                     const discountedPrice =
                       originalPrice * (1 - line.discount / 100);
-
-                    const pricingRule = pricingAlerts.find(
-                      (alert) =>
-                        Number(alert.productID) === Number(line.IM_ID)
-                    );
-
-                    const isBelowMinimum =
-                      pricingLoaded &&
-                      Boolean(pricingRule) &&
-                      discountedPrice <
-                        Number(pricingRule?.minSellingPrice ?? 0);
 
                     return (
                       <div
@@ -1185,39 +1075,6 @@ export default function OrdersPage() {
                               </span>
                             </div>
 
-                            {pricingLoaded && pricingRule && (
-                              <div
-                                className={`rounded-md p-2 ${
-                                  isBelowMinimum
-                                    ? "bg-red-50 text-red-700"
-                                    : "bg-green-50 text-green-700"
-                                }`}
-                              >
-                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                  <span>
-                                    Finance minimum:{" "}
-                                    <strong>
-                                      {money(
-                                        pricingRule.minSellingPrice
-                                      )}
-                                    </strong>
-                                  </span>
-
-                                  <strong>
-                                    {isBelowMinimum
-                                      ? "Below minimum price"
-                                      : "Price meets Finance policy"}
-                                  </strong>
-                                </div>
-                              </div>
-                            )}
-
-                            {pricingLoaded && !pricingRule && (
-                              <p className="text-slate-500">
-                                No Finance minimum-price rule was returned
-                                for this item.
-                              </p>
-                            )}
                           </div>
                         )}
                       </div>
@@ -1251,31 +1108,6 @@ export default function OrdersPage() {
                   </div>
                 )}
 
-                {hasPricingIssues && (
-                  <div
-                    role="alert"
-                    className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-                  >
-                    <p className="font-semibold">
-                      Finance minimum selling-price violation.
-                    </p>
-
-                    <ul className="mt-2 list-disc space-y-2 pl-5">
-                      {pricingIssues.map((issue) => (
-                        <li key={issue.IM_ID}>
-                          <strong>{issue.itemName}</strong>
-                          <div>
-                            Selling price: {money(issue.sellingPrice)}
-                          </div>
-                          <div>
-                            Required minimum: {money(issue.minimumPrice)}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
                 <button
                   type="button"
                   onClick={addLine}
@@ -1303,19 +1135,11 @@ export default function OrdersPage() {
                     saving ||
                     !customerSelected ||
                     hasStockIssues ||
-                    hasPricingIssues ||
-                    loadingItems ||
-                    pricingBlocked
+                    loadingItems
                   }
                   className="rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving
-                    ? "Creating..."
-                    : pricingBlocked
-                      ? "Waiting for Finance..."
-                      : hasPricingIssues
-                        ? "Price Below Minimum"
-                        : "Create Order"}
+                  {saving ? "Creating..." : "Create Order"}
                 </button>
               </div>
             </div>

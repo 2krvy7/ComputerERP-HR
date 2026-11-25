@@ -46,6 +46,20 @@ class SalesOrder(Base):
         default=Decimal("0"),
     )
 
+    tax_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="VAT", server_default="VAT"
+    )
+
+    tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("12.00"),
+        server_default="12.00",
+    )
+
+    tax_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"),
+        server_default="0.00",
+    )
+
     details = relationship(
         "SalesOrderDetail",
         back_populates="order",

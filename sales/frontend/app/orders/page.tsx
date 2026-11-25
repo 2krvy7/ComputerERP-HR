@@ -45,6 +45,8 @@ export default function OrdersPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [customerId, setCustomerId] = useState("");
+  const [taxType, setTaxType] = useState<"VAT" | "Non-VAT" | "Tax-Exempt" | "Custom">("VAT");
+  const [customTaxRate, setCustomTaxRate] = useState("0");
   const [lines, setLines] = useState<OrderLine[]>([
     { IM_ID: 0, quantity: 1, discount: 0 },
   ]);
@@ -161,6 +163,8 @@ export default function OrdersPage() {
 
   function resetForm() {
     setCustomerId("");
+    setTaxType("VAT");
+    setCustomTaxRate("0");
     setLines([{ IM_ID: 0, quantity: 1, discount: 0 }]);
     setItemSearch("");
     setShowForm(false);
@@ -188,8 +192,17 @@ export default function OrdersPage() {
       return;
     }
 
+    const taxRate = taxType === "VAT" ? 12 :
+      taxType === "Custom" ? Number(customTaxRate) : 0;
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+      setError("Tax rate must be between 0% and 100%.");
+      return;
+    }
+
     const data: SalesOrderCreate = {
       customer_id: Number(customerId),
+      tax_type: taxType,
+      tax_rate: taxRate,
       details: lines.map((line) => ({
         IM_ID: line.IM_ID,
         quantity: line.quantity,
@@ -433,6 +446,33 @@ export default function OrdersPage() {
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium">Order Tax</label>
+                <select
+                  value={taxType}
+                  onChange={(event) => setTaxType(event.target.value as typeof taxType)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                >
+                  <option value="VAT">VAT — 12%</option>
+                  <option value="Non-VAT">Non-VAT — 0%</option>
+                  <option value="Tax-Exempt">Tax-Exempt — 0%</option>
+                  <option value="Custom">Custom rate</option>
+                </select>
+                {taxType === "Custom" && (
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={customTaxRate}
+                    onChange={(event) => setCustomTaxRate(event.target.value)}
+                    aria-label="Custom tax rate percentage"
+                    className="mt-3 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+                  />
+                )}
+                <p className="mt-1 text-xs text-gray-500">The invoice will use the tax saved on this order.</p>
               </div>
 
               <div>

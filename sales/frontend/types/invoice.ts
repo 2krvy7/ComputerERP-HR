@@ -24,6 +24,4 @@ export interface SalesInvoiceCreate {
   invoice_date: string;
   due_date: string | null;
   installment_months: 1 | 3 | 6 | 12;
-  tax_type: InvoiceTaxType;
-  tax_rate: number;
 }

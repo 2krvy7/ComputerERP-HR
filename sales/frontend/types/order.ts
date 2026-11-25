@@ -23,6 +23,9 @@ export interface SalesOrder {
   order_date: string;
   status: SalesOrderStatus;
   total_amount: string | number;
+  tax_type: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
+  tax_rate: string | number;
+  tax_amount: string | number;
   details: SalesOrderDetail[];
 }
 
@@ -36,6 +39,8 @@ export interface SalesOrderCreate {
   customer_id: number;
   quotation_id?: number | null;
   order_date?: string;
+  tax_type?: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
+  tax_rate?: number;
   details: SalesOrderDetailCreate[];
 }
 

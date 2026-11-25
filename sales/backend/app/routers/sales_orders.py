@@ -466,6 +466,11 @@ def create_order(
             "line_total": line_total,
         })
 
+    tax_rate = Decimal(str(order_data.tax_rate or "0.00"))
+    tax_amount = (order_total * tax_rate / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
     try:
         if quotation is None:
             quotation = SalesQuotation(
@@ -496,6 +501,9 @@ def create_order(
             ),
             status="Pending",
             total_amount=order_total,
+            tax_type=order_data.tax_type,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
         )
 
         db.add(order)

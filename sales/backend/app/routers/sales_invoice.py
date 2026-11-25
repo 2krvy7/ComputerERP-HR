@@ -113,14 +113,8 @@ def create_invoice(
 
     order_total = Decimal(str(order.total_amount))
 
-    tax_rate = Decimal(str(invoice_data.tax_rate or "0.00"))
-
-    tax_amount = (
-        order_total * tax_rate / Decimal("100")
-    ).quantize(
-        Decimal("0.01"),
-        rounding=ROUND_HALF_UP,
-    )
+    tax_rate = Decimal(str(order.tax_rate or "0.00"))
+    tax_amount = Decimal(str(order.tax_amount or "0.00"))
 
     interest_amount = (
         order_total * interest_rate
@@ -138,7 +132,7 @@ def create_invoice(
         installment_months=months,
         interest_rate=interest_rate * 100,
         interest_amount=interest_amount,
-        tax_type=invoice_data.tax_type,
+        tax_type=order.tax_type,
         tax_rate=tax_rate,
         tax_amount=tax_amount,
         total_due=total_due,
