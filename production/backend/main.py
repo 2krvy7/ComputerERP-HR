@@ -1,3 +1,5 @@
+import os
+
 #APIs connecting to PostgreSQL inside Supabase
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -21,15 +23,20 @@ from sidebar_features import reports
 app = FastAPI()
 
 #API router connecting different URL origins
+# Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
+DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3003,http://127.0.0.1:3003"
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3003",
-        "http://127.0.0.1:3003"
-    ],
+    allow_origins=origins,
+    # any of our deployed ERP sites, e.g. https://computer-erp-procurement.vercel.app
+    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],)
+    allow_headers=["*"],
+)
+
 #API routers connecting frontend page and backend code
 app.include_router(
     dashboard.router,
@@ -281,15 +288,23 @@ def update_production_quantity(
                 sql_cursor.execute(
                     """
                     UPDATE public."PRODUCTION"
-                    SET "QuantityProduced" = %s
+                    SET
+                        "QuantityProduced" = %s,
+                        status = CASE
+                            WHEN %s = "QuantityRequired"
+                            THEN 'Completed'
+                            ELSE status
+                        END
                     WHERE "Production_ID" = %s
                     AND %s <= "QuantityRequired"
                     RETURNING
                         "Production_ID",
                         "QuantityRequired",
-                        "QuantityProduced";
+                        "QuantityProduced",
+                        status;
                     """,
                     (
+                        new_quantity,
                         new_quantity,
                         production_id,
                         new_quantity
@@ -308,7 +323,8 @@ def update_production_quantity(
             "message": "Production quantity updated successfully.",
             "Production_ID": updated_batch[0],
             "QuantityRequired": updated_batch[1],
-            "QuantityProduced": updated_batch[2]
+            "QuantityProduced": updated_batch[2],
+            "status": updated_batch[3]
         }
 
     except HTTPException:

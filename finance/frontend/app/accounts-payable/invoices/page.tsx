@@ -177,6 +177,11 @@ export default function APInvoices() {
     setDueDateInput(future.toISOString().split("T")[0]);
   }
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function handleApproveAndCreateAP(e: React.FormEvent) {
     e.preventDefault();
     if (!reviewingPI || !dueDateInput) return;
@@ -187,7 +192,7 @@ export default function APInvoices() {
       // Destination: Inserts verified PurchaseInvoice into Finance "APInvoice" table with the chosen dueDate.
       // Side Effect: Changes Procurement's read-only status from "Awaiting Finance" to "Unpaid".
       const res = await fetch(
-        "http://127.0.0.1:8000/api/apinvoices/create-from-pi",
+        `${API_URL}/api/apinvoices/create-from-pi`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

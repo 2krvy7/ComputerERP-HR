@@ -29,6 +29,11 @@ export default function Transactions() {
     fetchData();
   }, []);
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   // FILE: finance/frontend/app/cash-bank/transactions/page.tsx (Lines 31–62)
   async function fetchData() {
     setLoading(true);
@@ -39,13 +44,13 @@ export default function Transactions() {
         // Backend File: finance/backend/routers/transactions.py -> get_bank_transactions()
         // Database Tables: Reads "ARReceipt", "APPayment", and approved Payroll/Expenses from "JournalEntry"
         // Purpose: Loads all bank inflows and outflows for the Bank Transaction Register
-        fetch("http://127.0.0.1:8000/api/transactions"),
+        fetch(`${API_URL}/api/transactions`),
 
         // FETCH 2: GET http://127.0.0
         // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
         // Database Tables: Reads "BankAccount" with computed live balances
         // Purpose: Populates the Bank Account filter dropdown and calculates the active Book Balance
-        fetch("http://127.0.0.1:8000/api/transactions"),
+        fetch(`${API_URL}/api/transactions`),
       ]);
 
       if (!txRes.ok) throw new Error(`Transactions API error: ${txRes.status}`);

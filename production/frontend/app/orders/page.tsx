@@ -255,18 +255,6 @@ export default function OrdersPage() {
             </p>
           </div>
 
-          {/* FINANCE UPDATE NOTICE */}
-          <div className="mx-5 mt-5 p-4 rounded-lg border border-yellow-200 bg-yellow-50">
-            <h3 className="text-sm font-semibold text-yellow-800">
-              Needs Updates from Finance Department
-            </h3>
-            <p className="text-sm text-yellow-700 mt-1">
-              Price review is currently awaiting updates from the Finance
-              Department. Final selling prices and markup details will be
-              displayed once the Finance workflow is established.
-            </p>
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-gray-50 text-gray-600">
