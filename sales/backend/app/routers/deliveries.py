@@ -1,6 +1,7 @@
 
 from collections import defaultdict
 from datetime import datetime
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, text
@@ -56,6 +57,12 @@ def normalize_status(value: str) -> str:
         return "Released"
 
     return value
+
+
+def is_finished_goods_warehouse(name: str | None) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    is_finished_goods = "finishedgood" in normalized or normalized.startswith("fg")
+    return is_finished_goods and normalized.endswith(("a", "b"))
 
 
 def is_admin(user: User) -> bool:
@@ -324,7 +331,12 @@ def get_warehouses(
         ORDER BY "Warehouse_Name"
     """)
 
-    return db.execute(statement).mappings().all()
+    warehouses = db.execute(statement).mappings().all()
+    return [
+        warehouse
+        for warehouse in warehouses
+        if is_finished_goods_warehouse(warehouse["Warehouse_Name"])
+    ]
 
 
 @router.get(
@@ -387,6 +399,14 @@ def create_delivery(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Warehouse not found.",
+        )
+
+    if not is_finished_goods_warehouse(warehouse.Warehouse_Name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Deliveries must use Finished Goods Warehouse A or B."
+            ),
         )
 
     existing_delivery = db.scalar(
