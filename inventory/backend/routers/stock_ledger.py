@@ -55,51 +55,56 @@ def get_stock_ledger(
         where_clause = "WHERE " + " AND ".join(conditions)
 
     query = f"""
-        WITH ledger_balance AS (
-            SELECT
-                s."LogID",
-                s."IM_ID",
-                s."WH_ID",
+        
+WITH ledger_balance AS (
+    SELECT
+        s."LogID",
+        s."IM_ID",
+        s."WH_ID",
 
-                CASE
-                    WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
-                         AND s."Quantity" > 0
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    ELSE 0
-                END AS stock_in,
+        CASE
+            WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
+            THEN ABS(s."Quantity")
 
-                CASE
-                    WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
-                         AND s."Quantity" < 0
-                    THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
-                    ELSE 0
-                END AS stock_out,
+            WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                 AND s."Quantity" > 0
+            THEN s."Quantity"
 
-                SUM(
-                    CASE
-                        WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
-                        THEN ABS(COALESCE(s."ActualQuantity", s."Quantity"))
+            ELSE 0
+        END AS stock_in,
 
-                        WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
-                        THEN -ABS(COALESCE(s."ActualQuantity", s."Quantity"))
+        CASE
+            WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
+            THEN ABS(s."Quantity")
 
-                        WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
-                        THEN s."Quantity"
+            WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                 AND s."Quantity" < 0
+            THEN ABS(s."Quantity")
 
-                        ELSE 0
-                    END
-                ) OVER (
-                    PARTITION BY s."IM_ID", s."WH_ID"
-                    ORDER BY s."LogDate", s."LogID"
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS balance
+            ELSE 0
+        END AS stock_out,
 
-            FROM public."STOCK_LEDGER" AS s
-        )
+        SUM(
+            CASE
+                WHEN s."TransactionType" IN ('STOCK_IN', 'TRANSFER_IN')
+                THEN s."Quantity"
+
+                WHEN s."TransactionType" IN ('STOCK_OUT', 'TRANSFER_OUT')
+                THEN s."Quantity"
+
+                WHEN s."TransactionType" = 'STOCK_ADJUSTMENT'
+                THEN s."Quantity"
+
+                ELSE 0
+            END
+        ) OVER (
+            PARTITION BY s."IM_ID", s."WH_ID"
+            ORDER BY s."LogDate", s."LogID"
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS balance
+
+    FROM public."STOCK_LEDGER" AS s
+)
 
         SELECT
             s."LogID" AS log_id,
@@ -181,15 +186,19 @@ def get_stock_ledger_summary(
             COUNT(*) AS total_transactions,
 
             COALESCE(SUM(
-                CASE WHEN "TransactionType" = 'STOCK_IN'
-                THEN ABS(COALESCE("ActualQuantity", "Quantity"))
-                ELSE 0 END
+                CASE
+                    WHEN "TransactionType" = 'STOCK_IN'
+                    THEN "Quantity"
+                    ELSE 0
+                END
             ), 0) AS total_stock_in,
 
             COALESCE(SUM(
-                CASE WHEN "TransactionType" = 'STOCK_OUT'
-                THEN ABS(COALESCE("ActualQuantity", "Quantity"))
-                ELSE 0 END
+                CASE
+                    WHEN "TransactionType" = 'STOCK_OUT'
+                    THEN ABS("Quantity")
+                    ELSE 0
+                END
             ), 0) AS total_stock_out,
 
             COALESCE(SUM(
@@ -199,7 +208,7 @@ def get_stock_ledger_summary(
             ), 0) AS total_adjustments,
 
             COUNT(*) FILTER (
-                WHERE "TransactionType" IN ('TRANSFER_IN', 'TRANSFER_OUT')
+                WHERE "TransactionType" = 'TRANSFER_OUT'
             ) AS total_transfers
 
         FROM public."STOCK_LEDGER"
@@ -210,6 +219,7 @@ def get_stock_ledger_summary(
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(query, params)
             return cur.fetchone()
+
 
 
 @router.get("/{log_id}")
@@ -231,14 +241,9 @@ def get_stock_ledger_details(
             s."Quantity" AS quantity,
             s."ActualQuantity" AS actual_quantity,
 
-            CASE
-                WHEN s."TransactionType" = 'STOCK_IN'
-                     AND s."ReferenceNo" LIKE 'GR-%%'
-                THEN s."Quantity" - COALESCE(s."ActualQuantity", 0)
-                ELSE NULL
-            END AS damaged_quantity,
-
             gr."ItemCondition" AS item_condition,
+            gr."QuantityReceived" AS quantity_received,
+            gr."Remarks" AS receiving_remarks,
 
             s."ReferenceNo" AS reference_no,
             s."LoggedBy" AS logged_by_id,
