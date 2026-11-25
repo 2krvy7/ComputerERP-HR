@@ -1,54 +1,166 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import "./accounts.css";
 
-const accounts = [
-  {
-    name: "Chase Business",
-    type: "Checking",
-    balance: 84580,
-    account: "4821",
-    ledger: "1010",
-    status: "Feed Connected",
-  },
-  {
-    name: "Chase Business",
-    type: "Savings Reserve",
-    balance: 30000,
-    account: "9973",
-    ledger: "1020",
-    status: "Feed Connected",
-  },
-  {
-    name: "Wise Business",
-    type: "USD Business Account",
-    balance: 10000,
-    account: "6158",
-    ledger: "1030",
-    status: "Feed Connected",
-  },
-];
-
-const statements = [
-  {
-    account: "Chase Operating - 4821",
-    period: "Oct 1 - Oct 31, 2026",
-    balance: "$84,580.00",
-    status: "12 to review",
-  },
-  {
-    account: "Chase Savings - 9973",
-    period: "Oct 1 - Oct 31, 2026",
-    balance: "$30,000.00",
-    status: "Reconciled",
-  },
-  {
-    account: "Wise USD - 6158",
-    period: "Oct 1 - Oct 31, 2026",
-    balance: "$10,000.00",
-    status: "Reconciled",
-  },
-];
-
 export default function BankAccounts() {
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Filters, Reconciliation & Active Disbursement/Receiver Status
+  const [bankFilter, setBankFilter] = useState("ALL");
+  const [reconciledIds, setReconciledIds] = useState<number[]>([]);
+  const [activeDisbursementIds, setActiveDisbursementIds] = useState<number[]>([]);
+
+  // Add Bank Account Modal
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [formBankName, setFormBankName] = useState("");
+  const [formAccountNum, setFormAccountNum] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // View Transactions Modal
+  const [selectedAccount, setSelectedAccount] = useState<any | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  async function fetchAccounts() {
+    setLoading(true);
+    setError(null);
+    try {
+      // FETCH 1: GET http://127.0.0
+      // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
+      // Database Tables: Reads "BankAccount" and aggregates "ARReceipt" inflows & "APPayment" outflows
+      // Purpose: Loads all registered bank accounts, live cash balances, and active disbursement status
+      const res = await fetch("http://127.0.0.1:8000/api/bank");
+      if (!res.ok) throw new Error(`Bank API error: ${res.status}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setAccounts(list);
+
+      // Automatically mark all fetched bank accounts as active for Disbursement & Receiving
+      setActiveDisbursementIds(list.map((b: any) => Number(b.bankAccountID)));
+    } catch (err: any) {
+      setError(err.message || "Failed to load bank accounts");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(val || 0));
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const stats = useMemo(() => {
+    const totalCash = accounts.reduce((s, a) => s + Number(a.balance || 0), 0);
+    const totalInflows = accounts.reduce((s, a) => s + Number(a.totalIn || 0), 0);
+    const totalOutflows = accounts.reduce((s, a) => s + Number(a.totalOut || 0), 0);
+    const needsRecon = accounts.filter(
+      (a) => !reconciledIds.includes(a.bankAccountID)
+    ).length;
+
+    return {
+      totalCash,
+      totalInflows,
+      totalOutflows,
+      connectedCount: accounts.length,
+      activeDisbursementCount: activeDisbursementIds.length,
+      needsRecon,
+    };
+  }, [accounts, reconciledIds, activeDisbursementIds]);
+
+  const filteredAccounts = useMemo(() => {
+    if (bankFilter === "ALL") return accounts;
+    return accounts.filter((a) => a.bankName === bankFilter);
+  }, [accounts, bankFilter]);
+
+  async function handleAddAccount(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formBankName.trim() || !formAccountNum.trim()) return;
+
+    setSubmitting(true);
+    try {
+      // FETCH 2: POST http://127.0.0
+      // Backend File: finance/backend/routers/bank.py -> create_bank_account()
+      // Database Table: Inserts new bank record into "BankAccount"
+      // Purpose: Registers a new company bank account for collections and disbursements
+      const res = await fetch("http://127.0.0", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankName: formBankName,
+          accountNumber: formAccountNum,
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "Failed to add bank account");
+      }
+      setShowAddModal(false);
+      setFormBankName("");
+      setFormAccountNum("");
+      await fetchAccounts();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleViewTransactions(account: any) {
+    setSelectedAccount(account);
+    setTxLoading(true);
+    try {
+      // FETCH 3: GET http://127.0.0{bankAccountID}/transactions
+      // Backend File: finance/backend/routers/bank.py -> get_bank_transactions()
+      // Database Tables: Reads "ARReceipt" (IN) and "APPayment" (OUT) for the selected bankAccountID
+      // Purpose: Displays the transaction history modal for a specific bank account
+      const res = await fetch(
+        `http://127.0.0${account.bankAccountID}/transactions`
+      );
+      if (res.ok) {
+        setTransactions(await res.json());
+      } else {
+        setTransactions([]);
+      }
+    } catch {
+      setTransactions([]);
+    } finally {
+      setTxLoading(false);
+    }
+  }
+
+  function toggleReconcile(bankAccountID: number) {
+    setReconciledIds((prev) =>
+      prev.includes(bankAccountID)
+        ? prev.filter((id) => id !== bankAccountID)
+        : [...prev, bankAccountID]
+    );
+  }
+
+  function toggleDisbursementActive(bankAccountID: number) {
+    setActiveDisbursementIds((prev) =>
+      prev.includes(bankAccountID)
+        ? prev.filter((id) => id !== bankAccountID)
+        : [...prev, bankAccountID]
+    );
+  }
+
   return (
     <div className="bank-page">
       <div className="page-header">
@@ -58,83 +170,188 @@ export default function BankAccounts() {
         </div>
 
         <div className="header-actions">
-          <button className="btn secondary">Export</button>
-          <button className="btn primary">Add Account</button>
+          <button className="btn secondary" onClick={() => window.print()}>
+            Export
+          </button>
+          <button className="btn primary" onClick={() => setShowAddModal(true)}>
+            Add Account
+          </button>
         </div>
       </div>
 
       <div className="stats-grid">
         <div className="stat-card">
           <span>Total Cash Balance</span>
-          <h2>$124,580.00</h2>
-          <small>+ $31,440 this month</small>
+          <h2>{loading ? "..." : formatCurrency(stats.totalCash)}</h2>
+          <small>
+            In: {formatCurrency(stats.totalInflows)} • Out:{" "}
+            {formatCurrency(stats.totalOutflows)}
+          </small>
         </div>
 
         <div className="stat-card">
-          <span>Connected Accounts</span>
-          <h2>3</h2>
-          <small>All feeds connected</small>
+          <span>Active Disbursement &amp; Receiver</span>
+          <h2>{loading ? "..." : stats.activeDisbursementCount}</h2>
+          <small>
+            {stats.activeDisbursementCount > 0
+              ? "Ready for AP Payments, Payroll & AR Receipts"
+              : "0 active disbursement accounts"}
+          </small>
         </div>
 
         <div className="stat-card">
           <span>Needs Reconciliation</span>
-          <h2>12</h2>
-          <small>Chase Operating Statement</small>
+          <h2>{loading ? "..." : stats.needsRecon}</h2>
+          <small>
+            {stats.needsRecon === 0
+              ? "All accounts reconciled"
+              : "Pending statement review"}
+          </small>
         </div>
 
         <div className="stat-card">
-          <span>Last Synced</span>
-          <h2>4 min ago</h2>
-          <small>All accounts up to date</small>
+          <span>Sync Status</span>
+          <h2>Live</h2>
+          <small>Connected to AR &amp; AP feeds</small>
         </div>
       </div>
 
       <div className="filters">
-        <button className="filter-btn active">All Institutions</button>
-        <button className="filter-btn">USD Accounts</button>
-
-        <button className="more-filter">More Filters</button>
-      </div>
-
-      <div className="accounts-grid">
-        {accounts.map((account, index) => (
-          <div key={index} className="account-card">
-            <div className="card-header">
-              <div>
-                <h3>{account.name}</h3>
-                <span>{account.type}</span>
-              </div>
-
-              <button className="menu-btn">•••</button>
-            </div>
-
-            <div className="balance">
-              $
-              {account.balance.toLocaleString("en-US", {
-                minimumFractionDigits: 2,
-              })}
-            </div>
-
-            <p className="account-meta">
-              Account {account.account} • Ledger {account.ledger}
-            </p>
-
-            <div className="status-row">
-              <span className="badge">{account.status}</span>
-            </div>
-
-            <div className="card-actions">
-              <button className="btn secondary">
-                View Transactions
-              </button>
-
-              <button className="btn secondary">
-                Manage
-              </button>
-            </div>
-          </div>
+        <button
+          className={bankFilter === "ALL" ? "filter-btn active" : "filter-btn"}
+          onClick={() => setBankFilter("ALL")}
+        >
+          All Institutions
+        </button>
+        {Array.from(new Set(accounts.map((a) => a.bankName))).map((name) => (
+          <button
+            key={name}
+            className={bankFilter === name ? "filter-btn active" : "filter-btn"}
+            onClick={() => setBankFilter(name)}
+          >
+            {name}
+          </button>
         ))}
+
+        <button className="more-filter" onClick={fetchAccounts}>
+          Refresh Feed
+        </button>
       </div>
+
+      {loading ? (
+        <p style={{ padding: "1rem" }}>Loading bank accounts...</p>
+      ) : error ? (
+        <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+      ) : filteredAccounts.length === 0 ? (
+        <p style={{ padding: "1rem" }}>
+          No bank accounts found. Click <strong>Add Account</strong> to register
+          one.
+        </p>
+      ) : (
+        <div className="accounts-grid">
+          {filteredAccounts.map((account) => {
+            const isRecon = reconciledIds.includes(account.bankAccountID);
+            const isDisbActive = activeDisbursementIds.includes(
+              account.bankAccountID
+            );
+
+            return (
+              <div key={account.bankAccountID} className="account-card">
+                <div className="card-header">
+                  <div>
+                    <h3>{account.bankName}</h3>
+                    <span>Account #{account.bankAccountID}</span>
+                  </div>
+
+                  <button
+                    className="menu-btn"
+                    onClick={() => handleViewTransactions(account)}
+                    title="View Transactions"
+                  >
+                    •••
+                  </button>
+                </div>
+
+                <div className="balance">{formatCurrency(account.balance)}</div>
+
+                <p className="account-meta">
+                  Acct No: {account.accountNumber} • {account.transactionCount}{" "}
+                  posted txns
+                </p>
+
+                <div
+                  className="status-row"
+                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
+                >
+                  <span
+                    className="badge"
+                    style={
+                      isDisbActive
+                        ? {
+                            backgroundColor: "#ecfdf5",
+                            color: "#065f46",
+                            border: "1px solid #a7f3d0",
+                          }
+                        : {
+                            backgroundColor: "#fef2f2",
+                            color: "#991b1b",
+                            border: "1px solid #fecaca",
+                          }
+                    }
+                  >
+                    {isDisbActive
+                      ? "Active: Disbursement & Receiver"
+                      : "Inactive Disbursement"}
+                  </span>
+
+                  <span className="badge">
+                    {isRecon ? "Reconciled" : "Feed Connected"}
+                  </span>
+                </div>
+
+                <div
+                  className="card-actions"
+                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
+                >
+                  <button
+                    className="btn secondary"
+                    onClick={() =>
+                      toggleDisbursementActive(account.bankAccountID)
+                    }
+                    style={
+                      isDisbActive
+                        ? {
+                            backgroundColor: "#f0fdf4",
+                            borderColor: "#86efac",
+                            color: "#166534",
+                          }
+                        : undefined
+                    }
+                  >
+                    {isDisbActive
+                      ? "Disbursement Active ✓"
+                      : "Activate Disbursement"}
+                  </button>
+
+                  <button
+                    className="btn secondary"
+                    onClick={() => handleViewTransactions(account)}
+                  >
+                    Transactions
+                  </button>
+
+                  <button
+                    className="btn secondary"
+                    onClick={() => toggleReconcile(account.bankAccountID)}
+                  >
+                    {isRecon ? "Unmark" : "Reconcile"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="statements-card">
         <div className="table-header">
@@ -143,8 +360,8 @@ export default function BankAccounts() {
             <p>Compare statement balances with your books.</p>
           </div>
 
-          <button className="btn secondary">
-            Import Statement
+          <button className="btn secondary" onClick={fetchAccounts}>
+            Sync Balances
           </button>
         </div>
 
@@ -152,7 +369,7 @@ export default function BankAccounts() {
           <thead>
             <tr>
               <th>Account</th>
-              <th>Statement Period</th>
+              <th>Cash Inflows / Outflows</th>
               <th>Closing Balance</th>
               <th>Status</th>
               <th>Action</th>
@@ -160,32 +377,209 @@ export default function BankAccounts() {
           </thead>
 
           <tbody>
-            {statements.map((statement, i) => (
-              <tr key={i}>
-                <td>{statement.account}</td>
-                <td>{statement.period}</td>
-                <td>{statement.balance}</td>
-                <td>
-                  <span
-                    className={
-                      statement.status === "Reconciled"
-                        ? "status success"
-                        : "status warning"
-                    }
-                  >
-                    {statement.status}
-                  </span>
-                </td>
-                <td>
-                  <button className="link-btn">
-                    Reconcile
-                  </button>
+            {accounts.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", padding: "1rem" }}>
+                  No bank statements available yet.
                 </td>
               </tr>
-            ))}
+            ) : (
+              accounts.map((acc) => {
+                const isRecon = reconciledIds.includes(acc.bankAccountID);
+                return (
+                  <tr key={acc.bankAccountID}>
+                    <td>
+                      {acc.bankName} - {acc.accountNumber}
+                    </td>
+                    <td>
+                      +{formatCurrency(acc.totalIn)} / -
+                      {formatCurrency(acc.totalOut)}
+                    </td>
+                    <td>{formatCurrency(acc.balance)}</td>
+                    <td>
+                      <span
+                        className={
+                          isRecon ? "status success" : "status warning"
+                        }
+                      >
+                        {isRecon
+                          ? "Reconciled"
+                          : `${acc.transactionCount} txns to review`}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        className="link-btn"
+                        onClick={() => toggleReconcile(acc.bankAccountID)}
+                      >
+                        {isRecon ? "Reconciled ✓" : "Reconcile"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Add Bank Account Modal */}
+      {showAddModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <form
+            onSubmit={handleAddAccount}
+            style={{
+              background: "#fff",
+              padding: "1.5rem",
+              borderRadius: "8px",
+              width: "400px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem",
+            }}
+          >
+            <h3>Add Bank Account</h3>
+
+            <label>Bank Name *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. BDO Corporate Checking"
+              value={formBankName}
+              onChange={(e) => setFormBankName(e.target.value)}
+            />
+
+            <label>Account Number *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 0048-2910-4821"
+              value={formAccountNum}
+              onChange={(e) => setFormAccountNum(e.target.value)}
+            />
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "0.5rem",
+                marginTop: "0.5rem",
+              }}
+            >
+              <button type="button" onClick={() => setShowAddModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={submitting}
+              >
+                {submitting ? "Saving..." : "Save Account"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* View Transactions Modal */}
+      {selectedAccount && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              padding: "1.5rem",
+              borderRadius: "8px",
+              width: "520px",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.75rem",
+            }}
+          >
+            <h3>
+              {selectedAccount.bankName} ({selectedAccount.accountNumber})
+            </h3>
+            <p>
+              <strong>Current Balance:</strong>{" "}
+              {formatCurrency(selectedAccount.balance)}
+            </p>
+
+            {txLoading ? (
+              <p>Loading transactions...</p>
+            ) : transactions.length === 0 ? (
+              <p>
+                No AP payments or AR receipts recorded on this account yet.
+              </p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Ref</th>
+                    <th>Date</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transactions.map((tx) => (
+                    <tr key={tx.id}>
+                      <td>{tx.id}</td>
+                      <td>{tx.type}</td>
+                      <td>{tx.reference}</td>
+                      <td>{formatDate(tx.date)}</td>
+                      <td
+                        style={{
+                          color: tx.direction === "IN" ? "green" : "crimson",
+                        }}
+                      >
+                        {tx.direction === "IN" ? "+" : "-"}
+                        {formatCurrency(tx.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                marginTop: "0.5rem",
+              }}
+            >
+              <button
+                className="btn secondary"
+                onClick={() => setSelectedAccount(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

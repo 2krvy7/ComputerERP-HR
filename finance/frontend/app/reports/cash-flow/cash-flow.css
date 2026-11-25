@@ -1,0 +1,60 @@
+.cashflow-page {
+  padding: 24px;
+  background: #f8fafc;
+  min-height: 100vh;
+}
+
+.positive {
+  color: #16a34a;
+}
+
+.negative {
+  color: #dc2626;
+}
+
+.section-row td {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #334155;
+}
+
+.total-row td {
+  background: #eef2ff;
+  font-weight: 600;
+}
+
+.cash-total td {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.ending-row td {
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 700;
+}
+
+.reconciliation-banner {
+  margin-top: 20px;
+  padding: 16px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  color: #166534;
+  font-weight: 500;
+}
+
+.analysis-card {
+  margin-top: 20px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.analysis-card p {
+  margin-bottom: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
