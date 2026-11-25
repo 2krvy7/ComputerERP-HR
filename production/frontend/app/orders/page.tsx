@@ -7,32 +7,14 @@ const API_URL =
 
 type ProductionOrder = {
   Production_ID: number;
+  ProductionOrder_ID: number | null;
   PM_ID: number;
   WH_ID: number;
   QuantityRequired: number;
   QuantityProduced: number;
-  StartDate: string;
-  Deadline: string;
+  StartDate: string | null;
+  Deadline: string | null;
   status: string;
-  UnitProductionCost: number|null;
-};
-
-type OrderForm = {
-  PM_ID: string;
-  WH_ID: string;
-  QuantityRequired: string;
-  StartDate: string;
-  Deadline: string;
-  UnitProductionCost: string;
-};
-
-const initialForm: OrderForm = {
-  PM_ID: "",
-  WH_ID: "",
-  QuantityRequired: "",
-  StartDate: "",
-  Deadline: "",
-  UnitProductionCost: "",
 };
 
 export default function OrdersPage() {
@@ -43,10 +25,7 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState("All");
   const [currentPage, setCurrentPage] = useState(1);
   const ordersPerPage = 10;
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState<OrderForm>(initialForm);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   // Retrieve production orders
   const fetchOrders = useCallback(async () => {
@@ -79,67 +58,12 @@ export default function OrdersPage() {
   setCurrentPage(1);
 }, [searchTerm, statusFilter]);
 
-  // Update form fields
-  const handleChange = (
-    field: keyof OrderForm,
-    value: string
-  ) => {
-    setForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  };
-
-  // Register a production order
-  const createOrder = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    try {
-      setSubmitting(true);
-      setError("");
-      setMessage("");
-
-  const response = await fetch(`${API_URL}/orders/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      PM_ID: Number(form.PM_ID),
-      WH_ID: Number(form.WH_ID),
-      QuantityRequired: Number(form.QuantityRequired),
-      UnitProductionCost: Number(form.UnitProductionCost),
-      StartDate: form.StartDate,
-      Deadline: form.Deadline,
-    }),
-  });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          result.detail || "Failed to create production order."
-        );
-      }
-
-      setMessage("Production order created successfully.");
-      setForm(initialForm);
-
-      await fetchOrders();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Something went wrong."
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const filteredOrders = orders.filter((order) => {
     const search = searchTerm.toLowerCase();
 
-    const reference =
-      `PO-${new Date(order.StartDate).getFullYear()}-${String(order.Production_ID).padStart(4, "0")}`;
+    const reference = order.ProductionOrder_ID
+      ? `PO-${String(order.ProductionOrder_ID).padStart(4, "0")}`
+      : `PROD-${String(order.Production_ID).padStart(4, "0")}`;
 
     const matchesSearch =
       reference.toLowerCase().includes(search) ||
@@ -167,7 +91,7 @@ export default function OrdersPage() {
     switch (status) {
       case "Completed":
         return "bg-green-100 text-green-700";
-      case "Ongoing":
+      case "In Progress":
         return "bg-blue-100 text-blue-700";
       case "Pending":
         return "bg-gray-100 text-gray-600";
@@ -199,147 +123,12 @@ export default function OrdersPage() {
           {activeTab === "Manufacturing" && (
       <>
 
-      {/* Error and Success Messages */}
+      {/* Error and Success */}
       {error && (
         <div className="p-3 rounded-lg bg-red-100 text-red-700 text-sm">
           {error}
         </div>
       )}
-
-      {message && (
-        <div className="p-3 rounded-lg bg-green-100 text-green-700 text-sm">
-          {message}
-        </div>
-      )}
-
-      {/* Add Production Order */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-
-        <div className="p-5 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-700">
-            Add Production Order
-          </h2>
-          <p className="text-sm text-gray-500">
-            Enter the required production order details.
-          </p>
-        </div>
-
-        <form onSubmit={createOrder} className="p-5 space-y-5">
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-            {/* Product Master ID */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                PM_ID
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={form.PM_ID}
-                onChange={(e) => handleChange("PM_ID", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-                placeholder="Enter Product Master ID"
-              />
-            </div>
-
-            {/* Warehouse ID */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                WH_ID
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={form.WH_ID}
-                onChange={(e) => handleChange("WH_ID", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-                placeholder="Enter Warehouse ID"
-              />
-            </div>
-
-            {/* Required Quantity */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Quantity Required
-              </label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={form.QuantityRequired}
-                onChange={(e) =>
-                  handleChange("QuantityRequired", e.target.value)
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-                placeholder="Enter required quantity"
-              />
-            </div>
-
-            {/* Unit Production Cost */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Unit Production Cost (₱)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                value={form.UnitProductionCost}
-                onChange={(e) =>
-                  handleChange("UnitProductionCost", e.target.value)
-                }
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-                placeholder="Enter cost per finished unit"
-              />
-            </div>
-
-            {/* Start Date */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Date
-              </label>
-              <input
-                type="datetime-local"
-                required
-                value={form.StartDate}
-                onChange={(e) => handleChange("StartDate", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-              />
-            </div>
-
-            {/* Deadline */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Deadline
-              </label>
-              <input
-                type="datetime-local"
-                required
-                min={form.StartDate || undefined}
-                value={form.Deadline}
-                onChange={(e) => handleChange("Deadline", e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#668d98]"
-              />
-            </div>
-
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-5 py-2 rounded-lg bg-[#365f68] text-white text-sm font-medium hover:bg-[#294b53] disabled:opacity-50"
-            >
-              {submitting ? "Creating..." : "Add Production Order"}
-            </button>
-          </div>
-
-        </form>
-      </div>
 
       <div className="p-5 border-b border-gray-200">
         <input
@@ -356,7 +145,7 @@ export default function OrdersPage() {
         >
           <option value="All">All Statuses</option>
           <option value="Pending">Pending</option>
-          <option value="Ongoing">Ongoing</option>
+          <option value="In Progress">In Progress</option>
           <option value="Completed">Completed</option>
         </select>
       </div>
@@ -384,7 +173,6 @@ export default function OrdersPage() {
                 <th className="px-5 py-3">Quantity</th>
                 <th className="px-5 py-3">Start Date</th>
                 <th className="px-5 py-3">Deadline</th>
-                <th className="px-5 py-3">Unit Production Cost</th>
                 <th className="px-5 py-3">Status</th>
               </tr>
             </thead>
@@ -393,13 +181,13 @@ export default function OrdersPage() {
 
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-5 py-8 text-center text-gray-500">
                     Loading production orders...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-5 py-8 text-center text-gray-500">
                     No production orders found.
                   </td>
                 </tr>
@@ -408,8 +196,9 @@ export default function OrdersPage() {
                   <tr key={order.Production_ID} className="hover:bg-gray-50">
 
                     <td className="px-5 py-3 font-semibold text-gray-700">
-                      PO-{new Date(order.StartDate).getFullYear()}-
-                      {String(order.Production_ID).padStart(4, "0")}
+                      {order.ProductionOrder_ID
+                        ? `PO-${String(order.ProductionOrder_ID).padStart(4, "0")}`
+                        : `PROD-${String(order.Production_ID).padStart(4, "0")}`}
                     </td>
 
                     <td className="px-5 py-3">
@@ -425,20 +214,15 @@ export default function OrdersPage() {
                     </td>
 
                     <td className="px-5 py-3 whitespace-nowrap">
-                      {new Date(order.StartDate).toLocaleString()}
+                      {order.StartDate
+                        ? new Date(order.StartDate).toLocaleString()
+                        : "Not scheduled"}
                     </td>
 
                     <td className="px-5 py-3 whitespace-nowrap">
-                      {new Date(order.Deadline).toLocaleString()}
-                    </td>
-
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      {order.UnitProductionCost === null
-                        ? "—"
-                        : `₱${order.UnitProductionCost.toLocaleString("en-PH", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}`}
+                      {order.Deadline
+                        ? new Date(order.Deadline).toLocaleString()
+                        : "Not scheduled"}
                     </td>
 
                     <td className="px-5 py-3">
@@ -471,18 +255,6 @@ export default function OrdersPage() {
             </p>
           </div>
 
-          {/* FINANCE UPDATE NOTICE */}
-          <div className="mx-5 mt-5 p-4 rounded-lg border border-yellow-200 bg-yellow-50">
-            <h3 className="text-sm font-semibold text-yellow-800">
-              Needs Updates from Finance Department
-            </h3>
-            <p className="text-sm text-yellow-700 mt-1">
-              Price review is currently awaiting updates from the Finance
-              Department. Final selling prices and markup details will be
-              displayed once the Finance workflow is established.
-            </p>
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-gray-50 text-gray-600">
@@ -490,7 +262,6 @@ export default function OrdersPage() {
                   <th className="px-5 py-3">Production Reference</th>
                   <th className="px-5 py-3">PM_ID</th>
                   <th className="px-5 py-3">Quantity Produced</th>
-                  <th className="px-5 py-3">Unit Production Cost</th>
                 </tr>
               </thead>
 
@@ -513,8 +284,9 @@ export default function OrdersPage() {
                     .map((order) => (
                       <tr key={order.Production_ID} className="hover:bg-gray-50">
                         <td className="px-5 py-3 font-semibold text-gray-700">
-                          PO-{new Date(order.StartDate).getFullYear()}-
-                          {String(order.Production_ID).padStart(4, "0")}
+                          {order.ProductionOrder_ID
+                            ? `PO-${String(order.ProductionOrder_ID).padStart(4, "0")}`
+                            : `PROD-${String(order.Production_ID).padStart(4, "0")}`}
                         </td>
 
                         <td className="px-5 py-3">
@@ -523,15 +295,6 @@ export default function OrdersPage() {
 
                         <td className="px-5 py-3">
                           {order.QuantityProduced}
-                        </td>
-
-                        <td className="px-5 py-3 whitespace-nowrap">
-                          {order.UnitProductionCost === null
-                            ? "—"
-                            : `₱${order.UnitProductionCost.toLocaleString("en-PH", {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}`}
                         </td>
                       </tr>
                     ))

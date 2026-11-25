@@ -80,3 +80,50 @@ def get_production_summary():
 
     finally:
         database_connection.close()
+
+
+# PRODUCT PRODUCTION COMPARISON REPORT
+@router.get("/product-comparison/")
+def get_product_comparison():
+
+    database_connection = get_db_connection()
+
+    try:
+        with database_connection.cursor() as sql_cursor:
+
+            sql_cursor.execute(
+                """
+                SELECT
+                    im."Item_Name",
+                    COALESCE(SUM(p."QuantityProduced"), 0) AS total_produced
+                FROM public."PRODUCTION" p
+                JOIN public."PRODUCT_MASTER" pm
+                    ON p."PM_ID" = pm."PM_ID"
+                JOIN public."ITEM_MASTER" im
+                    ON pm."IM_ID" = im."IM_ID"
+                WHERE im."status" = 'Active'
+                GROUP BY im."IM_ID", im."Item_Name"
+                ORDER BY im."Item_Name";
+                """
+            )
+
+            rows = sql_cursor.fetchall()
+
+        return [
+            {
+                "item_name": row[0],
+                "total_produced": row[1]
+            }
+            for row in rows
+        ]
+
+    except Exception as error:
+        print(f"Product comparison report error: {error}")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve product comparison report."
+        )
+
+    finally:
+        database_connection.close()

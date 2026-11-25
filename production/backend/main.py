@@ -1,7 +1,11 @@
+import os
+
 #APIs connecting to PostgreSQL inside Supabase
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from database import get_db_connection
+
+from fastapi import Body
 
 #API that connects different URL origins. Example:
 #Frontend runs on http://localhost:3000
@@ -19,15 +23,20 @@ from sidebar_features import reports
 app = FastAPI()
 
 #API router connecting different URL origins
+# Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
+DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3003,http://127.0.0.1:3003"
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=origins,
+    # any of our deployed ERP sites, e.g. https://computer-erp-procurement.vercel.app
+    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],)
+    allow_headers=["*"],
+)
+
 #API routers connecting frontend page and backend code
 app.include_router(
     dashboard.router,
@@ -144,3 +153,184 @@ def create_production_order(order: ProductionOrderInput):
         if 'database_connection' in locals():
             database_connection.close()
 
+
+@app.get("/production-orders/kanban")
+def get_production_kanban():
+    try:
+        with get_db_connection() as database_connection:
+            with database_connection.cursor() as sql_cursor:
+                sql_cursor.execute(
+                    """
+                    SELECT
+                        p."Production_ID",
+                        p."PM_ID",
+                        p."WH_ID",
+                        im."Item_Name" AS "Product_Name",
+                        im."SKU",
+                        p."QuantityRequired",
+                        p."QuantityProduced",
+                        p."StartDate",
+                        p."Deadline",
+                        p.status
+                    FROM public."PRODUCTION" AS p
+                    INNER JOIN public."PRODUCT_MASTER" AS pm
+                        ON p."PM_ID" = pm."PM_ID"
+                    INNER JOIN public."ITEM_MASTER" AS im
+                        ON pm."IM_ID" = im."IM_ID"
+                    ORDER BY p."Production_ID" DESC;
+                    """
+                )
+
+                rows = sql_cursor.fetchall()
+
+        return [
+            {
+                "Production_ID": row[0],
+                "PM_ID": row[1],
+                "WH_ID": row[2],
+                "Product_Name": row[3],
+                "SKU": row[4],
+                "QuantityRequired": row[5],
+                "QuantityProduced": row[6],
+                "StartDate": row[7],
+                "Deadline": row[8],
+                "status": row[9]
+            }
+            for row in rows
+        ]
+
+    except Exception as error:
+        print(f"Production Kanban retrieval error: {error}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve production batches."
+        )
+
+
+@app.patch("/production-orders/{production_id}/status")
+def update_production_status(production_id: int, new_status: str):
+    try:
+        with get_db_connection() as database_connection:
+            with database_connection.cursor() as sql_cursor:
+
+                sql_cursor.execute(
+                    """
+                    UPDATE public."PRODUCTION"
+                    SET
+                        status = %s,
+                        "StartDate" = CASE
+                            WHEN status = 'Pending'
+                            AND %s = 'In Progress'
+                            THEN NOW()
+                            ELSE "StartDate"
+                        END,
+                        "Deadline" = CASE
+                            WHEN status = 'Pending'
+                            AND %s = 'In Progress'
+                            THEN NOW() + INTERVAL '7 days'
+                            ELSE "Deadline"
+                        END
+                    WHERE "Production_ID" = %s
+                    AND (
+                        (status = 'Pending' AND %s = 'In Progress')
+                        OR
+                        (status = 'In Progress' AND %s = 'Completed')
+                    )
+                    RETURNING
+                        "Production_ID",
+                        status,
+                        "StartDate",
+                        "Deadline";
+                    """,
+                    (
+                        new_status,
+                        new_status,
+                        new_status,
+                        production_id,
+                        new_status,
+                        new_status
+                    )
+                )
+
+                updated_batch = sql_cursor.fetchone()
+
+                if updated_batch is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid status transition or production batch not found."
+                    )
+
+        return {
+            "message": "Production status updated successfully.",
+            "Production_ID": updated_batch[0],
+            "status": updated_batch[1],
+            "StartDate": updated_batch[2],
+            "Deadline": updated_batch[3]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update production status: {str(error)}"
+        )
+
+@app.patch("/production-orders/{production_id}/quantity")
+def update_production_quantity(
+    production_id: int,
+    new_quantity: int = Body(..., embed=True, ge=0)
+):
+    try:
+        with get_db_connection() as database_connection:
+            with database_connection.cursor() as sql_cursor:
+
+                sql_cursor.execute(
+                    """
+                    UPDATE public."PRODUCTION"
+                    SET
+                        "QuantityProduced" = %s,
+                        status = CASE
+                            WHEN %s = "QuantityRequired"
+                            THEN 'Completed'
+                            ELSE status
+                        END
+                    WHERE "Production_ID" = %s
+                    AND %s <= "QuantityRequired"
+                    RETURNING
+                        "Production_ID",
+                        "QuantityRequired",
+                        "QuantityProduced",
+                        status;
+                    """,
+                    (
+                        new_quantity,
+                        new_quantity,
+                        production_id,
+                        new_quantity
+                    )
+                )
+
+                updated_batch = sql_cursor.fetchone()
+
+                if updated_batch is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Production batch not found or produced quantity exceeds required quantity."
+                    )
+
+        return {
+            "message": "Production quantity updated successfully.",
+            "Production_ID": updated_batch[0],
+            "QuantityRequired": updated_batch[1],
+            "QuantityProduced": updated_batch[2],
+            "status": updated_batch[3]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update production quantity: {str(error)}"
+        )
