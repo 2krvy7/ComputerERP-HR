@@ -33,7 +33,9 @@ class PayPayrollPayload(BaseModel):
 class BatchApproveExpensesPayload(BaseModel):
     expenseIds: list[int] = []
     payrollIds: list[int] = []
+    productionOrderIds: list[int] = []
     approvalDate: str | None = None
+
 
 
 def get_exact_cols(cur, table_name: str) -> dict[str, str]:
@@ -198,7 +200,7 @@ def get_expenses():
 
             items = []
 
-            # 1. Fetch standard & production expenses from "Expense"
+            # 1. Fetch standard & approved production expenses from "Expense"
             exp_table = get_exact_table_name(cur, "Expense")
             if exp_table:
                 e_cols = get_exact_cols(cur, exp_table)
@@ -227,7 +229,12 @@ def get_expenses():
                 if prod_table:
                     p_cols = get_exact_cols(cur, prod_table)
                     p_pk = p_cols.get("productionid", "productionID")
-                    p_cost = p_cols.get("totalcost") or p_cols.get("total_cost")
+                    p_cost = (
+                        p_cols.get("totalcost")
+                        or p_cols.get("total_cost")
+                        or p_cols.get("cost")
+                        or p_cols.get("amount")
+                    )
                     prod_join = f'LEFT JOIN "{prod_table}" p ON e."{e_prod}" = p."{p_pk}"'
                     if p_cost:
                         prod_select = f'p."{p_cost}" AS order_total_cost'
@@ -261,7 +268,7 @@ def get_expenses():
                 """)
                 items.extend(cur.fetchall())
 
-            # 2. Include HR Payroll runs from "PayrollExpense"
+                            # 2. Include HR Payroll runs from "PayrollExpense"
             pay_table = get_exact_table_name(cur, "PayrollExpense")
             if pay_table:
                 p_cols = get_exact_cols(cur, pay_table)
@@ -310,9 +317,76 @@ def get_expenses():
                         "source_type": "Payroll",
                     })
 
+            # 3. Safely read directly from "ProductionOrder" without hardcoding missing columns
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            if po_table:
+                po_cols = get_exact_cols(cur, po_table)
+                po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+                po_prod = po_cols.get("productid") or po_cols.get("product_id") or po_cols.get("pm_id")
+                po_qty = po_cols.get("quantity") or po_cols.get("qty") or po_cols.get("quantityproduced")
+                po_cost = (
+                    po_cols.get("totalcost")
+                    or po_cols.get("total_cost")
+                    or po_cols.get("cost")
+                    or po_cols.get("amount")
+                    or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+                )
+
+                if po_pk and po_cost:
+                    prod_sel = f'po."{po_prod}" AS "productID"' if po_prod else 'NULL AS "productID"'
+                    qty_sel = f'po."{po_qty}" AS "quantity"' if po_qty else '0 AS "quantity"'
+
+                    if exp_table:
+                        e_cols = get_exact_cols(cur, exp_table)
+                        e_prod = e_cols.get("productionid", "productionID")
+                        cur.execute(f"""
+                            SELECT 
+                                po."{po_pk}" AS "productionID",
+                                {prod_sel},
+                                {qty_sel},
+                                po."{po_cost}" AS "totalCost"
+                            FROM "{po_table}" po
+                            WHERE COALESCE(po."{po_cost}", 0) > 0
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM "{exp_table}" e WHERE e."{e_prod}" = po."{po_pk}"
+                              )
+                            ORDER BY po."{po_pk}" DESC
+                        """)
+                    else:
+                        cur.execute(f"""
+                            SELECT 
+                                po."{po_pk}" AS "productionID",
+                                {prod_sel},
+                                {qty_sel},
+                                po."{po_cost}" AS "totalCost"
+                            FROM "{po_table}" po
+                            WHERE COALESCE(po."{po_cost}", 0) > 0
+                            ORDER BY po."{po_pk}" DESC
+                        """)
+
+                    for po in cur.fetchall():
+                        pid = po["productionID"]
+                        qty = po.get("quantity") or 0
+                        prod_id = po.get("productID")
+                        label_extra = f" (Product #{prod_id}, Qty: {qty})" if prod_id else (f" (Qty: {qty})" if qty else "")
+                        items.append({
+                            "expenseID": f"PO-{pid}",
+                            "productionOrderID": pid,
+                            "accountID": None,
+                            "account_code": "5010",
+                            "account_name": "Cost of Goods Sold / Production Cost",
+                            "productionID": pid,
+                            "postingID": None,
+                            "reference_no": None,
+                            "description": f"Production Order #{pid}{label_extra}",
+                            "amount": float(po["totalCost"] or 0),
+                            "source_type": "ProductionOrder",
+                        })
+
             return items
     finally:
         conn.close()
+
 
 @router.get("/options")
 def get_expense_options():
@@ -452,51 +526,94 @@ def receive_production_expense(payload: ProductionCostRequest):
         conn.close()
 
 @router.get("/pricing-alerts")
-def get_production_pricing_alerts(margin_pct: float = 20.0):
-    """Returns the latest Unit Cost & Minimum Selling Price per productID for Sales (Team 4)."""
+def get_pricing_alerts(margin_pct: float = 20.0, vat_pct: float = 12.0):
+    """
+    Sends Sales the VAT-exclusive minimum selling price (unitCost + 20% margin)
+    and the 12% VAT-inclusive minimum price for every production batch.
+    """
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
-            auto_sync_external_expenses(cur)
-            conn.commit()
-
-            prod_table = get_exact_table_name(cur, "ProductionOrder")
-            if not prod_table:
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            exp_table = get_exact_table_name(cur, "Expense")
+            if not po_table:
                 return []
 
-            p_cols = get_exact_cols(cur, prod_table)
-            p_pk = p_cols.get("productionid", "productionID")
-            p_prod = p_cols.get("productid", "productID")
-            p_qty = p_cols.get("quantity", "quantity")
-            p_cost = p_cols.get("totalcost", "totalCost")
+            po_cols = get_exact_cols(cur, po_table)
+            po_pk = po_cols.get("productionid") or next((orig for low, orig in po_cols.items() if "id" in low), None)
+            po_prod = po_cols.get("productid") or po_cols.get("product_id") or po_cols.get("pm_id")
+            po_qty = po_cols.get("quantity") or po_cols.get("qty") or po_cols.get("quantityproduced")
+            po_cost = (
+                po_cols.get("totalcost")
+                or po_cols.get("total_cost")
+                or po_cols.get("cost")
+                or po_cols.get("amount")
+                or next((orig for low, orig in po_cols.items() if "cost" in low or "amount" in low or "total" in low), None)
+            )
 
-            cur.execute(f'SELECT * FROM "{prod_table}" ORDER BY "{p_pk}" DESC')
-            rows = cur.fetchall()
+            if not po_pk:
+                return []
 
-            latest_by_product = {}
-            for row in rows:
-                prod_id = row.get(p_prod)
-                if prod_id in latest_by_product:
-                    continue
+            prod_sel = f'po."{po_prod}" AS "productID"' if po_prod else 'NULL AS "productID"'
+            qty_sel = f'po."{po_qty}" AS "quantity"' if po_qty else '1 AS "quantity"'
 
-                qty = float(row.get(p_qty) or 0)
-                total = float(row.get(p_cost) or 0)
-                unit_cost = round(total / qty, 2) if qty > 0 else 0.0
-                min_price = round(unit_cost * (1 + (margin_pct / 100.0)), 2)
+            # Use ProductionOrder's cost column if present; otherwise fall back to linked Expense amount
+            if po_cost:
+                cur.execute(f"""
+                    SELECT
+                        po."{po_pk}" AS "productionID",
+                        {prod_sel},
+                        {qty_sel},
+                        COALESCE(po."{po_cost}", 0) AS "totalCost"
+                    FROM "{po_table}" po
+                    WHERE COALESCE(po."{po_cost}", 0) > 0
+                    ORDER BY po."{po_pk}" DESC
+                """)
+            elif exp_table:
+                e_cols = get_exact_cols(cur, exp_table)
+                e_prod = e_cols.get("productionid", "productionID")
+                e_amt = e_cols.get("amount", "amount")
+                cur.execute(f"""
+                    SELECT
+                        po."{po_pk}" AS "productionID",
+                        {prod_sel},
+                        {qty_sel},
+                        COALESCE(SUM(e."{e_amt}"), 0) AS "totalCost"
+                    FROM "{po_table}" po
+                    JOIN "{exp_table}" e ON e."{e_prod}" = po."{po_pk}"
+                    GROUP BY po."{po_pk}"{f', po."{po_prod}"' if po_prod else ''}{f', po."{po_qty}"' if po_qty else ''}
+                    HAVING COALESCE(SUM(e."{e_amt}"), 0) > 0
+                    ORDER BY po."{po_pk}" DESC
+                """)
+            else:
+                return []
 
-                latest_by_product[prod_id] = {
-                    "productionID": row.get(p_pk),
-                    "productID": prod_id,
+            alerts = []
+            for r in cur.fetchall():
+                qty = max(float(r["quantity"] or 1), 1.0)
+                total_cost = float(r["totalCost"] or 0)
+                unit_cost = total_cost / qty
+                min_price_vat_ex = unit_cost * (1.0 + (margin_pct / 100.0))
+                vat_amount = min_price_vat_ex * (vat_pct / 100.0)
+                min_price_vat_inc = min_price_vat_ex + vat_amount
+
+                alerts.append({
+                    "productionID": r["productionID"],
+                    "productID": r["productID"],
                     "quantity": qty,
-                    "totalCost": total,
-                    "unitCost": unit_cost,
-                    "marginPct": margin_pct,
-                    "minSellingPrice": min_price,
-                }
-
-            return list(latest_by_product.values())
+                    "totalBatchCost": round(total_cost, 2),
+                    "unitCost": round(unit_cost, 2),
+                    "targetMarginPct": margin_pct,
+                    "minSellingPrice": round(min_price_vat_ex, 2),
+                    "vatPct": vat_pct,
+                    "estimatedVatAmount": round(vat_amount, 2),
+                    "minSellingPriceVatInclusive": round(min_price_vat_inc, 2),
+                    "taxNote": "Sales adds markup on top of minSellingPrice (VAT-Ex), then applies 12% VAT into sales_invoice.tax_amount.",
+                })
+            return alerts
     finally:
         conn.close()
+
 
 @router.post("/from-payroll")
 def receive_payroll_request(payload: PayrollRequestPayload):
@@ -629,6 +746,7 @@ def pay_payroll(payload: PayPayrollPayload):
                         VALUES (%s, %s, %s, 0)
                     """, (journal_id, exp_acc["id"], amount))
 
+
                     cur.execute(f"""
                         INSERT INTO "{jel_table}" (
                             "{jel_cols.get('journalid', 'journalID')}",
@@ -658,7 +776,7 @@ def pay_payroll(payload: PayPayrollPayload):
 
 @router.post("/batch-approve")
 def batch_approve_expenses(payload: BatchApproveExpensesPayload):
-    if not payload.expenseIds and not payload.payrollIds:
+    if not payload.expenseIds and not payload.payrollIds and not payload.productionOrderIds:
         raise HTTPException(status_code=400, detail="Please select at least one pending item to approve.")
 
     conn = get_db_connection()
@@ -672,6 +790,7 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
             cash_acc_id = None
             inv_acc_id = None
             sal_acc_id = None
+            cogs_acc_id = None
 
             if coa_table:
                 c_cols = get_exact_cols(cur, coa_table)
@@ -696,7 +815,7 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                 r2 = cur.fetchone()
                 inv_acc_id = r2["id"] if r2 else cash_acc_id
 
-                # Strictly select the Expense account (Salaries & Wages) and never Accrued/Payable Liability
+                # Strictly select Salaries & Wages Expense (never Accrued/Payable Liability)
                 cur.execute(f"""
                     SELECT "{c_id}" AS id FROM "{coa_table}"
                     WHERE LOWER("{c_type}") LIKE 'expense%'
@@ -717,12 +836,55 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                 r3 = cur.fetchone()
                 sal_acc_id = r3["id"] if r3 else None
 
+                # Select 5010 COGS / Production Cost Expense account
+                cur.execute(f"""
+                    SELECT "{c_id}" AS id FROM "{coa_table}"
+                    WHERE "{c_code}" IN ('5010', '5000')
+                       OR "{c_name}" ILIKE '%Production%'
+                       OR "{c_name}" ILIKE '%Cost of Goods%'
+                    ORDER BY CASE WHEN "{c_code}" = '5010' THEN 1 ELSE 2 END, "{c_code}" ASC
+                    LIMIT 1
+                """)
+                r4 = cur.fetchone()
+                cogs_acc_id = r4["id"] if r4 else sal_acc_id
+
             approved_prod = 0
             approved_pay = 0
+            expense_ids = list(payload.expenseIds)
 
-            # 1. Approve & Post Selected Production Expenses
+            # 0. Convert any selected ProductionOrder rows (PO-#) into "Expense" rows first
             exp_table = get_exact_table_name(cur, "Expense")
-            if exp_table and payload.expenseIds:
+            po_table = get_exact_table_name(cur, "ProductionOrder")
+            if po_table and exp_table and payload.productionOrderIds:
+                po_cols = get_exact_cols(cur, po_table)
+                po_pk = po_cols.get("productionid", "productionID")
+                po_cost = po_cols.get("totalcost") or po_cols.get("total_cost") or "totalCost"
+                e_cols = get_exact_cols(cur, exp_table)
+                e_pk = e_cols.get("expenseid", "expenseID")
+                e_acc = e_cols.get("accountid", "accountID")
+                e_prod = e_cols.get("productionid", "productionID")
+                e_amt = e_cols.get("amount", "amount")
+
+                for poid in payload.productionOrderIds:
+                    cur.execute(f'SELECT "{e_pk}" AS eid FROM "{exp_table}" WHERE "{e_prod}" = %s LIMIT 1', (poid,))
+                    existing = cur.fetchone()
+                    if existing:
+                        if existing["eid"] not in expense_ids:
+                            expense_ids.append(existing["eid"])
+                        continue
+
+                    cur.execute(f'SELECT "{po_cost}" AS cost FROM "{po_table}" WHERE "{po_pk}" = %s', (poid,))
+                    po_row = cur.fetchone()
+                    if po_row and float(po_row["cost"] or 0) > 0 and cogs_acc_id:
+                        cur.execute(f"""
+                            INSERT INTO "{exp_table}" ("{e_acc}", "{e_prod}", "{e_amt}")
+                            VALUES (%s, %s, %s)
+                            RETURNING "{e_pk}" AS eid
+                        """, (cogs_acc_id, poid, float(po_row["cost"])))
+                        expense_ids.append(cur.fetchone()["eid"])
+
+                        # 1. Approve & Post Selected Production Expenses
+            if exp_table and expense_ids:
                 e_cols = get_exact_cols(cur, exp_table)
                 e_pk = e_cols.get("expenseid", "expenseID")
                 e_acc = e_cols.get("accountid", "accountID")
@@ -730,7 +892,7 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                 e_post = e_cols.get("postingid", "postingID")
                 e_amt = e_cols.get("amount", "amount")
 
-                for eid in payload.expenseIds:
+                for eid in expense_ids:
                     cur.execute(f'SELECT * FROM "{exp_table}" WHERE "{e_pk}" = %s', (eid,))
                     exp_row = cur.fetchone()
                     if not exp_row or exp_row.get(e_post) is not None:
@@ -759,7 +921,6 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
 
                         cur.execute(f'UPDATE "{exp_table}" SET "{e_post}" = %s WHERE "{e_pk}" = %s', (jid, eid))
                         approved_prod += 1
-
 
             # 2. Approve & Post Selected HR Payroll Runs (Direct to JournalEntry & GeneralLedger)
             pay_table = get_exact_table_name(cur, "PayrollExpense")

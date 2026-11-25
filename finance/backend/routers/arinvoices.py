@@ -40,87 +40,85 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     return row["table_name"] if row else None
 
 def auto_sync_sales_invoices(cur):
-    """Safely pulls valid customer invoices from Team 4's Sales table into Finance ARInvoice."""
+    """Automatically pulls new rows from public.sales_invoice (joining order_id for customer_id) and deposits into BPI Sales."""
     ar_table = get_exact_table_name(cur, "ARInvoice")
-    sales_table = (
-        get_exact_table_name(cur, "sales_invoice")
-        or get_exact_table_name(cur, "Sales Invoice")
-        or get_exact_table_name(cur, "SalesInvoice")
-        or get_exact_table_name(cur, "SALES_INVOICE")
-    )
+    rec_table = get_exact_table_name(cur, "ARReceipt")
+    bank_table = get_exact_table_name(cur, "BankAccount")
+    sales_table = get_exact_table_name(cur, "sales_invoice")
     if not (ar_table and sales_table):
         return 0
 
-    ar_cols = get_exact_cols(cur, ar_table)
-    s_cols = get_exact_cols(cur, sales_table)
+    # Find BPI Sales receiver bank ID
+    bpi_sales_id = None
+    if bank_table:
+        b_cols = get_exact_cols(cur, bank_table)
+        b_pk = b_cols.get("bankaccountid", "bankAccountID")
+        b_name = b_cols.get("bankname", "bankName")
+        b_rec = b_cols.get("isreceiver")
+        cond = f'"{b_name}" ILIKE \'%BPI Sales%\' OR COALESCE("{b_rec}", FALSE) = TRUE' if b_rec else f'"{b_name}" ILIKE \'%BPI Sales%\''
+        cur.execute(f'SELECT "{b_pk}" AS id FROM "{bank_table}" WHERE {cond} ORDER BY "{b_pk}" ASC LIMIT 1')
+        b_row = cur.fetchone()
+        bpi_sales_id = b_row["id"] if b_row else None
 
-    s_pk = (
-        s_cols.get("salesinvoice_id")
-        or s_cols.get("sales_invoice_id")
-        or s_cols.get("salesinvoiceid")
-        or s_cols.get("si_id")
-        or s_cols.get("invoice_id")
-        or s_cols.get("id")
-    )
-    s_cust = next((orig for low, orig in s_cols.items() if "cust" in low and "id" in low), None)
-    s_amt = (
-        s_cols.get("totalamount")
-        or s_cols.get("total_amount")
-        or s_cols.get("grand_total")
-        or s_cols.get("amount")
-        or s_cols.get("total")
-    )
-    s_date = next((orig for low, orig in s_cols.items() if "date" in low and "due" not in low), None)
-    s_due = next((orig for low, orig in s_cols.items() if "due" in low), None)
-
-    ar_si = ar_cols.get("salesinvoiceid")
-    ar_cust = ar_cols.get("customerid")
-    ar_amt = ar_cols.get("amount")
-    ar_paid = ar_cols.get("totalpaid")
-    ar_rem = ar_cols.get("remainingbalance")
-    ar_stat = ar_cols.get("status")
-    ar_due = ar_cols.get("duedate")
-
-    # Require both salesInvoiceID and customerID so NOT NULL constraints never fail
-    if not (s_pk and s_cust and s_amt and ar_si and ar_cust and ar_amt):
-        return 0
-
-    if s_due:
-        due_expr = f'COALESCE(si."{s_due}"::date, CURRENT_DATE + INTERVAL \'30 days\')'
-    elif s_date:
-        due_expr = f'COALESCE(si."{s_date}"::date, CURRENT_DATE) + INTERVAL \'30 days\''
-    else:
-        due_expr = "CURRENT_DATE + INTERVAL '30 days'"
-
-    ins_cols = [f'"{ar_si}"', f'"{ar_cust}"', f'"{ar_amt}"']
-    sel_cols = [f'si."{s_pk}"', f'si."{s_cust}"', f'si."{s_amt}"']
-
-    if ar_paid:
-        ins_cols.append(f'"{ar_paid}"')
-        sel_cols.append("0")
-    if ar_rem:
-        ins_cols.append(f'"{ar_rem}"')
-        sel_cols.append(f'si."{s_amt}"')
-    if ar_stat:
-        ins_cols.append(f'"{ar_stat}"')
-        sel_cols.append("'Sent'")
-    if ar_due:
-        ins_cols.append(f'"{ar_due}"')
-        sel_cols.append(due_expr)
+    # Auto-detect parent orders table linked to sales_invoice.order_id for customer_id
+    cur.execute("""
+        SELECT ccu.table_name AS ord_tbl, ccu.column_name AS ord_pk
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage ccu ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+          AND LOWER(tc.table_name) = 'sales_invoice'
+          AND LOWER(kcu.column_name) = 'order_id'
+        LIMIT 1
+    """)
+    fk_row = cur.fetchone()
+    ord_join = ""
+    cust_expr = "1"
+    if fk_row:
+        o_cols = get_exact_cols(cur, fk_row["ord_tbl"])
+        o_cust = next((orig for low, orig in o_cols.items() if "cust" in low and "id" in low), None)
+        if o_cust:
+            ord_join = f'LEFT JOIN "{fk_row["ord_tbl"]}" o ON si."order_id" = o."{fk_row["ord_pk"]}"'
+            cust_expr = f'COALESCE(o."{o_cust}", 1)'
 
     cur.execute(f"""
-        INSERT INTO "{ar_table}" ({", ".join(ins_cols)})
-        SELECT {", ".join(sel_cols)}
+        SELECT
+            si."invoice_id" AS sid,
+            {cust_expr} AS cid,
+            COALESCE(si."total_due", 0) AS amt,
+            COALESCE(si."invoice_date"::date, CURRENT_DATE) AS inv_date,
+            COALESCE(si."due_date"::date, CURRENT_DATE + INTERVAL '30 days') AS due_date
         FROM "{sales_table}" si
-        WHERE COALESCE(si."{s_amt}", 0) > 0
-          AND si."{s_pk}" IS NOT NULL
-          AND si."{s_cust}" IS NOT NULL
+        {ord_join}
+        WHERE COALESCE(si."total_due", 0) > 0
           AND NOT EXISTS (
-              SELECT 1 FROM "{ar_table}" ar WHERE ar."{ar_si}" = si."{s_pk}"
+              SELECT 1 FROM "{ar_table}" ar WHERE ar."salesInvoiceID" = si."invoice_id"
           )
-        RETURNING 1
+        ORDER BY si."invoice_id" ASC
     """)
-    return len(cur.fetchall())
+    rows = cur.fetchall()
+
+    synced = 0
+    for r in rows:
+        amt = float(r["amt"])
+        cur.execute(f"""
+            INSERT INTO "{ar_table}" (
+                "customerID", "salesInvoiceID", "amount", "totalPaid", "remainingBalance", "status", "dueDate"
+            )
+            VALUES (%s, %s, %s, %s, 0, 'Paid', %s)
+            RETURNING "arInvoiceID" AS new_id
+        """, (r["cid"], r["sid"], amt, amt, r["due_date"]))
+        new_ar_id = cur.fetchone()["new_id"]
+
+        if rec_table and bpi_sales_id:
+            cur.execute(f"""
+                INSERT INTO "{rec_table}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
+                VALUES (%s, %s, %s, %s)
+            """, (new_ar_id, bpi_sales_id, r["inv_date"], amt))
+        synced += 1
+
+    return synced
+
 
 
 @router.get("/")

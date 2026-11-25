@@ -170,10 +170,14 @@ export default function GeneralLedger() {
           onChange={(e) => setSelectedAccount(e.target.value)}
         >
           <option value="ALL">All Accounts</option>
-          {accounts.map((acc) => {
+          {Array.from(
+            new Map(
+              accounts.map((acc) => [String(acc.accountID ?? acc.accountCode), acc])
+            ).values()
+          ).map((acc, idx) => {
             const val = String(acc.accountID ?? acc.accountCode);
             return (
-              <option key={val} value={val}>
+              <option key={`${val}-${idx}`} value={val}>
                 {acc.accountCode} - {acc.accountName ?? acc.name}
               </option>
             );
@@ -266,8 +270,8 @@ export default function GeneralLedger() {
                   </td>
                 </tr>
               ) : (
-                processedRows.map((item) => (
-                  <tr key={item.id}>
+                processedRows.map((item, idx) => (
+                  <tr key={`${item.id ?? "row"}-${idx}`}>
                     <td>{item.date}</td>
                     <td>{item.description}</td>
                     <td>{item.reference}</td>
@@ -304,3 +308,4 @@ export default function GeneralLedger() {
     </div>
   );
 }
+

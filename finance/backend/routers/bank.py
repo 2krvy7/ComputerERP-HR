@@ -54,9 +54,13 @@ def get_bank_accounts():
             je_table = get_exact_table_name(cur, "JournalEntry")
             jel_table = get_exact_table_name(cur, "JournalEntryLine")
 
-            # Total approved HR Payroll from JournalEntry (sourceModule = 'Payroll')
+            # 1. Total approved HR Payroll & Direct Operating Expenses from JournalEntry
             payroll_total = 0.0
             payroll_count = 0
+            direct_exp_total = 0.0
+            direct_exp_count = 0
+            transfers = []
+
             if je_table and jel_table:
                 cur.execute(f"""
                     SELECT COALESCE(SUM(l."debit"), 0) AS s, COUNT(DISTINCT j."journalID") AS c
@@ -67,6 +71,25 @@ def get_bank_accounts():
                 pr_row = cur.fetchone()
                 payroll_total = float(pr_row["s"] or 0)
                 payroll_count = int(pr_row["c"] or 0)
+
+                cur.execute(f"""
+                    SELECT COALESCE(SUM(l."debit"), 0) AS s, COUNT(DISTINCT j."journalID") AS c
+                    FROM "{je_table}" j
+                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                    WHERE j."sourceModule" = 'Expenses' AND COALESCE(l."debit", 0) > 0
+                """)
+                exp_row = cur.fetchone()
+                direct_exp_total = float(exp_row["s"] or 0)
+                direct_exp_count = int(exp_row["c"] or 0)
+
+                cur.execute(f"""
+                    SELECT j."description" AS descr, COALESCE(SUM(l."debit"), 0) AS amt
+                    FROM "{je_table}" j
+                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                    WHERE j."sourceModule" = 'Cash Transfer' AND COALESCE(l."debit", 0) > 0
+                    GROUP BY j."journalID", j."description"
+                """)
+                transfers = cur.fetchall()
 
             cur.execute(f'SELECT * FROM "{b_table}" ORDER BY "{b_pk}" ASC')
             banks = cur.fetchall()
@@ -107,13 +130,24 @@ def get_bank_accounts():
                 is_disb = bool(b[b_disb]) if b_disb and b.get(b_disb) is not None else True
                 is_rec = bool(b[b_rec]) if b_rec and b.get(b_rec) is not None else True
 
-                # Count approved HR Payroll as Outflow on BDO Corporate Checking & Inflow on BPI Payroll
+                # 2. Count approved HR Payroll & Direct Operating Expenses on BDO Corporate Checking / BPI Payroll
                 if "bdo" in name_low or (is_disb and "payroll" not in name_low and "sales" not in name_low):
-                    total_out += payroll_total
-                    tx_count += payroll_count
+                    total_out += payroll_total + direct_exp_total
+                    tx_count += payroll_count + direct_exp_count
                 elif "payroll" in name_low:
                     total_in += payroll_total
                     tx_count += payroll_count
+
+                # 3. Apply inter-bank Cash Transfers ([FROM:id|TO:id])
+                for xfer in transfers:
+                    d_str = str(xfer["descr"] or "")
+                    x_amt = float(xfer["amt"] or 0)
+                    if f"[FROM:{bid}|" in d_str:
+                        total_out += x_amt
+                        tx_count += 1
+                    if f"|TO:{bid}]" in d_str:
+                        total_in += x_amt
+                        tx_count += 1
 
                 results.append({
                     "bankAccountID": bid,
@@ -173,125 +207,6 @@ def create_bank_account(payload: NewBankAccountPayload):
         conn.close()
 
 
-@router.get("/transactions")
-def get_all_bank_transactions():
-    """Returns all AR Receipts, AP Payments, HR Payroll disbursements, and Direct Expenses across all banks."""
-    conn = get_db_connection()
-    try:
-        with conn.cursor(row_factory=dict_row) as cur:
-            txs = []
-
-            # Map bankAccountID -> bankName
-            bank_map = {}
-            bdo_name = "BDO Corporate Checking"
-            payroll_bank_name = "BPI Payroll"
-            b_table = get_exact_table_name(cur, "BankAccount")
-            if b_table:
-                b_cols = get_exact_cols(cur, b_table)
-                b_pk = b_cols.get("bankaccountid", "bankAccountID")
-                b_name = b_cols.get("bankname", "bankName")
-                cur.execute(f'SELECT "{b_pk}" AS id, "{b_name}" AS name FROM "{b_table}"')
-                for b in cur.fetchall():
-                    bank_map[b["id"]] = b["name"]
-                    low = str(b["name"] or "").lower()
-                    if "bdo" in low:
-                        bdo_name = b["name"]
-                    elif "payroll" in low:
-                        payroll_bank_name = b["name"]
-
-            # 1. Customer Deposits (ARReceipt)
-            rec_table = get_exact_table_name(cur, "ARReceipt")
-            if rec_table:
-                r_cols = get_exact_cols(cur, rec_table)
-                cur.execute(f"""
-                    SELECT 
-                        "{r_cols.get('receiptid', 'receiptID')}" AS id,
-                        "{r_cols.get('bankaccountid', 'bankAccountID')}" AS bank_id,
-                        "{r_cols.get('arinvoiceid', 'arInvoiceID')}" AS ref_id,
-                        "{r_cols.get('paymentdate', 'paymentDate')}" AS tx_date,
-                        "{r_cols.get('amount', 'amount')}" AS amount
-                    FROM "{rec_table}"
-                """)
-                for r in cur.fetchall():
-                    txs.append({
-                        "id": f"REC-{r['id']}",
-                        "bankName": bank_map.get(r["bank_id"], f"Bank #{r['bank_id']}"),
-                        "type": "Deposit (AR Receipt)",
-                        "reference": f"INV-{String_pad(r['ref_id'])}",
-                        "date": r["tx_date"],
-                        "amount": float(r["amount"] or 0),
-                        "direction": "IN",
-                    })
-
-            # 2. Supplier Disbursements (APPayment)
-            pay_table = get_exact_table_name(cur, "APPayment")
-            if pay_table:
-                p_cols = get_exact_cols(cur, pay_table)
-                cur.execute(f"""
-                    SELECT 
-                        "{p_cols.get('paymentid', 'paymentID')}" AS id,
-                        "{p_cols.get('bankaccountid', 'bankAccountID')}" AS bank_id,
-                        "{p_cols.get('apinvoiceid', 'apInvoiceID')}" AS ref_id,
-                        "{p_cols.get('paymentdate', 'paymentDate')}" AS tx_date,
-                        "{p_cols.get('amount', 'amount')}" AS amount
-                    FROM "{pay_table}"
-                """)
-                for p in cur.fetchall():
-                    txs.append({
-                        "id": f"PAY-{p['id']}",
-                        "bankName": bank_map.get(p["bank_id"], f"Bank #{p['bank_id']}"),
-                        "type": "Disbursement (AP Payment)",
-                        "reference": f"BILL-{String_pad(p['ref_id'])}",
-                        "date": p["tx_date"],
-                        "amount": float(p["amount"] or 0),
-                        "direction": "OUT",
-                    })
-
-            # 3. Approved HR Payroll Disbursements (JournalEntry where sourceModule = 'Payroll')
-            je_table = get_exact_table_name(cur, "JournalEntry")
-            jel_table = get_exact_table_name(cur, "JournalEntryLine")
-            if je_table and jel_table:
-                cur.execute(f"""
-                    SELECT 
-                        j."journalID" AS id,
-                        j."referenceNo" AS ref,
-                        j."description" AS descr,
-                        j."journalDate" AS tx_date,
-                        COALESCE(SUM(l."debit"), 0) AS amt
-                    FROM "{je_table}" j
-                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
-                    WHERE j."sourceModule" = 'Payroll' AND COALESCE(l."debit", 0) > 0
-                    GROUP BY j."journalID", j."referenceNo", j."description", j."journalDate"
-                """)
-                for pr in cur.fetchall():
-                    amt = float(pr["amt"] or 0)
-                    ref_code = pr["ref"] or f"PAYROLL-{pr['id']}"
-                    # Outflow from BDO Corporate Checking
-                    txs.append({
-                        "id": f"JE-OUT-{pr['id']}",
-                        "bankName": bdo_name,
-                        "type": "Disbursement (HR Payroll)",
-                        "reference": ref_code,
-                        "date": pr["tx_date"],
-                        "amount": amt,
-                        "direction": "OUT",
-                    })
-                    # Inflow into BPI Payroll
-                    txs.append({
-                        "id": f"JE-IN-{pr['id']}",
-                        "bankName": payroll_bank_name,
-                        "type": "Deposit (HR Payroll Transfer)",
-                        "reference": ref_code,
-                        "date": pr["tx_date"],
-                        "amount": amt,
-                        "direction": "IN",
-                    })
-
-            txs.sort(key=lambda x: str(x["date"] or ""), reverse=True)
-            return txs
-    finally:
-        conn.close()
-
 @router.get("/{bank_id}/transactions")
 def get_bank_transactions(bank_id: int):
     conn = get_db_connection()
@@ -303,16 +218,21 @@ def get_bank_transactions(bank_id: int):
             is_disb = False
             if b_table:
                 b_cols = get_exact_cols(cur, b_table)
-                cur.execute(f'SELECT * FROM "{b_table}" WHERE "{b_cols.get("bankaccountid", "bankAccountID")}" = %s', (bank_id,))
+                cur.execute(
+                    f'SELECT * FROM "{b_table}" WHERE "{b_cols.get("bankaccountid", "bankAccountID")}" = %s',
+                    (bank_id,),
+                )
                 b_row = cur.fetchone()
                 if b_row:
                     bank_name_low = str(b_row.get(b_cols.get("bankname", "bankName")) or "").lower()
                     is_disb = bool(b_row.get(b_cols.get("isdisbursement", "isDisbursement")))
 
+            # 1. Deposits from ARReceipt
             rec_table = get_exact_table_name(cur, "ARReceipt")
             if rec_table:
                 r_cols = get_exact_cols(cur, rec_table)
-                cur.execute(f"""
+                cur.execute(
+                    f"""
                     SELECT 
                         "{r_cols.get('receiptid', 'receiptID')}" AS id,
                         'Deposit (AR Receipt)' AS type,
@@ -321,7 +241,9 @@ def get_bank_transactions(bank_id: int):
                         "{r_cols.get('amount', 'amount')}" AS amount
                     FROM "{rec_table}"
                     WHERE "{r_cols.get('bankaccountid', 'bankAccountID')}" = %s
-                """, (bank_id,))
+                """,
+                    (bank_id,),
+                )
                 for r in cur.fetchall():
                     txs.append({
                         "id": f"REC-{r['id']}",
@@ -332,10 +254,12 @@ def get_bank_transactions(bank_id: int):
                         "direction": "IN",
                     })
 
+            # 2. Disbursements from APPayment
             pay_table = get_exact_table_name(cur, "APPayment")
             if pay_table:
                 p_cols = get_exact_cols(cur, pay_table)
-                cur.execute(f"""
+                cur.execute(
+                    f"""
                     SELECT 
                         "{p_cols.get('paymentid', 'paymentID')}" AS id,
                         'Disbursement (AP Payment)' AS type,
@@ -344,7 +268,9 @@ def get_bank_transactions(bank_id: int):
                         "{p_cols.get('amount', 'amount')}" AS amount
                     FROM "{pay_table}"
                     WHERE "{p_cols.get('bankaccountid', 'bankAccountID')}" = %s
-                """, (bank_id,))
+                """,
+                    (bank_id,),
+                )
                 for p in cur.fetchall():
                     txs.append({
                         "id": f"PAY-{p['id']}",
@@ -355,29 +281,91 @@ def get_bank_transactions(bank_id: int):
                         "direction": "OUT",
                     })
 
-            # Include approved HR Payroll entries on BDO Corporate Checking (OUT) & BPI Payroll (IN)
+            # 3. JournalEntry-backed Payroll, Direct Expenses, and Inter-Bank Cash Transfers
             je_table = get_exact_table_name(cur, "JournalEntry")
             jel_table = get_exact_table_name(cur, "JournalEntryLine")
             if je_table and jel_table:
-                is_bdo = "bdo" in bank_name_low or (is_disb and "payroll" not in bank_name_low and "sales" not in bank_name_low)
+                is_bdo = "bdo" in bank_name_low or (
+                    is_disb and "payroll" not in bank_name_low and "sales" not in bank_name_low
+                )
                 is_payroll_bank = "payroll" in bank_name_low
 
+                # HR Payroll runs (OUT on BDO, IN on BPI Payroll)
                 if is_bdo or is_payroll_bank:
-                    cur.execute(f"""
-                        SELECT j."journalID" AS id, j."referenceNo" AS ref, j."journalDate" AS tx_date, COALESCE(SUM(l."debit"), 0) AS amt
+                    cur.execute(
+                        f"""
+                        SELECT j."journalID" AS id, j."referenceNo" AS ref, j."journalDate" AS tx_date,
+                               COALESCE(SUM(l."debit"), 0) AS amt
                         FROM "{je_table}" j
                         JOIN "{jel_table}" l ON j."journalID" = l."journalID"
                         WHERE j."sourceModule" = 'Payroll' AND COALESCE(l."debit", 0) > 0
                         GROUP BY j."journalID", j."referenceNo", j."journalDate"
-                    """)
+                    """
+                    )
                     for pr in cur.fetchall():
                         txs.append({
-                            "id": f"JE-{pr['id']}",
+                            "id": f"JE-PR-{pr['id']}",
                             "type": "Disbursement (HR Payroll)" if is_bdo else "Deposit (HR Payroll Transfer)",
                             "reference": pr["ref"] or f"PAYROLL-{pr['id']}",
                             "date": pr["tx_date"],
                             "amount": float(pr["amt"] or 0),
                             "direction": "OUT" if is_bdo else "IN",
+                        })
+
+                # Direct Operating Expenses (OUT on BDO Corporate Checking)
+                if is_bdo:
+                    cur.execute(
+                        f"""
+                        SELECT j."journalID" AS id, j."referenceNo" AS ref, j."description" AS descr,
+                               j."journalDate" AS tx_date, COALESCE(SUM(l."debit"), 0) AS amt
+                        FROM "{je_table}" j
+                        JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                        WHERE j."sourceModule" = 'Expenses' AND COALESCE(l."debit", 0) > 0
+                        GROUP BY j."journalID", j."referenceNo", j."description", j."journalDate"
+                    """
+                    )
+                    for exp in cur.fetchall():
+                        txs.append({
+                            "id": f"JE-EXP-{exp['id']}",
+                            "type": f"Disbursement ({exp['descr'] or 'Operating Expense'})",
+                            "reference": exp["ref"] or f"EXP-{exp['id']}",
+                            "date": exp["tx_date"],
+                            "amount": float(exp["amt"] or 0),
+                            "direction": "OUT",
+                        })
+
+                # Inter-Bank Cash Transfers ([FROM:id|TO:id])
+                cur.execute(
+                    f"""
+                    SELECT j."journalID" AS id, j."referenceNo" AS ref, j."description" AS descr,
+                           j."journalDate" AS tx_date, COALESCE(SUM(l."debit"), 0) AS amt
+                    FROM "{je_table}" j
+                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                    WHERE j."sourceModule" = 'Cash Transfer' AND COALESCE(l."debit", 0) > 0
+                    GROUP BY j."journalID", j."referenceNo", j."description", j."journalDate"
+                """
+                )
+                for xfer in cur.fetchall():
+                    d_str = str(xfer["descr"] or "")
+                    x_amt = float(xfer["amt"] or 0)
+                    ref_code = xfer["ref"] or f"XFER-{xfer['id']}"
+                    if f"[FROM:{bank_id}|" in d_str:
+                        txs.append({
+                            "id": f"XFER-OUT-{xfer['id']}",
+                            "type": "Transfer Out (to Corporate Checking)",
+                            "reference": ref_code,
+                            "date": xfer["tx_date"],
+                            "amount": x_amt,
+                            "direction": "OUT",
+                        })
+                    elif f"|TO:{bank_id}]" in d_str:
+                        txs.append({
+                            "id": f"XFER-IN-{xfer['id']}",
+                            "type": "Transfer In (from BPI Sales)",
+                            "reference": ref_code,
+                            "date": xfer["tx_date"],
+                            "amount": x_amt,
+                            "direction": "IN",
                         })
 
             txs.sort(key=lambda x: str(x["date"] or ""), reverse=True)
@@ -432,7 +420,7 @@ class BankTransferPayload(BaseModel):
 
 @router.post("/transfer")
 def transfer_between_banks(payload: BankTransferPayload):
-    """Transfers collected funds from BPI Sales into BDO Corporate Checking."""
+    """Transfers collected funds between banks via JournalEntry without touching APInvoice or ARInvoice."""
     if payload.amount <= 0:
         raise HTTPException(status_code=400, detail="Transfer amount must be greater than 0")
     if payload.fromBankID == payload.toBankID:
@@ -441,58 +429,72 @@ def transfer_between_banks(payload: BankTransferPayload):
     conn = get_db_connection()
     try:
         with conn.cursor(row_factory=dict_row) as cur:
-            # 1. Record Outflow from Source Bank (BPI Sales)
-            ap_t = get_exact_table_name(cur, "APInvoice")
-            pay_t = get_exact_table_name(cur, "APPayment")
-            if ap_t and pay_t:
-                cur.execute(f"""
-                    INSERT INTO "{ap_t}" ("amount", "totalPaid", "remainingBalance", "status", "dueDate")
-                    VALUES (%s, %s, 0, 'Paid', %s)
-                    RETURNING "apInvoiceID"
-                """, (payload.amount, payload.amount, payload.transferDate))
-                ap_id = cur.fetchone()["apInvoiceID"]
+            b_table = get_exact_table_name(cur, "BankAccount") or "BankAccount"
+            b_cols = get_exact_cols(cur, b_table)
+            b_pk = b_cols.get("bankaccountid", "bankAccountID")
+            b_name = b_cols.get("bankname", "bankName")
 
-                cur.execute(f"""
-                    INSERT INTO "{pay_t}" ("apInvoiceID", "bankAccountID", "paymentDate", "amount")
-                    VALUES (%s, %s, %s, %s)
-                """, (ap_id, payload.fromBankID, payload.transferDate, payload.amount))
+            cur.execute(f'SELECT "{b_name}" AS name FROM "{b_table}" WHERE "{b_pk}" = %s', (payload.fromBankID,))
+            from_row = cur.fetchone()
+            cur.execute(f'SELECT "{b_name}" AS name FROM "{b_table}" WHERE "{b_pk}" = %s', (payload.toBankID,))
+            to_row = cur.fetchone()
 
-            # 2. Record Inflow into Destination Bank (BDO Corporate Checking)
-            ar_t = get_exact_table_name(cur, "ARInvoice")
-            rec_t = get_exact_table_name(cur, "ARReceipt")
-            if ar_t and rec_t:
-                cur.execute(f"""
-                    INSERT INTO "{ar_t}" ("amount", "totalPaid", "remainingBalance", "status", "dueDate")
-                    VALUES (%s, %s, 0, 'Paid', %s)
-                    RETURNING "arInvoiceID"
-                """, (payload.amount, payload.amount, payload.transferDate))
-                ar_id = cur.fetchone()["arInvoiceID"]
+            if not from_row or not to_row:
+                raise HTTPException(status_code=404, detail="Source or destination bank account not found")
 
-                cur.execute(f"""
-                    INSERT INTO "{rec_t}" ("arInvoiceID", "bankAccountID", "paymentDate", "amount")
-                    VALUES (%s, %s, %s, %s)
-                """, (ar_id, payload.toBankID, payload.transferDate, payload.amount))
-
-            # 3. Record Balanced Internal Transfer Journal Entry
             je_t = get_exact_table_name(cur, "JournalEntry")
             jel_t = get_exact_table_name(cur, "JournalEntryLine")
             coa_t = get_exact_table_name(cur, "ChartOfAccounts")
-            if je_t and jel_t and coa_t:
-                cur.execute(f'SELECT "accountID" FROM "{coa_t}" WHERE "accountCode" IN (\'1020\', \'1010\') OR "accountName" ILIKE \'%Bank%\' LIMIT 1')
-                cash_acc = cur.fetchone()
-                if cash_acc:
-                    cur.execute(f"""
-                        INSERT INTO "{je_t}" ("journalDate", "referenceNo", "sourceModule", "description")
-                        VALUES (%s, 'XFER-BANK', 'Cash Transfer', %s)
-                        RETURNING "journalID"
-                    """, (payload.transferDate, f"Inter-bank sweep from Bank #{payload.fromBankID} to Bank #{payload.toBankID}"))
-                    jid = cur.fetchone()["journalID"]
-                    cur.execute(f'UPDATE "{je_t}" SET "referenceNo" = %s WHERE "journalID" = %s', (f"XFER-{str(jid).zfill(4)}", jid))
-                    cur.execute(f'INSERT INTO "{jel_t}" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)', (jid, cash_acc["accountID"], payload.amount))
-                    cur.execute(f'INSERT INTO "{jel_t}" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)', (jid, cash_acc["accountID"], payload.amount))
+
+            if not (je_t and jel_t and coa_t):
+                raise HTTPException(status_code=500, detail="Journal tables not found")
+
+            c_cols = get_exact_cols(cur, coa_t)
+            c_id = c_cols.get("accountid", "accountID")
+            c_code = c_cols.get("accountcode", "accountCode")
+            c_name = c_cols.get("accountname", "accountName")
+
+            cur.execute(f"""
+                SELECT "{c_id}" AS id FROM "{coa_t}"
+                WHERE "{c_code}" IN ('1020', '1010')
+                   OR "{c_name}" ILIKE '%Bank%'
+                   OR "{c_name}" ILIKE '%Cash%'
+                ORDER BY "{c_code}" ASC LIMIT 1
+            """)
+            cash_acc = cur.fetchone()
+            if not cash_acc:
+                raise HTTPException(status_code=400, detail="Cash in Bank account not found in ChartOfAccounts")
+
+            desc_text = (
+                f"Bank Transfer: {from_row['name']} -> {to_row['name']} "
+                f"[FROM:{payload.fromBankID}|TO:{payload.toBankID}]"
+            )
+
+            cur.execute(f"""
+                INSERT INTO "{je_t}" ("journalDate", "referenceNo", "sourceModule", "description", "sourceID")
+                VALUES (%s, 'XFER-AUTO', 'Cash Transfer', %s, %s)
+                RETURNING "journalID"
+            """, (payload.transferDate, desc_text, payload.fromBankID))
+            jid = cur.fetchone()["journalID"]
+
+            cur.execute(
+                f'UPDATE "{je_t}" SET "referenceNo" = %s WHERE "journalID" = %s',
+                (f"XFER-{str(jid).zfill(4)}", jid)
+            )
+            cur.execute(
+                f'INSERT INTO "{jel_t}" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, %s, 0)',
+                (jid, cash_acc["id"], payload.amount)
+            )
+            cur.execute(
+                f'INSERT INTO "{jel_t}" ("journalID", "accountID", "debit", "credit") VALUES (%s, %s, 0, %s)',
+                (jid, cash_acc["id"], payload.amount)
+            )
 
             conn.commit()
-            return {"message": f"Transferred {payload.amount} to Corporate Checking"}
+            return {"message": f"Transferred {payload.amount:,.2f} from {from_row['name']} to {to_row['name']}"}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))

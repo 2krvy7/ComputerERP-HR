@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import "./chart-of-account.css";
 
+// Data shape matching backend ChartOfAccounts records
 type Account = {
   accountID: number;
   accountCode: string;
@@ -11,11 +12,13 @@ type Account = {
 };
 
 export default function ChartOfAccounts() {
+  // Core directory & filter states
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("ALL");
 
-  // Add Account Modal States
+  // Add Account modal states
   const [showAddModal, setShowAddModal] = useState(false);
   const [accountCode, setAccountCode] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -23,15 +26,19 @@ export default function ChartOfAccounts() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Modify & Archive States
-  const [isModifyMode, setIsModifyMode] = useState(false);
+  // Select & Archive workflow states
+  const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [archivedIds, setArchivedIds] = useState<number[]>([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
 
+  // Fetch all accounts from FastAPI backend
   async function fetchAccounts() {
     setLoading(true);
     try {
+      // FETCH 1: GET http://127.0.0
+      // Backend Route: finance/backend/routers/coa.py -> get_accounts()
+      // Purpose: Loads active Chart of Accounts records from PostgreSQL
       const res = await fetch("http://127.0.0.1:8000/api/coa");
       const data = await res.json();
       setAccounts(Array.isArray(data) ? data : []);
@@ -42,6 +49,7 @@ export default function ChartOfAccounts() {
     }
   }
 
+  // Load saved archived IDs from localStorage and fetch accounts on mount
   useEffect(() => {
     const saved = localStorage.getItem("coa_archived_ids");
     if (saved) {
@@ -54,17 +62,22 @@ export default function ChartOfAccounts() {
     fetchAccounts();
   }, []);
 
+  // Persist archived account IDs locally
   function saveArchivedIds(nextIds: number[]) {
     setArchivedIds(nextIds);
     localStorage.setItem("coa_archived_ids", JSON.stringify(nextIds));
   }
 
+  // Create a new account via POST /api/coa
   async function handleAddAccount(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
     setSubmitting(true);
 
     try {
+      // FETCH 2: POST http://127.0.0
+      // Backend Route: finance/backend/routers/coa.py -> create_account()
+      // Purpose: Saves a new account into ChartOfAccounts
       const res = await fetch("http://127.0.0.1:8000/api/coa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,23 +105,25 @@ export default function ChartOfAccounts() {
     }
   }
 
-  function handleToggleModify() {
-    if (isModifyMode) {
-      // Deactivate modify mode and clear selections
-      setIsModifyMode(false);
+  // Toggle row selection checkboxes on/off
+  function handleToggleSelectMode() {
+    if (isSelectMode) {
+      setIsSelectMode(false);
       setSelectedIds([]);
     } else {
-      setIsModifyMode(true);
+      setIsSelectMode(true);
     }
   }
 
-  function handleToggleSelect(id: number) {
+  // Check or uncheck a single account row
+  function handleToggleRow(id: number) {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   }
 
-  function handleDeleteToArchive() {
+  // Move checked accounts into the Archive list
+  function handleMoveToArchive() {
     if (selectedIds.length === 0) {
       alert("Please select at least one account checkbox to move to Archive.");
       return;
@@ -118,15 +133,18 @@ export default function ChartOfAccounts() {
     setSelectedIds([]);
   }
 
+  // Restore a single archived account back to the active directory
   function handleRestoreAccount(id: number) {
     const nextArchived = archivedIds.filter((item) => item !== id);
     saveArchivedIds(nextArchived);
   }
 
+  // Restore all archived accounts at once
   function handleRestoreAll() {
     saveArchivedIds([]);
   }
 
+  // Separate active vs archived accounts
   const activeAccounts = accounts.filter(
     (acc) => !archivedIds.includes(acc.accountID)
   );
@@ -134,15 +152,22 @@ export default function ChartOfAccounts() {
     archivedIds.includes(acc.accountID)
   );
 
+  // Filter active accounts by dropdown type and search query
   const filteredAccounts = activeAccounts.filter((acc) => {
+    const accTypeLow = (acc.accountType || "").toLowerCase();
+    if (typeFilter !== "ALL" && accTypeLow !== typeFilter.toLowerCase()) {
+      return false;
+    }
+
     const q = search.toLowerCase();
     return (
       acc.accountCode?.toLowerCase().includes(q) ||
       acc.accountName?.toLowerCase().includes(q) ||
-      acc.accountType?.toLowerCase().includes(q)
+      accTypeLow.includes(q)
     );
   });
 
+  // Check or uncheck all visible filtered rows
   function handleToggleSelectAll() {
     if (selectedIds.length === filteredAccounts.length) {
       setSelectedIds([]);
@@ -151,17 +176,12 @@ export default function ChartOfAccounts() {
     }
   }
 
-  return (
+
+    return (
     <div className="coa-page">
-      {/* Header */}
+      {/* Fixed Aligned Page Header */}
       <div className="coa-header">
-        <div>
-          <h1>Chart of Accounts</h1>
-          <p>
-            Organize your accounts and keep every transaction in the right
-            place.
-          </p>
-        </div>
+        <h1>Chart of Accounts</h1>
 
         <button
           className="primary-btn"
@@ -174,12 +194,11 @@ export default function ChartOfAccounts() {
         </button>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Metric Cards */}
       <div className="coa-cards">
         <div className="coa-card">
           <h4>Active Accounts</h4>
           <h2>{activeAccounts.length}</h2>
-          <span>Connected to Database</span>
         </div>
 
         <div className="coa-card">
@@ -216,7 +235,7 @@ export default function ChartOfAccounts() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Search Bar & Account Type Dropdown Filter */}
       <div className="coa-filters">
         <input
           type="text"
@@ -226,46 +245,50 @@ export default function ChartOfAccounts() {
           onChange={(e) => setSearch(e.target.value)}
         />
 
-        <button onClick={() => setSearch("")}>All Accounts</button>
-        <button onClick={fetchAccounts}>Refresh</button>
+        <select
+          className="type-select"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          aria-label="Filter by account type"
+        >
+          <option value="ALL">All Accounts</option>
+          <option value="Asset">Asset</option>
+          <option value="Liability">Liabilities</option>
+          <option value="Equity">Equity</option>
+          <option value="Revenue">Revenue</option>
+          <option value="Expense">Expense</option>
+        </select>
+
+        <button className="refresh-btn" onClick={fetchAccounts}>
+          Refresh
+        </button>
       </div>
 
-      {/* Table */}
+      {/* Centered Account Directory Table */}
       <div className="coa-table-container">
         <div className="table-header">
           <h3>Account Directory</h3>
 
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          <div className="table-actions">
             <button
-              onClick={handleToggleModify}
-              style={
-                isModifyMode
-                  ? {
-                      backgroundColor: "#dc2626",
-                      color: "#ffffff",
-                      border: "1px solid #dc2626",
-                      fontWeight: 600,
-                    }
-                  : undefined
-              }
+              className={`select-mode-btn ${isSelectMode ? "active" : ""}`}
+              onClick={handleToggleSelectMode}
             >
-              {isModifyMode ? "Modify (Active)" : "Modify"}
+              {isSelectMode ? "Done Selecting" : "Select"}
             </button>
 
-            {isModifyMode ? (
+            {isSelectMode ? (
               <button
-                onClick={handleDeleteToArchive}
-                style={{
-                  backgroundColor: "#991b1b",
-                  color: "#ffffff",
-                  border: "1px solid #991b1b",
-                  fontWeight: 600,
-                }}
+                className="archive-confirm-btn"
+                onClick={handleMoveToArchive}
               >
-                Delete ({selectedIds.length})
+                Archive Selected ({selectedIds.length})
               </button>
             ) : (
-              <button onClick={() => setShowArchiveModal(true)}>
+              <button
+                className="archive-btn"
+                onClick={() => setShowArchiveModal(true)}
+              >
                 Archive ({archivedAccounts.length})
               </button>
             )}
@@ -275,8 +298,8 @@ export default function ChartOfAccounts() {
         <table className="coa-table">
           <thead>
             <tr>
-              {isModifyMode && (
-                <th style={{ width: "40px" }}>
+              {isSelectMode && (
+                <th className="coa-checkbox-col">
                   <input
                     type="checkbox"
                     checked={
@@ -299,109 +322,92 @@ export default function ChartOfAccounts() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={isModifyMode ? 7 : 6}>Loading...</td>
+                <td colSpan={isSelectMode ? 7 : 6}>Loading accounts...</td>
               </tr>
             ) : filteredAccounts.length === 0 ? (
               <tr>
-                <td colSpan={isModifyMode ? 7 : 6}>
-                  No active accounts found in database
+                <td colSpan={isSelectMode ? 7 : 6}>
+                  No active accounts found matching your filter.
                 </td>
               </tr>
             ) : (
-              filteredAccounts.map((account) => (
-                <tr key={account.accountID}>
-                  {isModifyMode && (
+              filteredAccounts.map((account) => {
+                const isChecked = selectedIds.includes(account.accountID);
+                return (
+                  <tr
+                    key={account.accountID}
+                    className={isChecked ? "row-selected" : undefined}
+                  >
+                    {isSelectMode && (
+                      <td className="coa-checkbox-col">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleRow(account.accountID)}
+                        />
+                      </td>
+                    )}
+                    <td>{account.accountID}</td>
+                    <td>{account.accountName}</td>
+                    <td>{account.accountCode}</td>
+                    <td>{account.accountType}</td>
                     <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(account.accountID)}
-                        onChange={() => handleToggleSelect(account.accountID)}
-                      />
+                      {["Asset", "Expense"].includes(account.accountType)
+                        ? "Debit"
+                        : "Credit"}
                     </td>
-                  )}
-                  <td>{account.accountID}</td>
-                  <td>{account.accountName}</td>
-                  <td>{account.accountCode}</td>
-                  <td>{account.accountType}</td>
-                  <td>
-                    {["Asset", "Expense"].includes(account.accountType)
-                      ? "Debit"
-                      : "Credit"}
-                  </td>
-                  <td>
-                    <span className="status active">Active</span>
-                  </td>
-                </tr>
-              ))
+                    <td>
+                      <span className="status active">Active</span>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-       {/* Add Account Modal */}
+
+      {/* Add New Account Modal */}
       {showAddModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleAddAccount}
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "400px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.85rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>Add New Account</h3>
+        <div className="coa-modal-overlay">
+          <form className="coa-modal-card" onSubmit={handleAddAccount}>
+            <div className="coa-modal-header">
+              <h3>Add New Account</h3>
+            </div>
 
-            {formError && (
-              <p style={{ color: "crimson", fontSize: "0.9rem", margin: 0 }}>
-                {formError}
-              </p>
-            )}
+            {formError && <p className="coa-form-error">{formError}</p>}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="coa-form-group">
               <label>Account Code *</label>
               <input
                 type="text"
                 required
                 placeholder="e.g. 5010"
+                className="coa-form-input"
                 value={accountCode}
                 onChange={(e) => setAccountCode(e.target.value)}
-                style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
               />
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="coa-form-group">
               <label>Account Name *</label>
               <input
                 type="text"
                 required
                 placeholder="e.g. Production Cost"
+                className="coa-form-input"
                 value={accountName}
                 onChange={(e) => setAccountName(e.target.value)}
-                style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
               />
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="coa-form-group">
               <label>Account Type *</label>
               <select
+                className="coa-form-input"
                 value={accountType}
                 onChange={(e) => setAccountType(e.target.value)}
-                style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
               >
                 <option value="Asset">Asset (Normal: Debit)</option>
                 <option value="Liability">Liability (Normal: Credit)</option>
@@ -411,18 +417,11 @@ export default function ChartOfAccounts() {
               </select>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="coa-modal-footer">
               <button
                 type="button"
+                className="coa-cancel-btn"
                 onClick={() => setShowAddModal(false)}
-                style={{ padding: "0.5rem 1rem", borderRadius: "6px", border: "1px solid #ccc" }}
               >
                 Cancel
               </button>
@@ -440,44 +439,14 @@ export default function ChartOfAccounts() {
 
       {/* Archive & Restore Modal */}
       {showArchiveModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "560px",
-              maxHeight: "80vh",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "1rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>Archived Accounts ({archivedAccounts.length})</h3>
+        <div className="coa-modal-overlay">
+          <div className="coa-modal-card wide">
+            <div className="coa-modal-header">
+              <h3>Archived Accounts ({archivedAccounts.length})</h3>
               {archivedAccounts.length > 0 && (
                 <button
+                  className="coa-restore-all-btn"
                   onClick={handleRestoreAll}
-                  style={{
-                    padding: "0.4rem 0.8rem",
-                    borderRadius: "6px",
-                    border: "1px solid #16a34a",
-                    backgroundColor: "#16a34a",
-                    color: "#fff",
-                    cursor: "pointer",
-                  }}
                 >
                   Restore All
                 </button>
@@ -485,8 +454,9 @@ export default function ChartOfAccounts() {
             </div>
 
             {archivedAccounts.length === 0 ? (
-              <p style={{ color: "#666", margin: "0.5rem 0" }}>
-                No archived accounts. Click <strong>Modify</strong> on the directory table to select and archive accounts.
+              <p className="coa-empty-note">
+                No archived accounts. Click <strong>Select</strong> on the
+                directory table to choose accounts to archive.
               </p>
             ) : (
               <table className="coa-table">
@@ -506,15 +476,8 @@ export default function ChartOfAccounts() {
                       <td>{acc.accountType}</td>
                       <td>
                         <button
+                          className="coa-restore-btn"
                           onClick={() => handleRestoreAccount(acc.accountID)}
-                          style={{
-                            padding: "0.35rem 0.75rem",
-                            borderRadius: "6px",
-                            border: "1px solid #2563eb",
-                            backgroundColor: "#2563eb",
-                            color: "#fff",
-                            cursor: "pointer",
-                          }}
                         >
                           Restore
                         </button>
@@ -525,10 +488,10 @@ export default function ChartOfAccounts() {
               </table>
             )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <div className="coa-modal-footer">
               <button
+                className="coa-cancel-btn"
                 onClick={() => setShowArchiveModal(false)}
-                style={{ padding: "0.5rem 1rem", borderRadius: "6px", border: "1px solid #ccc" }}
               >
                 Close
               </button>

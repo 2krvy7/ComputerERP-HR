@@ -61,25 +61,42 @@ export default function ExpensesPage() {
     fetchData();
   }, []);
 
+
   const formatCurrency = (val: number) =>
     new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
     }).format(Number(val || 0));
 
-      const normalizedExpenses = useMemo(() => {
+
+  const normalizedExpenses = useMemo(() => {
     return expenses.map((e, idx) => {
       const isPayroll =
         e.source_type === "Payroll" ||
         String(e.expenseID || "").startsWith("PR-");
+      const isProductionOrder =
+        e.source_type === "ProductionOrder" ||
+        String(e.expenseID || "").startsWith("PO-");
+
       const rawId = isPayroll
         ? Number(
             e.payrollExpenseID ??
               String(e.expenseID).replace("PR-", "") ??
               idx + 1
           )
+        : isProductionOrder
+        ? Number(
+            e.productionOrderID ??
+              String(e.expenseID).replace("PO-", "") ??
+              idx + 1
+          )
         : Number(e.expenseID ?? idx + 1);
-      const rowKey = isPayroll ? `PR-${rawId}` : `EXP-${rawId}`;
+
+      const rowKey = isPayroll
+        ? `PR-${rawId}`
+        : isProductionOrder
+        ? `PO-${rawId}`
+        : `EXP-${rawId}`;
       const isPosted = e.postingID != null;
 
       return {
@@ -87,7 +104,8 @@ export default function ExpensesPage() {
         rowKey,
         rawId,
         isPayroll,
-        isProduction: !isPayroll && e.productionID != null,
+        isProductionOrder,
+        isProduction: !isPayroll && (isProductionOrder || e.productionID != null),
         isPosted,
       };
     });
@@ -174,14 +192,23 @@ export default function ExpensesPage() {
     const payrollIds = selectedKeys
       .filter((k) => k.startsWith("PR-"))
       .map((k) => Number(k.replace("PR-", "")));
+    const productionOrderIds = selectedKeys
+      .filter((k) => k.startsWith("PO-"))
+      .map((k) => Number(k.replace("PO-", "")));
 
     setApproving(true);
     try {
-      // FETCH 3: POST http://127.0.0
+      // FETCH 3: POST http://127.0.0.1:8000/api/expense/batch-approve
+      // Backend File: finance/backend/routers/expense.py -> batch_approve_expenses()
+      // Purpose: Approves ProductionOrder (PO-#) & Expense (EXP-#) to Journal Entries, and transfers Payroll (PR-#) to BPI Payroll
       const res = await fetch("http://127.0.0.1:8000/api/expense/batch-approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expenseIds, payrollIds }),
+        body: JSON.stringify({
+          expenseIds,
+          payrollIds,
+          productionOrderIds,
+        }),
       });
 
       if (!res.ok) {
@@ -244,7 +271,7 @@ export default function ExpensesPage() {
 }
 
 
-    const pendingFiltered = filteredExpenses.filter((e) => !e.isPosted);
+  const pendingFiltered = filteredExpenses.filter((e) => !e.isPosted);
   const allPendingChecked =
     pendingFiltered.length > 0 &&
     pendingFiltered.every((e) => selectedKeys.includes(e.rowKey));
