@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -7,18 +5,8 @@ from database import get_db_connection
 
 router = APIRouter()
 
-
-class ProductionOrderInput(BaseModel):
-    PM_ID: int
-    WH_ID: int
-    QuantityRequired: int = Field(gt=0)
-    UnitProductionCost: float | None = None
-    StartDate: datetime
-    Deadline: datetime
-
 class ProductionProgressInput(BaseModel):
     QuantityProduced: int = Field(ge=0)
-
 
 # GET: Retrieve production orders
 @router.get("/")
@@ -30,17 +18,17 @@ def get_orders():
     try:
         cur.execute("""
             SELECT
-                "Production_ID",
-                "PM_ID",
-                "WH_ID",
-                "QuantityRequired",
-                "QuantityProduced",
-                "StartDate",
-                "Deadline",
-                status,
-                "UnitProductionCost"
-            FROM public."PRODUCTION"
-            ORDER BY "Production_ID" DESC
+            "Production_ID",
+            "ProductionOrder_ID",
+            "PM_ID",
+            "WH_ID",
+            "QuantityRequired",
+            "QuantityProduced",
+            "StartDate",
+            "Deadline",
+            status
+        FROM public."PRODUCTION"
+        ORDER BY "Production_ID" DESC
         """)
 
         columns = [desc[0] for desc in cur.description]
@@ -52,109 +40,67 @@ def get_orders():
         cur.close()
         conn.close()
 
-
-# POST: Create a production order
-@router.post("/")
-def create_order(order: ProductionOrderInput):
-    database_connection = get_db_connection()
+# GET: Retrieve production orders for Finance
+@router.get("/finance")
+def get_finance_orders():
+    conn = get_db_connection()
 
     try:
-        if order.Deadline <= order.StartDate:
-            raise HTTPException(
-                status_code=400,
-                detail="Deadline must be later than StartDate."
-            )
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    "productionID",
+                    "PM_ID",
+                    "WH_ID",
+                    "quantity",
+                    "productCost",
+                    "status",
+                    "created_at"
+                FROM public."ProductionOrder"
+                ORDER BY "productionID" DESC;
+            """)
 
-        with database_connection.cursor() as sql_cursor:
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
 
-            # Check if the finished product exists
-            sql_cursor.execute(
-                """
-                SELECT 1
-                FROM public."PRODUCT_MASTER"
-                WHERE "PM_ID" = %s;
-                """,
-                (order.PM_ID,)
-            )
-
-            if sql_cursor.fetchone() is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Product not found."
-                )
-
-            # Check if the warehouse exists
-            sql_cursor.execute(
-                """
-                SELECT 1
-                FROM public."WAREHOUSE"
-                WHERE "WH_ID" = %s;
-                """,
-                (order.WH_ID,)
-            )
-
-            if sql_cursor.fetchone() is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Warehouse not found."
-                )
-
-            # Insert production order
-            sql_cursor.execute(
-                """
-                INSERT INTO public."PRODUCTION"
-                    (
-                        "PM_ID",
-                        "WH_ID",
-                        "QuantityRequired",
-                        "QuantityProduced",
-                        "StartDate",
-                        "Deadline",
-                        "status",
-                        "UnitProductionCost"
-                    )
-                VALUES (%s, %s, %s, 0, %s, %s, 'Pending', %s)
-                RETURNING "Production_ID";
-                """,
-                (
-                    order.PM_ID,
-                    order.WH_ID,
-                    order.QuantityRequired,
-                    order.StartDate,
-                    order.Deadline,
-                    order.UnitProductionCost
-                )
-            )
-
-            production_id = sql_cursor.fetchone()[0]
-
-        database_connection.commit()
-
-        return {
-            "message": "Production order created successfully.",
-            "Production_ID": production_id,
-            "PM_ID": order.PM_ID,
-            "WH_ID": order.WH_ID,
-            "QuantityRequired": order.QuantityRequired,
-            "QuantityProduced": 0,
-            "status": "Pending",
-            "UnitProductionCost": order.UnitProductionCost,
-        }
-
-    except HTTPException:
-        database_connection.rollback()
-        raise
-
-    except Exception as error:
-        database_connection.rollback()
-        print(f"Order creation error: {error}")
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to create production order."
-        )
+            return [dict(zip(columns, row)) for row in rows]
 
     finally:
-        database_connection.close()
+        conn.close()
+
+# GET: Retrieve completed production outputs for Inventory
+@router.get("/completed")
+def get_completed_orders():
+    conn = get_db_connection()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    po."RR_ID",
+                    p."PM_ID",
+                    p."WH_ID",
+                    p."QuantityRequired",
+                    p."QuantityProduced",
+                    p."StartDate",
+                    p."Deadline",
+                    p.status
+                FROM public."PRODUCTION" p
+                JOIN public."ProductionOrder" po
+                    ON p."ProductionOrder_ID" = po."productionID"
+                WHERE p.status = 'Completed'
+                ORDER BY p."Production_ID" DESC;
+            """)
+
+            columns = [desc[0] for desc in cur.description]
+            rows = cur.fetchall()
+
+            return [dict(zip(columns, row)) for row in rows]
+
+    finally:
+        conn.close()
 
 # PATCH: Update production progress
 @router.patch("/{production_id}/progress")
@@ -207,13 +153,18 @@ def update_production_progress(
                     detail="Quantity produced cannot exceed quantity required."
                 )
 
+
+            # Only allow production progress when materials are ready
+            if current_status not in ["Ready to Start", "In Progress"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Production cannot proceed until materials are received."
+                )
             # Automatically determine production status
-            if quantity_produced == 0:
-                status = "Pending"
-            elif quantity_produced < quantity_required:
-                status = "Ongoing"
-            else:
+            if quantity_produced == quantity_required:
                 status = "Completed"
+            else:
+                status = "In Progress"
 
             # Update production quantity and status together
             sql_cursor.execute(

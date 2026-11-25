@@ -173,7 +173,7 @@ export default function Home() {
   ).length;
 
   const ongoingOrders = orders.filter(
-    (order) => order.status === "Ongoing"
+  (order) => order.status === "In Progress"
   ).length;
 
   const completedOrders = orders.filter(
@@ -183,7 +183,7 @@ export default function Home() {
   const summaryCards = [
     { title: "Total Orders", value: totalOrders },
     { title: "Pending", value: pendingOrders },
-    { title: "Ongoing", value: ongoingOrders },
+    { title: "In Progress", value: ongoingOrders },
     { title: "Completed", value: completedOrders },
   ];
 
@@ -220,7 +220,7 @@ export default function Home() {
     switch (status?.toLowerCase()) {
       case "completed":
         return "bg-green-100 text-green-700";
-      case "ongoing":
+      case "in progress":
         return "bg-blue-100 text-blue-700";
       case "pending":
         return "bg-yellow-100 text-yellow-700";
@@ -246,23 +246,24 @@ export default function Home() {
         </p>
       ) : (
         <>
-          {/* SUMMARY CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-            {summaryCards.map((card) => (
-              <div
-                key={card.title}
-                className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm"
-              >
-                <p className="text-sm text-gray-500">
-                  {card.title}
-                </p>
+          
+      {/* SUMMARY CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {summaryCards.map((card) => (
+          <div
+            key={card.title}
+            className="bg-white border border-gray-200 px-4 py-2 rounded-xl shadow-sm"
+          >
+            <p className="text-sm text-gray-500">
+              {card.title}
+            </p>
 
-                <p className="text-3xl font-bold text-gray-800 mt-2">
-                  {card.value.toLocaleString()}
-                </p>
-              </div>
-            ))}
+            <p className="text-2xl font-bold text-gray-800 mt-1">
+              {card.value.toLocaleString()}
+            </p>
           </div>
+        ))}
+      </div>
 
           {/* ERROR AND SUCCESS MESSAGES */}
           {error && (
