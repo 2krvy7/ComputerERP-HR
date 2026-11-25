@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,17 +17,14 @@ from routers.dashboard import router as dashboard_router
 
 app = FastAPI(title="Finance ERP API")
 
+# Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://computer-erp-finance-backend.vercel.app",
-        # Add your exact Vercel frontend URL below once deployed, e.g.:
-        # "https://vercel.app",
-    ],
-    allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_credentials=False,
+    allow_origins=origins,
+    # any of our deployed ERP sites, e.g. https://computer-erp-procurement.vercel.app
+    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
