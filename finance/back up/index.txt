@@ -1,0 +1,646 @@
+## Table `User`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `UserID` | `varchar` | Primary |
+| `Username` | `varchar` |  Unique |
+| `email` | `varchar` |  Unique |
+| `password` | `varchar` |  |
+| `RoleID` | `int4` |  |
+| `DeptID` | `varchar` |  Nullable |
+
+## Table `Department`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `DeptID` | `varchar` | Primary |
+| `DeptName` | `varchar` |  Unique |
+
+## Table `Roles`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `RoleID` | `int4` | Primary |
+| `RoleName` | `varchar` |  Unique |
+
+## Table `Supplier`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `SupplierID` | `int4` | Primary Identity |
+| `SupplierName` | `varchar` |  |
+| `Contact` | `varchar` |  Nullable |
+| `Email` | `varchar` |  Nullable |
+| `Address` | `text` |  Nullable |
+| `ContactPerson` | `varchar` |  Nullable |
+| `status` | `varchar` |  |
+
+## Table `PurchaseRequest`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `PR_ID` | `int4` | Primary Identity |
+| `Status` | `varchar` |  Nullable |
+| `DateIssued` | `timestamp` |  Nullable |
+| `RestockRequestID` | `int4` |  Unique |
+
+## Table `RequestQuotation`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `RFQ_ID` | `int4` | Primary Identity |
+| `PR_ID` | `int4` |  |
+| `SupplierID` | `int4` |  |
+| `QuotedAmount` | `numeric` |  Nullable |
+| `DeliveryTerms` | `varchar` |  Nullable |
+
+## Table `PurchaseOrder`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `PO_ID` | `int4` | Primary Identity |
+| `RFQ_ID` | `int4` |  Unique |
+| `Total_Amount` | `numeric` |  Nullable |
+| `OrderDate` | `timestamp` |  |
+
+## Table `GoodsReceived`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `GR_ID` | `int4` | Primary Identity |
+| `PO_ID` | `int4` |  Unique |
+| `ReceivedBy` | `varchar` |  |
+| `ReceivedDate` | `timestamp` |  Nullable |
+| `ItemCondition` | `varchar` |  Nullable |
+| `QuantityReceived` | `int4` |  Nullable |
+| `Remarks` | `varchar` |  Nullable |
+
+## Table `PurchaseInvoice`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `PI_ID` | `int4` | Primary Identity |
+| `PO_ID` | `int4` |  Unique |
+| `InvoiceDate` | `date` |  Nullable |
+| `TaxAmount` | `numeric` |  Nullable |
+| `TotalDue` | `numeric` |  Nullable |
+
+## Table `WAREHOUSE`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `WH_ID` | `int4` | Primary Identity |
+| `Warehouse_Name` | `varchar` |  |
+| `Location` | `varchar` |  Nullable |
+
+## Table `ITEM_MASTER`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `IM_ID` | `int4` | Primary Identity |
+| `SKU` | `varchar` |  Unique |
+| `Item_Name` | `varchar` |  |
+| `Description` | `text` |  Nullable |
+| `Category` | `varchar` |  Nullable |
+| `Brand` | `varchar` |  Nullable |
+| `ItemType` | `varchar` |  Nullable |
+| `unit_of_measure` | `varchar` |  Nullable |
+| `Price` | `numeric` |  Nullable |
+| `status` | `varchar` |  Nullable |
+
+## Table `STOCK`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `STOCK_ID` | `int4` | Primary Identity |
+| `IM_ID` | `int4` |  |
+| `WH_ID` | `int4` |  |
+| `quantity_on_hand` | `int4` |  |
+| `reorder_level` | `int4` |  |
+
+## Table `RestockRequest`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `RR_ID` | `int4` | Primary Identity |
+| `IM_ID` | `int4` |  |
+| `WH_ID` | `int4` |  |
+| `Quantity` | `int4` |  |
+| `issued` | `timestamp` |  Nullable |
+| `status` | `varchar` |  Nullable |
+| `approved_by` | `varchar` |  Nullable |
+| `approved_date` | `timestamp` |  Nullable |
+
+## Table `STOCK_LEDGER`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `LogID` | `int4` | Primary Identity |
+| `IM_ID` | `int4` |  |
+| `WH_ID` | `int4` |  |
+| `Target_WH_ID` | `int4` |  Nullable |
+| `TransactionType` | `varchar` |  Nullable |
+| `Quantity` | `int4` |  |
+| `ActualQuantity` | `int4` |  Nullable |
+| `ReferenceNo` | `varchar` |  Nullable |
+| `LoggedBy` | `varchar` |  |
+| `ApprovedBy` | `varchar` |  Nullable |
+| `LogDate` | `timestamp` |  Nullable |
+| `Remarks` | `varchar` |  Nullable |
+
+## Table `PRODUCT_MASTER`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `PM_ID` | `int4` | Primary Identity |
+| `IM_ID` | `int4` |  Unique |
+| `Manual` | `text` |  Nullable |
+
+## Table `BILL_OF_MATERIALS`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `BOM_ID` | `int4` | Primary Identity |
+| `PM_ID` | `int4` |  |
+| `IM_ID` | `int4` |  |
+| `MaterialRequired` | `int4` |  |
+
+## Table `PRODUCTION`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `Production_ID` | `int4` | Primary Identity |
+| `PM_ID` | `int4` |  |
+| `WH_ID` | `int4` |  |
+| `QuantityRequired` | `int4` |  |
+| `QuantityProduced` | `int4` |  |
+| `StartDate` | `timestamptz` |  Nullable |
+| `Deadline` | `timestamptz` |  Nullable |
+| `status` | `varchar` |  Nullable |
+| `UnitProductionCost` | `numeric` |  Nullable |
+
+## Table `ChartOfAccounts`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `accountID` | `int4` | Primary Identity |
+| `accountCode` | `varchar` |  Unique |
+| `accountName` | `varchar` |  |
+| `accountType` | `varchar` |  |
+
+## Table `JournalEntry`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `journalID` | `int4` | Primary Identity |
+| `journalDate` | `timestamp` |  Nullable |
+| `referenceNo` | `varchar` |  Nullable |
+| `sourceModule` | `varchar` |  Nullable |
+| `description` | `text` |  Nullable |
+| `sourceID` | `int4` |  Nullable |
+
+## Table `JournalEntryLine`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `lineID` | `int4` | Primary Identity |
+| `journalID` | `int4` |  |
+| `accountID` | `int4` |  |
+| `debit` | `numeric` |  Nullable |
+| `credit` | `numeric` |  Nullable |
+
+## Table `GeneralLedger`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `glID` | `int4` | Primary Identity |
+| `accountID` | `int4` |  |
+| `journalID` | `int4` |  |
+| `transactionDate` | `timestamp` |  Nullable |
+| `debitAmount` | `numeric` |  Nullable |
+| `creditAmount` | `numeric` |  Nullable |
+| `runningBalance` | `numeric` |  Nullable |
+
+## Table `APInvoice`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `apInvoiceID` | `int4` | Primary Identity |
+| `piID` | `int4` |  Unique |
+| `supplierID` | `int4` |  |
+| `poID` | `int4` |  |
+| `amount` | `numeric` |  Nullable |
+| `totalPaid` | `numeric` |  Nullable |
+| `remainingBalance` | `numeric` |  Nullable |
+| `status` | `varchar` |  Nullable |
+| `dueDate` | `timestamp` |  Nullable |
+
+## Table `APPayment`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `paymentID` | `int4` | Primary Identity |
+| `apInvoiceID` | `int4` |  |
+| `bankAccountID` | `int4` |  |
+| `paymentDate` | `timestamp` |  Nullable |
+| `amount` | `numeric` |  Nullable |
+
+## Table `ARInvoice`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `arInvoiceID` | `int4` | Primary Identity |
+| `salesInvoiceID` | `int4` |  Nullable Unique |
+| `customerID` | `int4` |  Nullable |
+| `amount` | `numeric` |  Nullable |
+| `totalPaid` | `numeric` |  Nullable |
+| `remainingBalance` | `numeric` |  Nullable |
+| `status` | `varchar` |  Nullable |
+| `dueDate` | `timestamp` |  Nullable |
+
+## Table `ARReceipt`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `receiptID` | `int4` | Primary Identity |
+| `arInvoiceID` | `int4` |  |
+| `bankAccountID` | `int4` |  |
+| `paymentDate` | `timestamp` |  Nullable |
+| `amount` | `numeric` |  Nullable |
+
+## Table `BankAccount`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `bankAccountID` | `int4` | Primary Identity |
+| `bankName` | `varchar` |  Nullable |
+| `accountNumber` | `varchar` |  Nullable |
+
+## Table `PayrollExpense`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `payrollExpenseID` | `int4` | Primary Identity |
+| `payroll_id` | `int4` |  Nullable |
+| `amount` | `numeric` |  Nullable |
+
+## Table `ProductionOrder`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `productionID` | `int4` | Primary |
+| `PM_ID` | `int4` |  |
+| `quantity` | `numeric` |  Nullable |
+| `productCost` | `numeric` |  Nullable |
+| `WH_ID` | `int4` |  |
+| `status` | `varchar` |  |
+| `created_at` | `timestamptz` |  |
+| `reviewed_by` | `varchar` |  Nullable |
+| `reviewed_at` | `timestamptz` |  Nullable |
+
+## Table `Expense`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `expenseID` | `int4` | Primary Identity |
+| `accountID` | `int4` |  |
+| `productionID` | `int4` |  Nullable |
+| `postingID` | `int4` |  Nullable |
+| `amount` | `numeric` |  Nullable |
+
+## Table `customers`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `customer_id` | `int4` | Primary Identity |
+| `name` | `varchar` |  |
+| `contact` | `varchar` |  Nullable |
+| `email` | `varchar` |  Nullable |
+| `address` | `varchar` |  Nullable |
+| `customer_type` | `varchar` |  |
+| `status` | `bool` |  |
+
+## Table `sales_quotation`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `quotation_id` | `int4` | Primary Identity |
+| `customer_id` | `int4` |  |
+| `quotation_date` | `date` |  |
+| `status` | `varchar` |  |
+| `total_amount` | `numeric` |  |
+
+## Table `sales_quotation_detail`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `quotation_detail_id` | `int4` | Primary Identity |
+| `quotation_id` | `int4` |  |
+| `IM_ID` | `int4` |  |
+| `quantity` | `int4` |  |
+| `unit_price` | `numeric` |  |
+| `discount` | `numeric` |  |
+| `line_total` | `numeric` |  |
+
+## Table `sales_order`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `order_id` | `int4` | Primary Identity |
+| `quotation_id` | `int4` |  Nullable Unique |
+| `customer_id` | `int4` |  |
+| `order_date` | `date` |  |
+| `total_amount` | `numeric` |  |
+| `status` | `varchar` |  |
+
+## Table `sales_order_detail`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `order_detail_id` | `int4` | Primary Identity |
+| `order_id` | `int4` |  |
+| `IM_ID` | `int4` |  |
+| `quantity` | `int4` |  |
+| `unit_price` | `numeric` |  |
+| `discount` | `numeric` |  |
+| `line_total` | `numeric` |  |
+
+## Table `delivery`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `delivery_id` | `int4` | Primary Identity |
+| `order_id` | `int4` |  |
+| `WH_ID` | `int4` |  |
+| `delivery_date` | `date` |  Nullable |
+| `delivery_address` | `text` |  Nullable |
+| `status` | `varchar` |  Nullable |
+
+## Table `sales_invoice`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `invoice_id` | `int4` | Primary Identity |
+| `order_id` | `int4` |  Unique |
+| `invoice_date` | `date` |  |
+| `due_date` | `date` |  Nullable |
+| `total_due` | `numeric` |  |
+| `installment_months` | `int4` |  |
+| `interest_rate` | `numeric` |  |
+| `interest_amount` | `numeric` |  |
+
+## Table `accounts_receivable`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `AR_ID` | `int4` | Primary Identity |
+| `invoice_id` | `int4` |  Unique |
+| `customer_id` | `int4` |  |
+| `amount_due` | `numeric` |  |
+| `amount_paid` | `numeric` |  |
+| `balance` | `numeric` |  |
+| `status` | `varchar` |  Nullable |
+
+## Table `payment_collection`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `payment_id` | `int4` | Primary Identity |
+| `AR_ID` | `int4` |  |
+| `payment_date` | `date` |  |
+| `payment_method` | `varchar` |  Nullable |
+| `amount_paid` | `numeric` |  |
+| `transaction_number` | `varchar` |  Nullable |
+
+## Table `sales_return`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `return_id` | `int4` | Primary Identity |
+| `Order_Detail_ID` | `int4` |  |
+| `invoice_id` | `int4` |  |
+| `return_date` | `date` |  |
+| `quantity` | `int4` |  |
+| `reason` | `text` |  Nullable |
+| `return_amount` | `numeric` |  Nullable |
+| `status` | `varchar` |  |
+
+## Table `customer_balance`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `balance_id` | `int4` | Primary Identity |
+| `customer_id` | `int4` |  Unique |
+| `total_invoice` | `numeric` |  |
+| `total_paid` | `numeric` |  |
+| `remaining_balance` | `numeric` |  |
+
+## Table `Position`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `position_id` | `int4` | Primary Identity |
+| `position_name` | `varchar` |  Nullable |
+| `basic_salary` | `numeric` |  Nullable |
+
+## Table `EmployeeRecords`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `employee_id` | `int4` | Primary Identity |
+| `UserID` | `varchar` |  Nullable |
+| `position_id` | `int4` |  Nullable |
+| `first_name` | `varchar` |  Nullable |
+| `last_name` | `varchar` |  Nullable |
+| `birth_date` | `date` |  Nullable |
+| `contact_no` | `varchar` |  Nullable |
+| `email` | `varchar` |  Nullable |
+| `address` | `varchar` |  Nullable |
+| `hire_date` | `date` |  Nullable |
+| `employment_status` | `varchar` |  Nullable |
+
+## Table `Attendance`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `attendance_id` | `int4` | Primary Identity |
+| `employee_id` | `int4` |  Nullable |
+| `date` | `timestamp` |  Nullable |
+| `time_in` | `time` |  Nullable |
+| `time_out` | `time` |  Nullable |
+| `status` | `varchar` |  Nullable |
+
+## Table `Leave`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `leave_id` | `int4` | Primary Identity |
+| `employee_id` | `int4` |  Nullable |
+| `leave_type` | `varchar` |  Nullable |
+| `start_date` | `date` |  Nullable |
+| `end_date` | `date` |  Nullable |
+| `reason` | `varchar` |  Nullable |
+| `status` | `varchar` |  Nullable |
+
+## Table `Payroll`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `payroll_id` | `int4` | Primary Identity |
+| `employee_id` | `int4` |  Nullable |
+| `pay_period` | `varchar` |  Nullable |
+| `overtime` | `numeric` |  Nullable |
+| `gross_salary` | `numeric` |  Nullable |
+| `sss` | `numeric` |  Nullable |
+| `philhealth` | `numeric` |  Nullable |
+| `pag_ibig` | `numeric` |  Nullable |
+| `deductions` | `numeric` |  Nullable |
+| `net_salary` | `numeric` |  Nullable |
+| `13th_month_pay` | `numeric` |  Nullable |
+| `payroll_status` | `varchar` |  Nullable |
+| `payment_date` | `date` |  Nullable |
+
+## Table `Applicant`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `applicant_id` | `int4` | Primary Identity |
+| `first_name` | `varchar` |  Nullable |
+| `last_name` | `varchar` |  Nullable |
+| `email` | `varchar` |  Nullable |
+| `contact_no` | `varchar` |  Nullable |
+| `application_date` | `date` |  Nullable |
+| `status` | `varchar` |  Nullable |
+
+## Table `Recruitment`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `recruitment_id` | `int4` | Primary Identity |
+| `applicant_id` | `int4` |  Nullable |
+| `position_id` | `int4` |  Nullable |
+| `interview_date` | `date` |  Nullable |
+| `result` | `varchar` |  Nullable |
+| `recruitment_status` | `varchar` |  Nullable |
+
+## Table `MaterialRequest`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `MR_ID` | `int4` | Primary Identity |
+| `RR_ID` | `int4` |  Unique |
+| `DateRequested` | `timestamptz` |  |
+| `RequiredDate` | `date` |  |
+| `Status` | `varchar` |  |
+| `ReleasedBy` | `varchar` |  Nullable |
+| `ReleasedAt` | `timestamptz` |  Nullable |
+| `ReceivedBy` | `varchar` |  Nullable |
+| `ReceivedAt` | `timestamptz` |  Nullable |
+
+## Table `MaterialRequestDetail`
+
+### Columns
+
+| Name | Type | Constraints |
+|------|------|-------------|
+| `MRD_ID` | `int4` | Primary Identity |
+| `MR_ID` | `int4` |  |
+| `IM_ID` | `int4` |  |
+| `QuantityRequested` | `int4` |  |
+
