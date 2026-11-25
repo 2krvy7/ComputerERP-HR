@@ -1,7 +1,6 @@
 import os
 
 #APIs connecting to PostgreSQL inside Supabase
-import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from database import get_db_connection
@@ -25,17 +24,19 @@ app = FastAPI()
 
 #API router connecting different URL origins
 # Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
-origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3003,http://127.0.0.1:3003"
+origins = [o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3003",
-        "http://127.0.0.1:3003"
-    ],
+    allow_origins=origins,
+    # any of our deployed ERP sites, e.g. https://computer-erp-procurement.vercel.app
+    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],)
+    allow_headers=["*"],
+)
+
 #API routers connecting frontend page and backend code
 app.include_router(
     dashboard.router,
@@ -333,15 +334,3 @@ def update_production_quantity(
             status_code=500,
             detail=f"Failed to update production quantity: {str(error)}"
         )
-    
-# Extra origins can still be added in the Vercel env var CORS_ORIGINS (comma separated, no trailing slash)
-origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    # any of our deployed ERP sites, e.g. https://computer-erp-procurement.vercel.app
-    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
