@@ -9,11 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 SalesOrderStatus = Literal[
     "Pending",
     "Accepted",
-    # Historical statuses remain readable for existing records.
     "Approved",
     "Processing",
     "Completed",
     "Cancelled",
+    "Released to Sales",
 ]
 
 
