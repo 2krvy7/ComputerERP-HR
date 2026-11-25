@@ -414,7 +414,7 @@ def get_purchase_requests(
                     im."Item_Name",
                     im."SKU",
                     im."ItemType",
-                    rr."Quantity",
+                    rr."Quantity" AS "QuantityRequested",
                     rr."WH_ID",
                     w."Warehouse_Name"
                 FROM "PurchaseRequest" pr
@@ -571,10 +571,9 @@ def get_goods_received(
                 JOIN public."Supplier" s
                     ON rq."SupplierID" = s."SupplierID"
 
-                ORDER BY
-                    gr."ReceivedDate" DESC NULLS LAST,
-                    gr."GR_ID" DESC
-            """)
+                ORDER BY 
+                    po."OrderDate" DESC, gr."GR_ID" DESC         
+               """)
 
             rows = cur.fetchall()
 
@@ -2028,6 +2027,491 @@ def release_sales_order(
         if conn is not None:
             conn.rollback()
 
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# PRODUCTION UPDATES
+# ADMIN + STAFF
+# READ-ONLY PRODUCTION MONITORING
+# ==========================================
+
+@router.get("/production-updates")
+def get_production_updates(
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    p."PM_ID",
+                    pm."IM_ID",
+                    im."Item_Name",
+                    im."SKU",
+                    p."WH_ID",
+                    w."Warehouse_Name",
+                    p."QuantityRequired",
+                    p."QuantityProduced",
+                    p."StartDate",
+                    p."Deadline",
+                    p."status"
+
+                FROM "PRODUCTION" p
+
+                LEFT JOIN "PRODUCT_MASTER" pm
+                    ON p."PM_ID" = pm."PM_ID"
+
+                LEFT JOIN "ITEM_MASTER" im
+                    ON pm."IM_ID" = im."IM_ID"
+
+                LEFT JOIN "WAREHOUSE" w
+                    ON p."WH_ID" = w."WH_ID"
+
+                ORDER BY
+                    p."Production_ID" DESC
+            """)
+
+            return cur.fetchall()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# FINISHED GOODS RECEIVED
+# ADMIN + STAFF
+# COMPLETED PRODUCTION ORDERS
+# AWAITING INVENTORY INSPECTION
+# ==========================================
+
+@router.get("/finished-goods")
+def get_finished_goods(
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    p."PM_ID",
+                    pm."IM_ID",
+                    im."Item_Name",
+                    im."SKU",
+                    im."ItemType",
+                    p."WH_ID",
+                    w."Warehouse_Name",
+                    p."QuantityRequired",
+                    p."QuantityProduced",
+                    p."StartDate",
+                    p."Deadline",
+                    p."status"
+
+                FROM "PRODUCTION" p
+
+                JOIN "PRODUCT_MASTER" pm
+                    ON p."PM_ID" = pm."PM_ID"
+
+                JOIN "ITEM_MASTER" im
+                    ON pm."IM_ID" = im."IM_ID"
+
+                JOIN "WAREHOUSE" w
+                    ON p."WH_ID" = w."WH_ID"
+
+                WHERE p."status" = 'Released'
+                  AND im."ItemType" = 'Finished'
+
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM "STOCK_LEDGER" sl
+                      WHERE sl."ReferenceNo" =
+                          'PROD-' || p."Production_ID"::text
+                        AND sl."TransactionType" = 'STOCK_IN'
+                  )
+
+                ORDER BY p."Production_ID" DESC
+            """)
+
+            return cur.fetchall()
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# CONFIRM FINISHED GOODS
+# ADMIN + STAFF
+# INVENTORY INSPECTION AND STOCK-IN
+# ==========================================
+
+@router.put("/finished-goods/{production_id}/confirm")
+def confirm_finished_goods(
+    production_id: int,
+    confirmation: GoodsReceivedConfirmation,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # 1. Retrieve and lock the completed Production record.
+            cur.execute("""
+                SELECT
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    p."PM_ID",
+                    p."WH_ID",
+                    p."QuantityProduced",
+                    p."status",
+                    pm."IM_ID",
+                    im."Item_Name",
+                    im."ItemType",
+                    w."Warehouse_Name"
+
+                FROM "PRODUCTION" p
+
+                JOIN "PRODUCT_MASTER" pm
+                    ON p."PM_ID" = pm."PM_ID"
+
+                JOIN "ITEM_MASTER" im
+                    ON pm."IM_ID" = im."IM_ID"
+
+                JOIN "WAREHOUSE" w
+                    ON p."WH_ID" = w."WH_ID"
+
+                WHERE p."Production_ID" = %s
+                FOR UPDATE OF p
+            """, (production_id,))
+
+            production = cur.fetchone()
+
+            if production is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Production record not found."
+                )
+
+            if production["status"] != "Released":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only released Production Orders can be received."
+                )
+
+            if production["ItemType"] != "Finished":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only finished products can be received."
+                )
+
+            # 2. Get inspection details.
+            produced_quantity = production["QuantityProduced"]
+            actual_quantity = confirmation.quantity_received
+
+            if produced_quantity is None:
+                raise HTTPException(
+                status_code=400,
+                detail="Produced quantity is missing."
+            )
+            item_condition = confirmation.item_condition
+
+            remarks = (
+                confirmation.remarks.strip()
+                if confirmation.remarks
+                else None
+            )
+
+            # 3. Validate accepted quantity.
+            if actual_quantity > produced_quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Accepted quantity cannot exceed the produced quantity."
+                )
+
+            if actual_quantity < produced_quantity and not remarks:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please provide a reason for the unaccepted quantity."
+                )
+
+            if item_condition in ["Partial", "Damaged"] and not remarks:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Remarks are required for Partial or Damaged items."
+                )
+
+            im_id = production["IM_ID"]
+            wh_id = production["WH_ID"]
+
+            # 4. Prevent duplicate stock confirmation.
+            reference_no = f"PROD-{production_id}"
+
+            cur.execute("""
+                SELECT "LogID"
+                FROM "STOCK_LEDGER"
+                WHERE "ReferenceNo" = %s
+                  AND "TransactionType" = 'STOCK_IN'
+                LIMIT 1
+            """, (reference_no,))
+
+            if cur.fetchone() is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This Production Order has already been received."
+                )
+
+            # 5. Lock existing stock record.
+            cur.execute("""
+                SELECT
+                    "STOCK_ID",
+                    "quantity_on_hand",
+                    "reorder_level"
+                FROM "STOCK"
+                WHERE "IM_ID" = %s
+                  AND "WH_ID" = %s
+                FOR UPDATE
+            """, (im_id, wh_id))
+
+            stock_row = cur.fetchone()
+
+            updated_stock = None
+
+            # 6. Add only accepted quantity to STOCK.
+            if actual_quantity > 0:
+
+                if stock_row is None:
+                    if confirmation.reorder_level is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                "Reorder level is required because "
+                                "this item has no existing stock record."
+                            )
+                        )
+
+                    stock_reorder_level = confirmation.reorder_level
+
+                else:
+                    stock_reorder_level = stock_row["reorder_level"]
+
+                cur.execute("""
+                    INSERT INTO "STOCK" (
+                        "IM_ID",
+                        "WH_ID",
+                        "quantity_on_hand",
+                        "reorder_level"
+                    )
+                    VALUES (%s, %s, %s, %s)
+
+                    ON CONFLICT ("IM_ID", "WH_ID")
+                    DO UPDATE SET
+                        "quantity_on_hand" =
+                            "STOCK"."quantity_on_hand"
+                            + EXCLUDED."quantity_on_hand"
+
+                    RETURNING
+                        "STOCK_ID",
+                        "quantity_on_hand",
+                        "reorder_level"
+                """, (
+                    im_id,
+                    wh_id,
+                    actual_quantity,
+                    stock_reorder_level
+                ))
+
+                updated_stock = cur.fetchone()
+
+                actual_stock_balance = updated_stock["quantity_on_hand"]
+
+            else:
+                actual_stock_balance = (
+                    stock_row["quantity_on_hand"]
+                    if stock_row is not None
+                    else 0
+                )
+
+            ledger_remarks = f"Condition: {item_condition}"
+
+            if remarks:
+                ledger_remarks += f" | Remarks: {remarks}"
+
+            # 7. Record STOCK_IN in the Stock Ledger.
+            # Quantity = total quantity produced.
+            # ActualQuantity = quantity accepted by Inventory.
+            # Even zero accepted quantity is recorded to prevent
+            # the same Production Order from being confirmed again.
+
+            cur.execute("""
+                INSERT INTO "STOCK_LEDGER" (
+                    "IM_ID",
+                    "WH_ID",
+                    "TransactionType",
+                    "Quantity",
+                    "ActualQuantity",
+                    "ReferenceNo",
+                    "LoggedBy",
+                    "LogDate",
+                    "Remarks"
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    'STOCK_IN',
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    CURRENT_TIMESTAMP,
+                    %s
+                )
+                RETURNING "LogID"
+            """, (
+                im_id,
+                wh_id,
+                produced_quantity,
+                actual_quantity,
+                reference_no,
+                user["sub"],
+                ledger_remarks            
+                ))
+
+            ledger_result = cur.fetchone()
+
+        conn.commit()
+
+        return {
+            "message": "Finished goods inspection and stock-in completed successfully.",
+            "Production_ID": production_id,
+            "ProductionOrder_ID": production["ProductionOrder_ID"],
+            "Item_Name": production["Item_Name"],
+            "Warehouse": production["Warehouse_Name"],
+            "WH_ID": wh_id,
+            "ProducedQuantity": produced_quantity,
+            "AcceptedQuantity": actual_quantity,
+            "ItemCondition": item_condition,
+            "Remarks": remarks,
+            "Stock": updated_stock,
+            "ActualStockBalance": actual_stock_balance,
+            "ReferenceNo": reference_no,
+            "LogID": ledger_result["LogID"]
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# FINISHED GOODS HISTORY
+# ADMIN + STAFF
+# PREVIOUSLY CONFIRMED PRODUCTION ORDERS
+# ==========================================
+
+@router.get("/finished-goods/history")
+def get_finished_goods_history(
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    p."PM_ID",
+
+                    pm."IM_ID",
+                    im."Item_Name",
+                    im."SKU",
+
+                    sl."WH_ID",
+                    w."Warehouse_Name",
+
+                    p."QuantityProduced" AS "ProducedQuantity",
+                    sl."ActualQuantity" AS "AcceptedQuantity",
+
+                    sl."TransactionType",
+                    sl."ReferenceNo",
+                    sl."LoggedBy",
+                    sl."LogDate",
+                    sl."Remarks",
+                    sl."LogID"
+
+                FROM "STOCK_LEDGER" sl
+
+                JOIN "PRODUCTION" p
+                    ON sl."ReferenceNo" =
+                        'PROD-' || p."Production_ID"::text
+
+                JOIN "PRODUCT_MASTER" pm
+                    ON p."PM_ID" = pm."PM_ID"
+
+                JOIN "ITEM_MASTER" im
+                    ON pm."IM_ID" = im."IM_ID"
+
+                JOIN "WAREHOUSE" w
+                    ON sl."WH_ID" = w."WH_ID"
+
+                WHERE sl."TransactionType" = 'STOCK_IN'
+                  AND im."ItemType" = 'Finished'
+
+                ORDER BY sl."LogDate" DESC, sl."LogID" DESC
+            """)
+
+            return cur.fetchall()
+
+    except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=str(e)

@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import DashboardLayout from "@/components/dashboardlayout";
 import { apiFetch } from "@/lib/api";
 
@@ -158,6 +158,34 @@ type MaterialRelease = {
   materials: ReleasedMaterial[];
 };
 
+type ProductionUpdate = {
+  Production_ID: number;
+  ProductionOrder_ID: number | null;
+  PM_ID: number;
+  IM_ID: number;
+  Item_Name: string;
+  SKU: string;
+  WH_ID: number;
+  Warehouse_Name: string;
+  QuantityRequired: number;
+  QuantityProduced: number;
+  StartDate: string | null;
+  Deadline: string | null;
+  status: string;
+};
+
+type FinishedGood = {
+  Production_ID: number;
+  ProductionOrder_ID: number | null;
+  Item_Name: string;
+  SKU: string;
+  WH_ID: number;
+  Warehouse_Name: string;
+  QuantityProduced: number;
+  Deadline: string | null;
+  status: string;
+};
+
 type SalesOrderItem = {
   IM_ID: number;
   Item_Name: string;
@@ -183,6 +211,8 @@ type InspectionInput = {
   itemCondition: "Good" | "Partial" | "Damaged" | "";
   remarks: string;
 };
+
+
 
 
 const sectionDescriptions: Record<string, string> = {
@@ -314,6 +344,22 @@ const [inspectionInputs, setInspectionInputs] = useState<
   const [releasingMR, setReleasingMR] =
     useState<number | null>(null);
   
+    // Production Updates
+  const [productionUpdates, setProductionUpdates] =
+    useState<ProductionUpdate[]>([]);
+
+  const [productionUpdatesLoading, setProductionUpdatesLoading] =
+    useState(true);
+
+  const [productionUpdatesError, setProductionUpdatesError] =
+    useState("");
+
+  const [finishedGoods, setFinishedGoods] = useState<FinishedGood[]>([]);
+  const [finishedGoodsLoading, setFinishedGoodsLoading] = useState(true);
+  const [finishedGoodsError, setFinishedGoodsError] = useState("");
+
+
+
   // Sales Orders
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [salesOrdersLoading, setSalesOrdersLoading] = useState(true);
@@ -359,6 +405,9 @@ useEffect(() => {
 
   const [confirmingGR, setConfirmingGR] =
     useState<number | null>(null);
+
+  const [confirmingProduction, setConfirmingProduction] =
+  useState<number | null>(null);
 
   // Fetch Incoming Requests
   useEffect(() => {
@@ -563,6 +612,63 @@ useEffect(() => {
 
     fetchMaterialReleases();
   }, []);
+
+  // Fetch Production Updates
+useEffect(() => {
+  const fetchProductionUpdates = async () => {
+    try {
+      const response = await apiFetch("/orders/production-updates");
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail || "Failed to load Production Updates."
+        );
+      }
+
+      setProductionUpdates(data);
+    } catch (error) {
+      setProductionUpdatesError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
+    } finally {
+      setProductionUpdatesLoading(false);
+    }
+  };
+
+  fetchProductionUpdates();
+}, []);
+
+// Fetch Finished Goods
+useEffect(() => {
+  const fetchFinishedGoods = async () => {
+    try {
+      const response = await apiFetch("/orders/finished-goods");
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail || "Failed to load Finished Goods."
+        );
+      }
+
+      setFinishedGoods(data);
+    } catch (error) {
+      setFinishedGoodsError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
+    } finally {
+      setFinishedGoodsLoading(false);
+    }
+  };
+
+  fetchFinishedGoods();
+}, []);
 
 
   // Release Production Material Request
@@ -809,9 +915,8 @@ const handleSalesOrderAction = async (
     },
   }));
 };
-
-  // Confirm Goods Received
   
+// Confirm Goods Received
 const handleConfirmStock = async (record: GoodsReceived) => {
   const inspection = inspectionInputs[record.GR_ID];
 
@@ -864,17 +969,21 @@ const handleConfirmStock = async (record: GoodsReceived) => {
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(data?.detail || "Failed to confirm received stock.");
+      throw new Error(
+        data?.detail || "Failed to confirm received stock."
+      );
     }
 
     alert("Goods Received and stock confirmation completed successfully.");
 
     const refreshResponse = await apiFetch("/orders/goods-received");
+
     if (refreshResponse.ok) {
       setGoodsReceived(await refreshResponse.json());
     }
 
     const upcomingResponse = await apiFetch("/orders/upcoming-requests");
+
     if (upcomingResponse.ok) {
       setUpcomingRequests(await upcomingResponse.json());
     }
@@ -890,6 +999,102 @@ const handleConfirmStock = async (record: GoodsReceived) => {
     );
   } finally {
     setConfirmingGR(null);
+  }
+};
+
+// Confirm Finished Goods Received
+const handleConfirmFinishedGood = async (record: FinishedGood) => {
+  const inspection = inspectionInputs[record.Production_ID];
+
+  if (!inspection || inspection.quantityReceived.trim() === "") {
+    alert("Please enter the accepted quantity.");
+    return;
+  }
+
+  const quantityReceived = Number(inspection.quantityReceived);
+
+  if (
+    !Number.isInteger(quantityReceived) ||
+    quantityReceived < 0 ||
+    quantityReceived > record.QuantityProduced
+  ) {
+    alert(
+      `Accepted quantity must be between 0 and ${record.QuantityProduced}.`
+    );
+    return;
+  }
+
+  if (!inspection.itemCondition) {
+    alert("Please select the item condition.");
+    return;
+  }
+
+  if (
+    (
+      quantityReceived < record.QuantityProduced ||
+      inspection.itemCondition === "Partial" ||
+      inspection.itemCondition === "Damaged"
+    ) &&
+    !inspection.remarks.trim()
+  ) {
+    alert("Please provide remarks for partial or damaged items.");
+    return;
+  }
+
+  try {
+    setConfirmingProduction(record.Production_ID);
+
+    const response = await apiFetch(
+      `/orders/finished-goods/${record.Production_ID}/confirm`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          quantity_received: quantityReceived,
+          item_condition: inspection.itemCondition,
+          remarks: inspection.remarks.trim() || null,
+        }),
+      }
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.detail || "Failed to confirm Finished Goods."
+      );
+    }
+
+    alert("Finished Goods inspection confirmed successfully.");
+
+    setInspectionInputs((previous) => {
+      const updated = { ...previous };
+      delete updated[record.Production_ID];
+      return updated;
+    });
+
+    const [finishedGoodsResponse, upcomingResponse] = await Promise.all([
+      apiFetch("/orders/finished-goods"),
+      apiFetch("/orders/upcoming-requests"),
+    ]);
+
+    if (finishedGoodsResponse.ok) {
+      setFinishedGoods(await finishedGoodsResponse.json());
+    }
+
+    if (upcomingResponse.ok) {
+      setUpcomingRequests(await upcomingResponse.json());
+    }
+  } catch (error) {
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Something went wrong."
+    );
+  } finally {
+    setConfirmingProduction(null);
   }
 };
 
@@ -1333,6 +1538,272 @@ const displayedSalesOrders =
     </div>
   )}
 
+  {/* Production - Production Updates */}
+{activeDepartment === "Production" &&
+  activeSection === "Production Updates" && (
+    <div className="overflow-x-auto rounded-xl border border-[#DCE7EA]">
+
+      {productionUpdatesLoading ? (
+        <p className="p-8 text-center text-sm text-[#587176]">
+          Loading Production Updates...
+        </p>
+      ) : productionUpdatesError ? (
+        <p className="p-8 text-center text-sm text-red-600">
+          {productionUpdatesError}
+        </p>
+      ) : productionUpdates.length === 0 ? (
+        <p className="p-8 text-center text-sm text-[#587176]">
+          No production records available.
+        </p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead className="bg-[#F2F7F8] text-[#365f68]">
+            <tr>
+              <th className="p-3">Production ID</th>
+              <th className="p-3">Production Order</th>
+              <th className="p-3">Product</th>
+              <th className="p-3">SKU</th>
+              <th className="p-3">Warehouse</th>
+              <th className="p-3">Required</th>
+              <th className="p-3">Produced</th>
+              <th className="p-3">Start Date</th>
+              <th className="p-3">Deadline</th>
+              <th className="p-3">Status</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {productionUpdates.map((production) => (
+              <tr
+                key={production.Production_ID}
+                className="border-t border-[#DCE7EA] text-[#1F3338]"
+              >
+                <td className="p-3">
+                  {production.Production_ID}
+                </td>
+
+                <td className="p-3">
+                  {production.ProductionOrder_ID ?? "-"}
+                </td>
+
+                <td className="p-3 font-medium">
+                  {production.Item_Name}
+                </td>
+
+                <td className="p-3">
+                  {production.SKU}
+                </td>
+
+                <td className="p-3">
+                  {production.Warehouse_Name}
+                </td>
+
+                <td className="p-3">
+                  {production.QuantityRequired}
+                </td>
+
+                <td className="p-3">
+                  {production.QuantityProduced}
+                </td>
+
+                <td className="p-3">
+                  {production.StartDate
+                    ? new Date(production.StartDate).toLocaleDateString()
+                    : "-"}
+                </td>
+
+                <td className="p-3">
+                  {production.Deadline
+                    ? new Date(production.Deadline).toLocaleDateString()
+                    : "-"}
+                </td>
+
+                <td className="p-3">
+                  <span className="rounded-full bg-[#F2F7F8] px-3 py-1 text-xs font-semibold text-[#365f68]">
+                    {production.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )}
+
+{/* Production - Finished Goods Received */}
+{activeDepartment === "Production" &&
+  activeSection === "Finished Goods Received" && (
+    <div className="overflow-x-auto rounded-xl border border-[#DCE7EA]">
+
+      {finishedGoodsLoading ? (
+        <p className="p-8 text-center text-sm text-[#587176]">
+          Loading Finished Goods...
+        </p>
+      ) : finishedGoodsError ? (
+        <p className="p-8 text-center text-sm text-red-600">
+          {finishedGoodsError}
+        </p>
+      ) : finishedGoods.length === 0 ? (
+        <p className="p-8 text-center text-sm text-[#587176]">
+          No completed Finished Goods waiting for inspection.
+        </p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead className="bg-[#F2F7F8] text-[#365f68]">
+            <tr>
+              <th className="p-3">Production ID</th>
+              <th className="p-3">Product</th>
+              <th className="p-3">SKU</th>
+              <th className="p-3">Warehouse</th>
+              <th className="p-3">Produced Quantity</th>
+              <th className="p-3">Deadline</th>
+              <th className="p-3">Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {finishedGoods.map((record) => (
+              <Fragment key={record.Production_ID}>
+              <tr
+                key={record.Production_ID}
+                className="border-t border-[#DCE7EA] text-[#1F3338]"
+              >
+                <td className="p-3">{record.Production_ID}</td>
+                <td className="p-3 font-medium">{record.Item_Name}</td>
+                <td className="p-3">{record.SKU}</td>
+                <td className="p-3">{record.Warehouse_Name}</td>
+                <td className="p-3">{record.QuantityProduced}</td>
+                <td className="p-3">
+                  {record.Deadline
+                    ? new Date(record.Deadline).toLocaleDateString()
+                    : "-"}
+                </td>
+                <td className="p-3">
+                  <button
+                    onClick={() =>
+                      setInspectionInputs((previous) => ({
+                        ...previous,
+                        [record.Production_ID]: {
+                          quantityReceived: String(record.QuantityProduced),
+                          itemCondition: "",
+                          remarks: "",
+                        },
+                      }))
+                    }
+                    className="rounded-lg bg-[#365f68] px-4 py-2 text-xs font-semibold text-white hover:bg-[#294b53]"
+                  >
+                    Inspect Items
+                  </button>
+              </td>
+              </tr>
+
+              {inspectionInputs[record.Production_ID] && (
+                <tr className="border-t border-[#DCE7EA] bg-[#F2F7F8]">
+                  <td colSpan={7} className="p-5">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-[#365f68]">
+                          Accepted Quantity
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={record.QuantityProduced}
+                          value={inspectionInputs[record.Production_ID].quantityReceived}
+                          onChange={(e) =>
+                            updateInspectionInput(
+                              record.Production_ID,
+                              "quantityReceived",
+                              e.target.value
+                            )
+                          }
+                          className="w-full rounded-lg border border-[#DCE7EA] bg-white p-2 text-sm"
+                        />
+                        <p className="mt-1 text-xs text-[#587176]">
+                          Maximum: {record.QuantityProduced}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-[#365f68]">
+                          Item Condition
+                        </label>
+                        <select
+                          value={inspectionInputs[record.Production_ID].itemCondition}
+                          onChange={(e) =>
+                            updateInspectionInput(
+                              record.Production_ID,
+                              "itemCondition",
+                              e.target.value
+                            )
+                          }
+                          className="w-full rounded-lg border border-[#DCE7EA] bg-white p-2 text-sm"
+                        >
+                          <option value="">Select condition</option>
+                          <option value="Good">Good</option>
+                          <option value="Partial">Partial</option>
+                          <option value="Damaged">Damaged</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-semibold text-[#365f68]">
+                          Remarks
+                        </label>
+                        <input
+                          type="text"
+                          value={inspectionInputs[record.Production_ID].remarks}
+                          onChange={(e) =>
+                            updateInspectionInput(
+                              record.Production_ID,
+                              "remarks",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Enter remarks if needed"
+                          className="w-full rounded-lg border border-[#DCE7EA] bg-white p-2 text-sm"
+                        />
+                      </div>
+
+                    </div>
+
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button
+                        onClick={() =>
+                          setInspectionInputs((previous) => {
+                            const updated = { ...previous };
+                            delete updated[record.Production_ID];
+                            return updated;
+                          })
+                        }
+                        className="rounded-lg border border-[#DCE7EA] bg-white px-4 py-2 text-xs font-semibold text-[#587176]"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        onClick={() => handleConfirmFinishedGood(record)}
+                        disabled={confirmingProduction === record.Production_ID}
+                        className="rounded-lg bg-[#365f68] px-4 py-2 text-xs font-semibold text-white hover:bg-[#294b53] disabled:opacity-50"
+                      >
+                        {confirmingProduction === record.Production_ID
+                          ? "Confirming..."
+                          : "Confirm Inspection"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )}
+
           {/* Production - Material Release */}
           {activeDepartment === "Production" &&
             activeSection === "Material Release" && (
@@ -1452,57 +1923,57 @@ const displayedSalesOrders =
               </div>
             )}
 
-          {/* Procurement - Purchase Requests */}
-          {activeDepartment === "Procurement" &&
-            activeSection === "Purchase Requests" && (
-              <div className="space-y-5">
+            {/* Procurement - Purchase Requests */}
+            {activeDepartment === "Procurement" &&
+              activeSection === "Purchase Requests" && (
+                <div className="space-y-5">
 
-                {/* Purchase Request Subtabs */}
-                <div className="flex flex-wrap gap-2 border-b border-[#DCE7EA] pb-3">
-                  {["Incoming Requests", "Purchase Requests"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setPurchaseRequestTab(tab)}
-                      className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                        purchaseRequestTab === tab
-                          ? "border border-[#668d98] bg-[#F2F7F8] text-[#365f68]"
-                          : "text-[#587176] hover:bg-[#F2F7F8]"
-                      }`}
-                    >
-                      {tab}
-                    </button>
-                  ))}
-                </div>
+                  {/* Purchase Request Subtabs */}
+                  <div className="flex flex-wrap gap-2 border-b border-[#DCE7EA] pb-3">
+                    {["Incoming Requests", "Purchase Requests"].map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setPurchaseRequestTab(tab)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                          purchaseRequestTab === tab
+                            ? "border border-[#668d98] bg-[#F2F7F8] text-[#365f68]"
+                            : "text-[#587176] hover:bg-[#F2F7F8]"
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
 
-                {/* Incoming Raw Material Requests */}
-                {purchaseRequestTab === "Incoming Requests" ? (
-                  <div className="overflow-x-auto rounded-xl border border-[#DCE7EA]">
-                    {incomingLoading ? (
-                      <p className="p-8 text-center text-sm text-[#587176]">
-                        Loading incoming requests...
-                      </p>
-                    ) : incomingError ? (
-                      <p className="p-8 text-center text-sm text-red-600">
-                        {incomingError}
-                      </p>
-                    ) : procurementIncomingRequests.length === 0 ? (
-                      <p className="p-8 text-center text-sm text-[#587176]">
-                        No incoming Raw Material requests available.
-                      </p>
-                    ) : (
-                      <table className="w-full text-left text-sm">
-                        <thead className="bg-[#F2F7F8] text-[#365f68]">
-                          <tr>
-                            <th className="p-3">Request ID</th>
-                            <th className="p-3">Item</th>
-                            <th className="p-3">SKU</th>
-                            <th className="p-3">Type</th>
-                            <th className="p-3">Quantity</th>
-                            <th className="p-3">Warehouse</th>
-                            <th className="p-3">Approved By</th>
-                            <th className="p-3">Status</th>
-                          </tr>
-                        </thead>
+                  {/* Incoming Raw Material Requests */}
+                  {purchaseRequestTab === "Incoming Requests" ? (
+                    <div className="overflow-x-auto rounded-xl border border-[#DCE7EA]">
+                      {incomingLoading ? (
+                        <p className="p-8 text-center text-sm text-[#587176]">
+                          Loading incoming requests...
+                        </p>
+                      ) : incomingError ? (
+                        <p className="p-8 text-center text-sm text-red-600">
+                          {incomingError}
+                        </p>
+                      ) : procurementIncomingRequests.length === 0 ? (
+                        <p className="p-8 text-center text-sm text-[#587176]">
+                          No incoming Raw Material requests available.
+                        </p>
+                      ) : (
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-[#F2F7F8] text-[#365f68]">
+                            <tr>
+                              <th className="p-3">Request ID</th>
+                              <th className="p-3">Item</th>
+                              <th className="p-3">SKU</th>
+                              <th className="p-3">Type</th>
+                              <th className="p-3">Quantity</th>
+                              <th className="p-3">Warehouse</th>
+                              <th className="p-3">Approved By</th>
+                              <th className="p-3">Status</th>
+                            </tr>
+                          </thead>
 
                         <tbody>
                           {procurementIncomingRequests.map((request) => (
@@ -1568,7 +2039,7 @@ const displayedSalesOrders =
                               <td className="p-3">{request.Item_Name}</td>
                               <td className="p-3">{request.SKU}</td>
                               <td className="p-3">{request.ItemType}</td>
-                              <td className="p-3">{request.Quantity}</td>
+                              <td className="p-3">{request.QuantityRequested}</td>
                               <td className="p-3">
                                 {request.Warehouse_Name}
                               </td>
@@ -1590,43 +2061,43 @@ const displayedSalesOrders =
               </div>
             )}
 
-          {/* Procurement - Goods Received */}
-          {activeDepartment === "Procurement" &&
-            activeSection === "Goods Received" && (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {goodsReceivedLoading ? (
-                  <p className="col-span-full p-8 text-center text-sm text-[#587176]">
-                    Loading goods received records...
-                  </p>
-                ) : goodsReceivedError ? (
-                  <p className="col-span-full p-8 text-center text-sm text-red-600">
-                    {goodsReceivedError}
-                  </p>
-                ) : goodsReceived.length === 0 ? (
-                  <p className="col-span-full p-8 text-center text-sm text-[#587176]">
-                    No goods received records available.
-                  </p>
-                ) : (
-                  goodsReceived.map((record) => (
-                    <div
-                      key={record.GR_ID}
-                      className="rounded-xl border border-[#DCE7EA] bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
-                    >
-                      {/* Card Header */}
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-medium text-[#587176]">
-                            Goods Received
-                          </p>
-                          <h3 className="mt-1 text-lg font-bold text-[#1F3338]">
-                            GR #{record.GR_ID}
-                          </h3>
-                        </div>
+            {/* Procurement - Goods Received */}
+            {activeDepartment === "Procurement" &&
+              activeSection === "Goods Received" && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {goodsReceivedLoading ? (
+                    <p className="col-span-full p-8 text-center text-sm text-[#587176]">
+                      Loading goods received records...
+                    </p>
+                  ) : goodsReceivedError ? (
+                    <p className="col-span-full p-8 text-center text-sm text-red-600">
+                      {goodsReceivedError}
+                    </p>
+                  ) : goodsReceived.length === 0 ? (
+                    <p className="col-span-full p-8 text-center text-sm text-[#587176]">
+                      No goods received records available.
+                    </p>
+                  ) : (
+                    goodsReceived.map((record) => (
+                      <div
+                        key={record.GR_ID}
+                        className="rounded-xl border border-[#DCE7EA] bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
+                      >
+                        {/* Card Header */}
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-medium text-[#587176]">
+                              Goods Received
+                            </p>
+                            <h3 className="mt-1 text-lg font-bold text-[#1F3338]">
+                              GR #{record.GR_ID}
+                            </h3>
+                          </div>
 
-                        <span className="rounded-full bg-[#F2F7F8] px-3 py-1.5 text-xs font-semibold text-[#365f68]">
-                          {getInspectionStatusLabel(record)}
-                        </span>
-                      </div>
+                          <span className="rounded-full bg-[#F2F7F8] px-3 py-1.5 text-xs font-semibold text-[#365f68]">
+                            {getInspectionStatusLabel(record)}
+                          </span>
+                        </div>
 
                       {/* Main Information */}
                       <div className="mt-5 grid grid-cols-2 gap-4">
@@ -2126,7 +2597,8 @@ const displayedSalesOrders =
                 activeDepartment === "Production" &&
                 (
                   activeSection === "Material Requests" ||
-                  activeSection === "Material Release"
+                  activeSection === "Material Release" ||
+                  activeSection === "Production Updates"
                 )
               ) && !(
                 activeDepartment === "Sales" &&

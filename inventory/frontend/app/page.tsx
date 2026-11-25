@@ -194,12 +194,12 @@ export default function Home() {
       description="Overview of your inventory and warehouse activities."
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
         {cards.map((card) => (
           <Link
             key={card.title}
             href={card.href}
-            className="rounded-2xl border border-[#DCE7EA] bg-[#F2F7F8] p-5 transition hover:-translate-y-1 hover:border-[#24363B] hover:shadow-md"
+            className="rounded-2xl border border-[#DCE7EA] bg-[#F2F7F8] p-4 transition hover:-translate-y-1 hover:border-[#24363B] hover:shadow-md sm:p-5"
           >
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-[#587176]">
@@ -208,7 +208,7 @@ export default function Home() {
               <span className="text-sm text-[#587176]">↗</span>
             </div>
 
-            <h2 className="mt-3 text-3xl font-bold text-[#1F3338]">
+            <h2 className="mt-2 text-2xl font-bold text-[#1F3338] sm:mt-3 sm:text-3xl">
               {loading ? "..." : card.value.toLocaleString()}
             </h2>
 

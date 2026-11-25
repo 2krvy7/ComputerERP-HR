@@ -1,5 +1,5 @@
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Sidebar from "./sidebar";
 import Header from "./header";
 
@@ -14,16 +14,29 @@ export default function DashboardLayout({
   title = "Dashboard",
   description,
 }: DashboardLayoutProps) {
+const [collapsed, setCollapsed] = useState(true);
+const [mobileOpen, setMobileOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-[#8FB1B8] p-4 md:p-6">
-      <div className="mx-auto flex min-h-[calc(100vh-32px)] max-w-[1600px] gap-5">
+      <div className={`mx-auto flex min-h-[calc(100vh-32px)] max-w-[1600px] gap-5 ${
+      collapsed ? "md:pl-[100px]" : "md:pl-[240px]"
+      }`}>
         {/* Sidebar */}
-        <Sidebar />
+        <Sidebar
+          collapsed={collapsed}
+          setCollapsed={setCollapsed}
+          mobileOpen={mobileOpen}
+          setMobileOpen={setMobileOpen}
+        />
 
         {/* Main Workspace */}
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[24px] bg-white shadow-sm">
           {/* Header */}
-          <Header pageTitle={title} />
+          <Header
+            pageTitle={title}
+            onMenuClick={() => setMobileOpen(true)}
+          />
 
           {/* Page Content */}
           <section className="flex-1 p-5 md:p-8">
