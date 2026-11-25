@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import { Badge, money, type Order } from "@/components/orders/OrderPanel";
+import { printReport } from "@/components/printReport";
 
 const API = "http://127.0.0.1:8000";
 
@@ -142,7 +143,10 @@ export default function Dashboard() {
   const hp = hover !== null ? series[hover] : null;
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   function handlePrint() {
     if (!value) return;
     const p = PERIODS.find((x) => x.key === period)!;
@@ -184,7 +188,10 @@ export default function Dashboard() {
     });
   }
 
+<<<<<<< HEAD
 >>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "1.2vw" }}>
       {/* Row of 4 cards */}
@@ -306,8 +313,25 @@ export default function Dashboard() {
           <div style={{ fontSize: "1.7vw", fontWeight: 700, color: "#24363b" }}>
             {value ? money(value.total) : "–"}
           </div>
-          <div style={{ fontSize: "0.78vw", color: "#668d98", marginBottom: "1vw" }}>
-            {PERIODS.find((p) => p.key === period)?.sub} · {value?.orders ?? 0} order{value?.orders === 1 ? "" : "s"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1vw" }}>
+            <span style={{ fontSize: "0.78vw", color: "#668d98" }}>
+              {PERIODS.find((p) => p.key === period)?.sub} · {value?.orders ?? 0} order{value?.orders === 1 ? "" : "s"}
+            </span>
+            <button
+              onClick={handlePrint}
+              style={{
+                border: "none",
+                cursor: "pointer",
+                padding: "0.3vw 0.9vw",
+                borderRadius: "99vw",
+                fontSize: "0.75vw",
+                fontWeight: 600,
+                backgroundColor: "#365f68",
+                color: "#ffffff",
+              }}
+            >
+              Print report
+            </button>
           </div>
 
           {/* The chart: plain divs, no library */}

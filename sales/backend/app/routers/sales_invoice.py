@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.sales_invoice import SalesInvoice
 from app.models.sales_order import SalesOrder
 from app.models.accounts_receivable import AccountsReceivable
@@ -18,6 +19,7 @@ from app.schemas.sales_invoice import (
 router = APIRouter(
     prefix="/api/invoices",
     tags=["Sales Invoices"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 INTEREST_RATES = {

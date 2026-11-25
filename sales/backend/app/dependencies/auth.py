@@ -10,6 +10,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.roles import ADMIN_ROLE_IDS
 from app.models.user import User
 
 
@@ -119,10 +120,22 @@ def require_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
 
-    if current_user.role_id != 1:
+    if current_user.role_id not in ADMIN_ROLE_IDS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrator access is required.",
+        )
+
+    return current_user
+
+
+def require_password_change_completed(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.must_change_password:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Change your temporary password before continuing.",
         )
 
     return current_user

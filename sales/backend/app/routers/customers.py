@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 # Import database, model, and schemas.
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.customer import Customer
 from app.schemas.customer import (
     CustomerCreate,
@@ -15,7 +16,11 @@ from app.schemas.customer import (
 )
 
 # Create Customers API router.
-router = APIRouter(prefix="/api/customers", tags=["Customers"])
+router = APIRouter(
+    prefix="/api/customers",
+    tags=["Customers"],
+    dependencies=[Depends(require_password_change_completed)],
+)
 
 
 # Find a customer by ID.

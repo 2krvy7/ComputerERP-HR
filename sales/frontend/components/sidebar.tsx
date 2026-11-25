@@ -3,8 +3,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { authAPI, type AuthUser } from "../lib/api";
+import { useAuth } from "@/contexts/auth-context";
+import { isAdminRole } from "@/lib/roles";
 
 type ProfileTab = "profile" | "edit" | "password";
 
@@ -19,6 +21,8 @@ const menuItems = [
 ];
 
 export default function Sidebar() {
+  const { logout, user } = useAuth();
+  const router = useRouter();
   const pathname = usePathname();
 
   const [hovered, setHovered] = useState(false);
@@ -173,8 +177,8 @@ export default function Sidebar() {
     setLoggingOut(true);
 
     try {
-      await authAPI.logout();
-      window.location.href = "/login";
+      await logout();
+      router.replace("/login");
     } catch (err) {
       console.error("Logout error:", err);
       setLoggingOut(false);
@@ -218,7 +222,13 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex-1 space-y-1.5 overflow-x-hidden overflow-y-auto px-2.5 py-2">
-          {menuItems.map((item) => {
+          {menuItems
+            .filter(
+              (item) =>
+                item.href !== "/selling-prices" ||
+                isAdminRole(user?.role_id)
+            )
+            .map((item) => {
             const active =
               item.href === "/"
                 ? pathname === "/"
@@ -255,7 +265,7 @@ export default function Sidebar() {
                 )}
               </Link>
             );
-          })}
+            })}
         </nav>
 
         <div className="shrink-0 space-y-2 px-2.5 pb-4 pt-3">

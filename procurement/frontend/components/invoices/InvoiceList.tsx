@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Pagination from "@/components/Pagination"
+import { printReport } from "@/components/printReport";
 
 // One row per purchase order, taken from Finance's payable (APInvoice). Read-only.
 type Invoice = {
@@ -19,11 +21,16 @@ type Invoice = {
 };
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 const FILTERS = ["All", "Awaiting Finance", "Outstanding", "Paid"] as const;
 =======
 const PAGE_SIZE = 10;
 const FILTERS = ["All", "Outstanding", "Paid"] as const;
 >>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+const PAGE_SIZE = 10;
+const FILTERS = ["All", "Outstanding", "Paid"] as const;
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
 const money = (n: number | null) =>
   n === null || n === undefined
@@ -48,6 +55,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     async function load() {
@@ -77,8 +85,11 @@ export default function InvoiceList({ limit }: { limit?: number }) {
     return matchesFilter && matchesSearch;
   });
 <<<<<<< HEAD
+<<<<<<< HEAD
   const shown = limit ? filtered.slice(0, limit) : filtered;
 =======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function handlePrint() {
@@ -107,7 +118,10 @@ export default function InvoiceList({ limit }: { limit?: number }) {
     const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     if (page > pages) setPage(pages);
   }, [filtered.length, page]);
+<<<<<<< HEAD
 >>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>
@@ -146,7 +160,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             {FILTERS.map((f) => (
               <button
                 key={f}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setPage(1); }}
                 style={{
                   padding: "0.4vw 1vw",
                   borderRadius: "99vw",
@@ -165,7 +179,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           <div style={{ display: "flex", alignItems: "center", gap: "1vw" }}>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search supplier or item..."
               style={{
                 width: "15vw",
@@ -181,6 +195,15 @@ export default function InvoiceList({ limit }: { limit?: number }) {
             <span style={{ fontSize: "0.8vw", color: "#668d98", whiteSpace: "nowrap" }}>
               {filtered.length} {filtered.length === 1 ? "invoice" : "invoices"}
             </span>
+            <button
+              onClick={handlePrint}
+              style={{
+                border: "none", cursor: "pointer", padding: "0.45vw 1.1vw", borderRadius: "99vw",
+                fontSize: "0.8vw", fontWeight: 600, backgroundColor: "#365f68", color: "#ffffff",
+              }}
+            >
+              Print report
+            </button>
           </div>
         </div>
       )}
@@ -253,6 +276,7 @@ export default function InvoiceList({ limit }: { limit?: number }) {
           </table>
         )}
       </div>
+      {!limit && <Pagination total={filtered.length} page={page} pageSize={PAGE_SIZE} onPage={setPage} />}
     </div>
   );
 }

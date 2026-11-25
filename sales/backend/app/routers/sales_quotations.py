@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
+from app.dependencies.auth import require_password_change_completed
 from app.models.customer import Customer
 from app.models.item_master import ItemMaster
 from app.models.sales_quotation import SalesQuotation
@@ -21,6 +22,7 @@ from app.schemas.sales_quotation import (
 router = APIRouter(
     prefix="/api/quotations",
     tags=["Sales Quotations"],
+    dependencies=[Depends(require_password_change_completed)],
 )
 
 
