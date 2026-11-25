@@ -16,10 +16,8 @@ import type {
 const statuses: Array<"All" | QuotationStatus> = [
   "All",
   "Draft",
-  "Sent",
   "Accepted",
   "Rejected",
-  "Expired",
 ];
 
 const PAGE_SIZE = 10;
@@ -474,7 +472,10 @@ export default function QuotationPanel() {
                           <select
                             aria-label={`Update status for quotation ${quotation.quotation_id}`}
                             value={quotation.status}
-                            disabled={savingQuotationId !== null}
+                            disabled={
+                              savingQuotationId !== null ||
+                              quotation.status !== "Draft"
+                            }
                             onChange={(event) =>
                               void handleStatusChange(
                                 quotation.quotation_id,
@@ -483,9 +484,10 @@ export default function QuotationPanel() {
                             }
                             className="max-w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-[#3F7657] disabled:cursor-wait disabled:opacity-60"
                           >
-                            {statuses
-                              .filter((status) => status !== "All")
-                              .map((status) => (
+                            {(quotation.status === "Draft"
+                              ? ["Draft", "Accepted", "Rejected"] as QuotationStatus[]
+                              : [quotation.status]
+                            ).map((status) => (
                                 <option key={status} value={status}>
                                   {status}
                                 </option>

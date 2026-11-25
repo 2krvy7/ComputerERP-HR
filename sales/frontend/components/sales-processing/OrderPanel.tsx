@@ -27,7 +27,7 @@ interface StockIssue {
 }
 
 const PAGE_SIZE = 10;
-const statuses = ["Pending", "Completed", "Cancelled"] as const;
+const statuses = ["Pending", "Approved", "Completed", "Cancelled"] as const;
 
 type OrderStatusOption = (typeof statuses)[number];
 
@@ -53,6 +53,7 @@ const formatDate = (value: string | null | undefined) => {
 
 const statusStyles: Partial<Record<SalesOrderStatus, string>> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
+  Approved: "border-blue-200 bg-blue-50 text-blue-700",
   Completed: "border-green-200 bg-green-50 text-green-700",
   Cancelled: "border-red-200 bg-red-50 text-red-700",
 };
@@ -628,7 +629,10 @@ export default function OrdersPage() {
                             }`}
                             aria-label={`Update status for order ${order.order_id}`}
                           >
-                            {statuses.map((status) => (
+                            {(order.status === "Pending"
+                              ? ["Pending", "Approved", "Cancelled"] as OrderStatusOption[]
+                              : [order.status]
+                            ).map((status) => (
                               <option key={status} value={status}>
                                 {status}
                               </option>

@@ -708,7 +708,7 @@ export default function DeliveryPanel() {
                 </select>
 
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Only approved orders without an existing pickup record are listed.
+                  Only approved orders without an existing pickup record are listed. Set a new order to Approved in Sales Processing first.
                 </p>
               </div>
 
