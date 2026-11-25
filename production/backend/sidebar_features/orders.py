@@ -1,3 +1,13 @@
+#Field	            Source
+#Production_ID	    PRODUCTION
+#ProductionOrder_ID	PRODUCTION
+#PM_ID	            PRODUCTION
+#WH_ID	            PRODUCTION
+#QuantityProduced	PRODUCTION
+#productCost	    ProductionOrder
+#status	PRODUCTION
+#for get_finance_orders fetching
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -40,7 +50,8 @@ def get_orders():
         cur.close()
         conn.close()
 
-# GET: Retrieve production orders for Finance
+
+# GET: Retrieve completed production orders for Finance Price Review
 @router.get("/finance")
 def get_finance_orders():
     conn = get_db_connection()
@@ -49,15 +60,18 @@ def get_finance_orders():
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT
-                    "productionID",
-                    "PM_ID",
-                    "WH_ID",
-                    "quantity",
-                    "productCost",
-                    "status",
-                    "created_at"
-                FROM public."ProductionOrder"
-                ORDER BY "productionID" DESC;
+                    p."Production_ID",
+                    p."ProductionOrder_ID",
+                    p."PM_ID",
+                    p."WH_ID",
+                    p."QuantityProduced",
+                    po."productCost",
+                    p.status
+                FROM public."PRODUCTION" p
+                INNER JOIN public."ProductionOrder" po
+                    ON po."productionID" = p."Production_ID"
+                WHERE p.status = 'Completed'
+                ORDER BY p."Production_ID" DESC;
             """)
 
             columns = [desc[0] for desc in cur.description]
@@ -88,7 +102,7 @@ def get_completed_orders():
                     p."Deadline",
                     p.status
                 FROM public."PRODUCTION" p
-                JOIN public."ProductionOrder" po
+                LEFT JOIN public."ProductionOrder" po
                     ON p."ProductionOrder_ID" = po."productionID"
                 WHERE p.status = 'Completed'
                 ORDER BY p."Production_ID" DESC;
