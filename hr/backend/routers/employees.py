@@ -183,8 +183,7 @@ def create_employee(employee: EmployeeCreate):
         # the employee is created.
         #
         # The Superadmin will assign the
-        # UserID later based on the employee's
-        # department and ID.
+        # UserID later.
         # ---------------------------------
 
         cur.execute("""
@@ -219,10 +218,6 @@ def create_employee(employee: EmployeeCreate):
         ))
 
         employee_id = cur.fetchone()[0]
-
-        # ---------------------------------
-        # COMMIT EMPLOYEE RECORD
-        # ---------------------------------
 
         conn.commit()
 
@@ -263,6 +258,31 @@ def update_employee(
     cur = conn.cursor()
 
     try:
+
+        # ---------------------------------
+        # GET CURRENT HIRE DATE
+        # ---------------------------------
+
+        cur.execute("""
+            SELECT hire_date
+            FROM "EmployeeRecords"
+            WHERE employee_id = %s
+        """, (employee_id,))
+
+        existing_employee = cur.fetchone()
+
+        if not existing_employee:
+            raise HTTPException(
+                status_code=404,
+                detail="Employee not found"
+            )
+
+        old_hire_date = existing_employee[0]
+
+        # ---------------------------------
+        # UPDATE EMPLOYEE
+        # ---------------------------------
+
         cur.execute("""
             UPDATE "EmployeeRecords"
             SET
@@ -291,11 +311,45 @@ def update_employee(
             employee_id
         ))
 
-        if cur.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Employee not found"
-            )
+        # ---------------------------------
+        # CLEAN OLD ATTENDANCE RECORDS
+        # ---------------------------------
+        #
+        # If the new hire date is later than
+        # the old hire date, attendance records
+        # before the new hire date are no longer
+        # valid for this employee.
+        #
+        # Example:
+        #
+        # Old hire date: Jan 10
+        # New hire date: Nov 10
+        #
+        # Delete:
+        # Jan 10 - Nov 9
+        #
+        # Keep:
+        # Nov 10 onward
+        # ---------------------------------
+
+        if (
+            old_hire_date is not None
+            and employee.hire_date is not None
+            and employee.hire_date > old_hire_date
+        ):
+
+            cur.execute("""
+                DELETE FROM "Attendance"
+                WHERE employee_id = %s
+                  AND date < %s
+            """, (
+                employee_id,
+                employee.hire_date
+            ))
+
+        # ---------------------------------
+        # SAVE CHANGES
+        # ---------------------------------
 
         conn.commit()
 
@@ -305,6 +359,7 @@ def update_employee(
         }
 
     except HTTPException:
+        conn.rollback()
         raise
 
     except Exception as e:

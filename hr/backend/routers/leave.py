@@ -3,7 +3,10 @@ from pydantic import BaseModel
 from datetime import date
 from database import get_db_connection
 
-router = APIRouter(prefix="/leave", tags=["Leave Management"])
+router = APIRouter(
+    prefix="/leave",
+    tags=["Leave Management"]
+)
 
 
 class LeaveCreate(BaseModel):
@@ -26,219 +29,341 @@ class LeaveUpdate(BaseModel):
 
 @router.get("/")
 def get_leaves():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
 
-    cursor.execute("""
-        SELECT
-            l.leave_id,
-            l.employee_id,
-            e.first_name || ' ' || e.last_name AS employee_name,
-            l.leave_type,
-            l.start_date,
-            l.end_date,
-            l.reason,
-            l.status
-        FROM "Leave" l
-        JOIN "EmployeeRecords" e
-            ON l.employee_id = e.employee_id
-        ORDER BY l.leave_id DESC
-    """)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    rows = cursor.fetchall()
+        cursor.execute("""
+            SELECT
+                l.leave_id,
+                l.employee_id,
+                e.first_name || ' ' || e.last_name AS employee_name,
+                l.leave_type,
+                l.start_date,
+                l.end_date,
+                l.reason,
+                l.status
+            FROM "Leave" l
+            JOIN "EmployeeRecords" e
+                ON l.employee_id = e.employee_id
+            ORDER BY l.leave_id DESC
+        """)
 
-    columns = [
-        "leave_id",
-        "employee_id",
-        "employee_name",
-        "leave_type",
-        "start_date",
-        "end_date",
-        "reason",
-        "status"
-    ]
+        rows = cursor.fetchall()
 
-    result = [dict(zip(columns, row)) for row in rows]
+        columns = [
+            "leave_id",
+            "employee_id",
+            "employee_name",
+            "leave_type",
+            "start_date",
+            "end_date",
+            "reason",
+            "status"
+        ]
 
-    cursor.close()
-    conn.close()
+        result = [dict(zip(columns, row)) for row in rows]
 
-    return result
+        return result
+
+    except Exception as e:
+        print("Error loading leave records:", e)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load leave records"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
 
 
 @router.get("/{leave_id}")
 def get_leave(leave_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
 
-    cursor.execute("""
-        SELECT
-            l.leave_id,
-            l.employee_id,
-            e.first_name || ' ' || e.last_name AS employee_name,
-            l.leave_type,
-            l.start_date,
-            l.end_date,
-            l.reason,
-            l.status
-        FROM "Leave" l
-        JOIN "EmployeeRecords" e
-            ON l.employee_id = e.employee_id
-        WHERE l.leave_id = %s
-    """, (leave_id,))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    row = cursor.fetchone()
+        cursor.execute("""
+            SELECT
+                l.leave_id,
+                l.employee_id,
+                e.first_name || ' ' || e.last_name AS employee_name,
+                l.leave_type,
+                l.start_date,
+                l.end_date,
+                l.reason,
+                l.status
+            FROM "Leave" l
+            JOIN "EmployeeRecords" e
+                ON l.employee_id = e.employee_id
+            WHERE l.leave_id = %s
+        """, (leave_id,))
 
-    cursor.close()
-    conn.close()
+        row = cursor.fetchone()
 
-    if not row:
-        raise HTTPException(status_code=404, detail="Leave record not found")
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail="Leave record not found"
+            )
 
-    columns = [
-        "leave_id",
-        "employee_id",
-        "employee_name",
-        "leave_type",
-        "start_date",
-        "end_date",
-        "reason",
-        "status"
-    ]
+        columns = [
+            "leave_id",
+            "employee_id",
+            "employee_name",
+            "leave_type",
+            "start_date",
+            "end_date",
+            "reason",
+            "status"
+        ]
 
-    return dict(zip(columns, row))
+        return dict(zip(columns, row))
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print(f"Error loading leave record {leave_id}:", e)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load leave record"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
 
 
 @router.post("/")
 def create_leave(leave: LeaveCreate):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
 
-    # Check if employee exists
-    cursor.execute("""
-        SELECT employee_id
-        FROM "EmployeeRecords"
-        WHERE employee_id = %s
-    """, (leave.employee_id,))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    employee = cursor.fetchone()
+        # Check if employee exists
+        cursor.execute("""
+            SELECT employee_id
+            FROM "EmployeeRecords"
+            WHERE employee_id = %s
+        """, (leave.employee_id,))
 
-    if not employee:
-        cursor.close()
-        conn.close()
+        employee = cursor.fetchone()
+
+        if not employee:
+            raise HTTPException(
+                status_code=404,
+                detail="Employee not found"
+            )
+
+        cursor.execute("""
+            INSERT INTO "Leave"
+            (
+                employee_id,
+                leave_type,
+                start_date,
+                end_date,
+                reason,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING leave_id
+        """, (
+            leave.employee_id,
+            leave.leave_type,
+            leave.start_date,
+            leave.end_date,
+            leave.reason,
+            leave.status
+        ))
+
+        leave_id = cursor.fetchone()[0]
+
+        conn.commit()
+
+        return {
+            "message": "Leave record created successfully",
+            "leave_id": leave_id
+        }
+
+    except HTTPException:
+        if conn:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+
+        print("Error creating leave record:", e)
+
         raise HTTPException(
-            status_code=404,
-            detail="Employee not found"
+            status_code=500,
+            detail="Failed to create leave record"
         )
 
-    cursor.execute("""
-        INSERT INTO "Leave"
-        (
-            employee_id,
-            leave_type,
-            start_date,
-            end_date,
-            reason,
-            status
-        )
-        VALUES (%s, %s, %s, %s, %s, %s)
-        RETURNING leave_id
-    """, (
-        leave.employee_id,
-        leave.leave_type,
-        leave.start_date,
-        leave.end_date,
-        leave.reason,
-        leave.status
-    ))
+    finally:
+        if cursor:
+            cursor.close()
 
-    leave_id = cursor.fetchone()[0]
-
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return {
-        "message": "Leave record created successfully",
-        "leave_id": leave_id
-    }
+        if conn:
+            conn.close()
 
 
 @router.put("/{leave_id}")
 def update_leave(leave_id: int, leave: LeaveUpdate):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
 
-    cursor.execute("""
-        SELECT leave_id
-        FROM "Leave"
-        WHERE leave_id = %s
-    """, (leave_id,))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    existing = cursor.fetchone()
+        cursor.execute("""
+            SELECT leave_id
+            FROM "Leave"
+            WHERE leave_id = %s
+        """, (leave_id,))
 
-    if not existing:
-        cursor.close()
-        conn.close()
+        existing = cursor.fetchone()
+
+        if not existing:
+            raise HTTPException(
+                status_code=404,
+                detail="Leave record not found"
+            )
+
+        # Check if employee exists
+        cursor.execute("""
+            SELECT employee_id
+            FROM "EmployeeRecords"
+            WHERE employee_id = %s
+        """, (leave.employee_id,))
+
+        employee = cursor.fetchone()
+
+        if not employee:
+            raise HTTPException(
+                status_code=404,
+                detail="Employee not found"
+            )
+
+        cursor.execute("""
+            UPDATE "Leave"
+            SET
+                employee_id = %s,
+                leave_type = %s,
+                start_date = %s,
+                end_date = %s,
+                reason = %s,
+                status = %s
+            WHERE leave_id = %s
+        """, (
+            leave.employee_id,
+            leave.leave_type,
+            leave.start_date,
+            leave.end_date,
+            leave.reason,
+            leave.status,
+            leave_id
+        ))
+
+        conn.commit()
+
+        return {
+            "message": "Leave record updated successfully"
+        }
+
+    except HTTPException:
+        if conn:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+
+        print(f"Error updating leave record {leave_id}:", e)
+
         raise HTTPException(
-            status_code=404,
-            detail="Leave record not found"
+            status_code=500,
+            detail="Failed to update leave record"
         )
 
-    cursor.execute("""
-        UPDATE "Leave"
-        SET
-            employee_id = %s,
-            leave_type = %s,
-            start_date = %s,
-            end_date = %s,
-            reason = %s,
-            status = %s
-        WHERE leave_id = %s
-    """, (
-        leave.employee_id,
-        leave.leave_type,
-        leave.start_date,
-        leave.end_date,
-        leave.reason,
-        leave.status,
-        leave_id
-    ))
+    finally:
+        if cursor:
+            cursor.close()
 
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-    return {
-        "message": "Leave record updated successfully"
-    }
+        if conn:
+            conn.close()
 
 
 @router.delete("/{leave_id}")
 def delete_leave(leave_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
 
-    cursor.execute("""
-        DELETE FROM "Leave"
-        WHERE leave_id = %s
-        RETURNING leave_id
-    """, (leave_id,))
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    deleted = cursor.fetchone()
+        cursor.execute("""
+            DELETE FROM "Leave"
+            WHERE leave_id = %s
+            RETURNING leave_id
+        """, (leave_id,))
 
-    if not deleted:
-        cursor.close()
-        conn.close()
+        deleted = cursor.fetchone()
+
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Leave record not found"
+            )
+
+        conn.commit()
+
+        return {
+            "message": "Leave record deleted successfully"
+        }
+
+    except HTTPException:
+        if conn:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+
+        print(f"Error deleting leave record {leave_id}:", e)
+
         raise HTTPException(
-            status_code=404,
-            detail="Leave record not found"
+            status_code=500,
+            detail="Failed to delete leave record"
         )
 
-    conn.commit()
-    cursor.close()
-    conn.close()
+    finally:
+        if cursor:
+            cursor.close()
 
-    return {
-        "message": "Leave record deleted successfully"
-    }
+        if conn:
+            conn.close()

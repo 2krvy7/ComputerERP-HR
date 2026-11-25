@@ -34,47 +34,57 @@ class TimeInRequest(BaseModel):
 # AUTOMATIC ABSENCE
 # =========================================================
 
-def mark_previous_day_absent():
+def mark_missing_days_absent(conn, cur):
     """
-    Automatically marks active employees as Absent when
-    they did not create an attendance record for the previous day.
+    Automatically marks active employees as Absent for
+    every missing attendance date from their hire date
+    up to yesterday.
 
-    This is triggered whenever the attendance endpoint is accessed.
+    Existing attendance records are not changed.
+    Today's date is not automatically marked Absent.
+
+    Uses the existing database connection from the
+    attendance endpoint.
     """
 
-    conn = get_db_connection()
-    cur = conn.cursor()
+    # Get current Philippine date
+    philippines_now = datetime.now(
+        ZoneInfo("Asia/Manila")
+    )
 
-    try:
-        # Philippine date
-        philippines_now = datetime.now(
-            ZoneInfo("Asia/Manila")
-        )
+    today = philippines_now.date()
 
-        today = philippines_now.date()
+    # Only finalize dates before today.
+    yesterday = today - timedelta(days=1)
 
-        # We only finalize yesterday.
-        previous_day = today - timedelta(days=1)
+    # Get active employees who have already been hired.
+    cur.execute("""
+        SELECT
+            employee_id,
+            hire_date
+        FROM "EmployeeRecords"
+        WHERE employment_status = 'Active'
+          AND hire_date IS NOT NULL
+          AND hire_date <= %s
+    """, (yesterday,))
 
-        # Get active employees who were already hired
-        # on or before the previous day.
-        cur.execute("""
-            SELECT
-                employee_id,
-                hire_date
-            FROM "EmployeeRecords"
-            WHERE employment_status = 'Active'
-              AND hire_date IS NOT NULL
-              AND hire_date <= %s
-        """, (previous_day,))
+    employees = cur.fetchall()
 
-        employees = cur.fetchall()
+    for employee in employees:
+        employee_id = employee[0]
+        hire_date = employee[1]
 
-        for employee in employees:
-            employee_id = employee[0]
+        # Convert datetime to date if necessary.
+        if isinstance(hire_date, datetime):
+            hire_date = hire_date.date()
 
-            # Check if employee already has an attendance
-            # record for the previous day.
+        # Start checking from the employee's hire date.
+        current_date = hire_date
+
+        # Check every date from hire date through yesterday.
+        while current_date <= yesterday:
+
+            # Check whether an attendance record already exists.
             cur.execute("""
                 SELECT attendance_id
                 FROM "Attendance"
@@ -83,12 +93,12 @@ def mark_previous_day_absent():
                 LIMIT 1
             """, (
                 employee_id,
-                previous_day
+                current_date
             ))
 
             existing_record = cur.fetchone()
 
-            # If there is no record at all, create Absent.
+            # Only create Absent when there is no record.
             if not existing_record:
                 cur.execute("""
                     INSERT INTO "Attendance" (
@@ -101,26 +111,14 @@ def mark_previous_day_absent():
                     VALUES (%s, %s, %s, %s, %s)
                 """, (
                     employee_id,
-                    previous_day,
+                    current_date,
                     None,
                     None,
                     "Absent"
                 ))
 
-        conn.commit()
-
-    except Exception as e:
-        conn.rollback()
-
-        # Do not stop the whole attendance API if
-        # automatic absence has an error.
-        print(
-            f"Automatic absence processing error: {str(e)}"
-        )
-
-    finally:
-        cur.close()
-        conn.close()
+            # Move to the next date.
+            current_date += timedelta(days=1)
 
 
 # =========================================================
@@ -130,14 +128,17 @@ def mark_previous_day_absent():
 @router.get("/")
 def get_attendance():
 
-    # Automatically finalize the previous day
-    # before getting attendance records.
-    mark_previous_day_absent()
-
     conn = get_db_connection()
     cur = conn.cursor()
 
     try:
+        # Automatically create missing attendance records
+        # from each employee's hire date up to yesterday.
+        mark_missing_days_absent(conn, cur)
+
+        # Save any automatically created Absent records.
+        conn.commit()
+
         cur.execute("""
             SELECT
                 a.attendance_id,
@@ -172,6 +173,8 @@ def get_attendance():
         return attendance
 
     except Exception as e:
+        conn.rollback()
+
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -289,6 +292,7 @@ def employee_time_in(request: TimeInRequest):
             FROM "Attendance"
             WHERE employee_id = %s
               AND date = %s
+            ORDER BY attendance_id ASC
             LIMIT 1
         """, (
             request.employee_id,
@@ -487,6 +491,28 @@ def create_attendance(attendance: AttendanceCreate):
                 detail="Employee not found"
             )
 
+        # Check if an attendance record already exists
+        # for this employee on this date.
+        cur.execute("""
+            SELECT attendance_id
+            FROM "Attendance"
+            WHERE employee_id = %s
+              AND date = %s
+            LIMIT 1
+        """, (
+            attendance.employee_id,
+            attendance.date
+        ))
+
+        existing_record = cur.fetchone()
+
+        if existing_record:
+            raise HTTPException(
+                status_code=400,
+                detail="Attendance record already exists for this employee on this date."
+            )
+
+        # Create attendance record
         cur.execute("""
             INSERT INTO "Attendance" (
                 employee_id,
@@ -545,6 +571,61 @@ def update_attendance(
     cur = conn.cursor()
 
     try:
+        # Check if the attendance record exists
+        cur.execute("""
+            SELECT attendance_id
+            FROM "Attendance"
+            WHERE attendance_id = %s
+        """, (attendance_id,))
+
+        existing_attendance = cur.fetchone()
+
+        if not existing_attendance:
+            raise HTTPException(
+                status_code=404,
+                detail="Attendance record not found"
+            )
+
+        # Check if the employee exists
+        cur.execute("""
+            SELECT employee_id
+            FROM "EmployeeRecords"
+            WHERE employee_id = %s
+        """, (attendance.employee_id,))
+
+        employee = cur.fetchone()
+
+        if not employee:
+            raise HTTPException(
+                status_code=404,
+                detail="Employee not found"
+            )
+
+        # Check if another attendance record already
+        # exists for the same employee and date.
+        # Exclude the record currently being updated.
+        cur.execute("""
+            SELECT attendance_id
+            FROM "Attendance"
+            WHERE employee_id = %s
+              AND date = %s
+              AND attendance_id != %s
+            LIMIT 1
+        """, (
+            attendance.employee_id,
+            attendance.date,
+            attendance_id
+        ))
+
+        duplicate_record = cur.fetchone()
+
+        if duplicate_record:
+            raise HTTPException(
+                status_code=400,
+                detail="Another attendance record already exists for this employee on this date."
+            )
+
+        # Update attendance
         cur.execute("""
             UPDATE "Attendance"
             SET
@@ -562,12 +643,6 @@ def update_attendance(
             attendance.status,
             attendance_id
         ))
-
-        if cur.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Attendance record not found"
-            )
 
         conn.commit()
 
