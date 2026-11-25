@@ -8,7 +8,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.roles import ADMIN_ROLE_IDS
+from app.core.roles import (
+    ADMIN_ROLE_ID,
+    ADMIN_ROLE_IDS,
+    STAFF_ROLE_ID,
+    SUPERADMIN_ROLE_ID,
+)
 from app.dependencies.auth import get_current_user, require_password_change_completed
 from app.models.user import User
 from app.models.delivery import Delivery
@@ -72,18 +77,27 @@ def authorize_status_update(
     user: User,
     target_status: str,
 ):
-    if is_admin(user):
+    if user.role_id == SUPERADMIN_ROLE_ID:
         return
 
     if (
-        target_status in ("Preparing", "Released")
+        user.role_id in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+        and target_status in ("Preparing", "Released")
         and user.dept_id == INVENTORY_DEPT_ID
     ):
         return
 
     if (
-        target_status == "Delivered"
+        user.role_id in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+        and target_status == "Delivered"
         and user.dept_id == SALES_DEPT_ID
+    ):
+        return
+
+    if (
+        user.role_id == ADMIN_ROLE_ID
+        and user.dept_id == INVENTORY_DEPT_ID
+        and target_status == "Cancelled"
     ):
         return
 

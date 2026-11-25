@@ -18,6 +18,7 @@ import type {
   Warehouse,
 } from "../../types/delivery";
 import type { SalesOrder } from "../../types/order";
+import { isAdminRole } from "../../lib/roles";
 
 const statusStyles: Record<string, string> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-800",
@@ -53,7 +54,7 @@ const formatDate = (date: string | null) => {
 };
 
 const isAdmin = (user: AuthUser | null) =>
-  user?.role_id === 1;
+  isAdminRole(user?.role_id);
 
 const canCreatePickup = (user: AuthUser | null) =>
   isAdmin(user) || user?.dept_id === "SL";
@@ -66,19 +67,22 @@ function getAvailableTransitions(
 
   if (!user) return [];
 
-  if (isAdmin(user)) {
+  if (user.role_id === 1) {
     return transitions;
   }
 
-  if (user.dept_id === "IN") {
+  const isDepartmentAdmin = user.role_id === 3;
+
+  if (user.dept_id === "IN" && (user.role_id === 2 || isDepartmentAdmin)) {
     return transitions.filter(
       (nextStatus) =>
         nextStatus === "Preparing" ||
-        nextStatus === "Released"
+        nextStatus === "Released" ||
+        (isDepartmentAdmin && nextStatus === "Cancelled")
     );
   }
 
-  if (user.dept_id === "SL") {
+  if (user.dept_id === "SL" && (user.role_id === 2 || isDepartmentAdmin)) {
     return transitions.filter(
       (nextStatus) => nextStatus === "Delivered"
     );
