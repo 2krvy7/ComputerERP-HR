@@ -466,10 +466,30 @@ def create_order(
             "line_total": line_total,
         })
 
-    tax_rate = Decimal(str(order_data.tax_rate or "0.00"))
+    tax_type = quotation.tax_type if quotation is not None else order_data.tax_type
+    tax_rate = Decimal(str(
+        quotation.tax_rate
+        if quotation is not None
+        else order_data.tax_rate or "0.00"
+    ))
+    installment_months = (
+        quotation.installment_months
+        if quotation is not None
+        else order_data.installment_months
+    )
     tax_amount = (order_total * tax_rate / Decimal("100")).quantize(
         Decimal("0.01"), rounding=ROUND_HALF_UP
     )
+    interest_rate = {
+        1: Decimal("0.00"),
+        3: Decimal("3.00"),
+        6: Decimal("5.00"),
+        12: Decimal("10.00"),
+    }[installment_months]
+    interest_amount = (
+        order_total * interest_rate / Decimal("100")
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    quotation_total = order_total + tax_amount + interest_amount
 
     try:
         if quotation is None:
@@ -479,7 +499,13 @@ def create_order(
                     order_data.order_date or date.today()
                 ),
                 status="Accepted",
-                total_amount=order_total,
+                total_amount=quotation_total,
+                tax_type=tax_type,
+                tax_rate=tax_rate,
+                tax_amount=tax_amount,
+                installment_months=installment_months,
+                interest_rate=interest_rate,
+                interest_amount=interest_amount,
             )
 
             db.add(quotation)
@@ -501,10 +527,10 @@ def create_order(
             ),
             status="Pending",
             total_amount=order_total,
-            tax_type=order_data.tax_type,
+            tax_type=tax_type,
             tax_rate=tax_rate,
             tax_amount=tax_amount,
-            installment_months=order_data.installment_months,
+            installment_months=installment_months,
         )
 
         db.add(order)

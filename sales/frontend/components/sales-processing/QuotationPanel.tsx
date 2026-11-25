@@ -2,16 +2,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { quotationAPI } from "@/lib/api";
-import {
-  fetchFinanceFloorPrices,
-  validateSellingPrice,
-} from "../../lib/finance";
+import { customerAPI, quotationAPI } from "@/lib/api";
 
 import type {
   SalesQuotation,
+  SalesQuotationCreate,
+  QuotationCatalogItem,
   QuotationStatus,
 } from "@/types/quotation";
+import type { Customer } from "@/types/customer";
 
 const statuses: Array<"All" | QuotationStatus> = [
   "All",
@@ -21,6 +20,18 @@ const statuses: Array<"All" | QuotationStatus> = [
 ];
 
 const PAGE_SIZE = 10;
+const INTEREST_RATES: Record<1 | 3 | 6 | 12, number> = {
+  1: 0,
+  3: 3,
+  6: 5,
+  12: 10,
+};
+
+interface DraftQuotationLine {
+  IM_ID: number;
+  quantity: number;
+  discount: number;
+}
 
 export default function QuotationPanel() {
   const [quotations, setQuotations] = useState<SalesQuotation[]>([]);
@@ -36,6 +47,18 @@ export default function QuotationPanel() {
   );
   const [selectedQuotation, setSelectedQuotation] =
     useState<SalesQuotation | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createSaving, setCreateSaving] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [catalogItems, setCatalogItems] = useState<QuotationCatalogItem[]>([]);
+  const [newCustomerId, setNewCustomerId] = useState("");
+  const [newInstallmentMonths, setNewInstallmentMonths] =
+    useState<1 | 3 | 6 | 12>(1);
+  const [newLines, setNewLines] = useState<DraftQuotationLine[]>([
+    { IM_ID: 0, quantity: 1, discount: 0 },
+  ]);
 
   const fetchQuotations = useCallback(async () => {
     try {
@@ -232,6 +255,89 @@ export default function QuotationPanel() {
     setCurrentPage(1);
   };
 
+  const subtotal = newLines.reduce((sum, line) => {
+    const item = catalogItems.find((candidate) => candidate.IM_ID === line.IM_ID);
+    const unitPrice = Number(item?.Price ?? 0);
+    return sum + unitPrice * line.quantity * (1 - line.discount / 100);
+  }, 0);
+  const taxAmount = Number((subtotal * 0.12).toFixed(2));
+  const interestRate = INTEREST_RATES[newInstallmentMonths];
+  const interestAmount = Number((subtotal * interestRate / 100).toFixed(2));
+  const quotationTotal = subtotal + taxAmount + interestAmount;
+  const selectedQuotationSubtotal = (selectedQuotation?.details ?? []).reduce(
+    (sum, detail) => sum + (Number(detail.line_total) || 0),
+    0
+  );
+
+  async function openCreateForm() {
+    setCreateError("");
+    setShowCreateForm(true);
+    setCreateLoading(true);
+    setNewCustomerId("");
+    setNewInstallmentMonths(1);
+    setNewLines([{ IM_ID: 0, quantity: 1, discount: 0 }]);
+
+    try {
+      const [customerData, itemData] = await Promise.all([
+        customerAPI.getAll(),
+        quotationAPI.getItems(),
+      ]);
+      setCustomers(customerData);
+      setCatalogItems(itemData);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Unable to load quotation options."
+      );
+    } finally {
+      setCreateLoading(false);
+    }
+  }
+
+  async function handleCreateQuotation() {
+    setCreateError("");
+    if (!newCustomerId) {
+      setCreateError("Please select a customer.");
+      return;
+    }
+    if (
+      newLines.length === 0 ||
+      newLines.some((line) =>
+        line.IM_ID <= 0 ||
+        !Number.isInteger(line.quantity) ||
+        line.quantity <= 0 ||
+        !Number.isFinite(line.discount) ||
+        line.discount < 0 ||
+        line.discount > 100
+      )
+    ) {
+      setCreateError("Select valid items, quantities, and discounts between 0% and 100%.");
+      return;
+    }
+
+    const data: SalesQuotationCreate = {
+      customer_id: Number(newCustomerId),
+      installment_months: newInstallmentMonths,
+      details: newLines.map(({ IM_ID, quantity, discount }) => ({
+        IM_ID,
+        quantity,
+        discount,
+      })),
+    };
+
+    setCreateSaving(true);
+    try {
+      await quotationAPI.create(data);
+      setShowCreateForm(false);
+      await fetchQuotations();
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Unable to create quotation."
+      );
+    } finally {
+      setCreateSaving(false);
+    }
+  }
+
   const draftCount = quotations.filter(
     (quotation) => quotation.status === "Draft"
   ).length;
@@ -284,6 +390,14 @@ export default function QuotationPanel() {
           </div>
 
           <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => void openCreateForm()}
+              className="whitespace-nowrap rounded-lg bg-[#3F7657] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46]"
+            >
+              + Create Quotation
+            </button>
+
             {/* Search Bar */}
             <div className="relative min-w-0 flex-1 lg:w-[320px] lg:flex-none">
               <svg
@@ -595,6 +709,75 @@ export default function QuotationPanel() {
         )}
       </section>
 
+      {showCreateForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+          <div className="my-auto max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Create Sales Quotation</h2>
+                <p className="mt-1 text-sm text-slate-600">The quotation total includes 12% VAT and installment interest.</p>
+              </div>
+              <button type="button" onClick={() => setShowCreateForm(false)} disabled={createSaving} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close quotation form">✕</button>
+            </div>
+
+            {createError && <div role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{createError}</div>}
+            {createLoading ? (
+              <p className="py-10 text-center text-sm text-slate-500">Loading customers and items...</p>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <label htmlFor="quotation-customer" className="mb-2 block text-sm font-semibold text-slate-700">Customer</label>
+                  <select id="quotation-customer" value={newCustomerId} onChange={(event) => setNewCustomerId(event.target.value)} disabled={createSaving} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm">
+                    <option value="">Select customer</option>
+                    {customers.filter((customer) => customer.status).map((customer) => <option key={customer.customer_id} value={customer.customer_id}>{customer.name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <h3 className="mb-3 text-sm font-semibold text-slate-700">Quoted Items</h3>
+                  <div className="space-y-3">
+                    {newLines.map((line, index) => (
+                      <div key={index} className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[minmax(0,1fr)_90px_110px_auto]">
+                        <select aria-label="Quoted item" value={line.IM_ID || ""} onChange={(event) => setNewLines((current) => current.map((entry, i) => i === index ? { ...entry, IM_ID: Number(event.target.value) } : entry))} disabled={createSaving} className="min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                          <option value="">Select item</option>
+                          {catalogItems.map((item) => <option key={item.IM_ID} value={item.IM_ID}>{item.SKU} — {item.Item_Name} ({formatCurrency(Number(item.Price ?? 0))})</option>)}
+                        </select>
+                        <input aria-label="Quantity" type="number" min="1" step="1" value={line.quantity} onChange={(event) => setNewLines((current) => current.map((entry, i) => i === index ? { ...entry, quantity: Number(event.target.value) } : entry))} disabled={createSaving} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                        <input aria-label="Discount percent" type="number" min="0" max="100" step="0.01" value={line.discount} onChange={(event) => setNewLines((current) => current.map((entry, i) => i === index ? { ...entry, discount: Number(event.target.value) } : entry))} disabled={createSaving} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                        <button type="button" onClick={() => setNewLines((current) => current.filter((_, i) => i !== index))} disabled={createSaving || newLines.length === 1} className="rounded-lg px-3 py-2 text-sm font-medium text-rose-600 disabled:opacity-40">Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setNewLines((current) => [...current, { IM_ID: 0, quantity: 1, discount: 0 }])} disabled={createSaving} className="mt-3 text-sm font-semibold text-[#3F7657]">+ Add item</button>
+                </div>
+
+                <div>
+                  <label htmlFor="quotation-installment" className="mb-2 block text-sm font-semibold text-slate-700">Payment Installment</label>
+                  <select id="quotation-installment" value={newInstallmentMonths} onChange={(event) => setNewInstallmentMonths(Number(event.target.value) as 1 | 3 | 6 | 12)} disabled={createSaving} className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm">
+                    <option value={1}>1 Month — 0% Interest</option>
+                    <option value={3}>3 Months — 3% Interest</option>
+                    <option value={6}>6 Months — 5% Interest</option>
+                    <option value={12}>1 Year — 10% Interest</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                  <div className="flex justify-between"><span>Items subtotal</span><span>{formatCurrency(subtotal)}</span></div>
+                  <div className="flex justify-between"><span>VAT (12%)</span><span>{formatCurrency(taxAmount)}</span></div>
+                  <div className="flex justify-between"><span>Installment interest ({interestRate}%)</span><span>{formatCurrency(interestAmount)}</span></div>
+                  <div className="flex justify-between border-t border-slate-200 pt-3 font-bold text-slate-900"><span>Quotation total</span><span>{formatCurrency(quotationTotal)}</span></div>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end gap-3 border-t border-slate-200 pt-4">
+              <button type="button" onClick={() => setShowCreateForm(false)} disabled={createSaving} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={() => void handleCreateQuotation()} disabled={createLoading || createSaving || !newCustomerId} className="rounded-lg bg-[#3F7657] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{createSaving ? "Creating..." : "Create Quotation"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quotation Items Modal */}
       {selectedQuotation && (
         <div
@@ -782,18 +965,11 @@ export default function QuotationPanel() {
 
               {/* Total */}
               <div className="flex justify-end">
-                <div className="w-full rounded-xl border border-[#D1D5DB] bg-[#E8F0EA] p-5 sm:w-80">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-sm font-medium text-slate-600">
-                      Total Quotation Amount
-                    </span>
-
-                    <span className="text-xl font-bold text-[#244C3A]">
-                      {formatCurrency(
-                        Number(selectedQuotation.total_amount) || 0
-                      )}
-                    </span>
-                  </div>
+                <div className="w-full space-y-2 rounded-xl border border-[#D1D5DB] bg-[#E8F0EA] p-5 text-sm sm:w-96">
+                  <div className="flex justify-between gap-4"><span>Items subtotal</span><span>{formatCurrency(selectedQuotationSubtotal)}</span></div>
+                  <div className="flex justify-between gap-4"><span>{selectedQuotation.tax_type} ({Number(selectedQuotation.tax_rate).toFixed(2)}%)</span><span>{formatCurrency(Number(selectedQuotation.tax_amount) || 0)}</span></div>
+                  <div className="flex justify-between gap-4"><span>Installment ({selectedQuotation.installment_months === 12 ? "1 year" : `${selectedQuotation.installment_months} months`}, {Number(selectedQuotation.interest_rate).toFixed(2)}%)</span><span>{formatCurrency(Number(selectedQuotation.interest_amount) || 0)}</span></div>
+                  <div className="flex justify-between gap-4 border-t border-[#C7D7CA] pt-3 font-bold text-[#244C3A]"><span>Total Quotation Amount</span><span>{formatCurrency(Number(selectedQuotation.total_amount) || 0)}</span></div>
                 </div>
               </div>
             </div>

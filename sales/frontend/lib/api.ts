@@ -31,6 +31,8 @@ import type {
 
 import type {
   SalesQuotation,
+  SalesQuotationCreate,
+  QuotationCatalogItem,
   QuotationStatus,
 } from "../types/quotation";
 
@@ -323,8 +325,19 @@ export const salesReturnAPI = {
 // SALES QUOTATIONS
 
 export const quotationAPI = {
+  getItems: (search = "") =>
+    request<QuotationCatalogItem[]>(
+      `/api/quotations/items?search=${encodeURIComponent(search)}`
+    ),
+
   getAll: () =>
     request<SalesQuotation[]>("/api/quotations"),
+
+  create: (data: SalesQuotationCreate) =>
+    request<SalesQuotation>("/api/quotations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   getById: (id: number) =>
     request<SalesQuotation>(`/api/quotations/${id}`),
