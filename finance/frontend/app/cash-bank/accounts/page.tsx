@@ -39,6 +39,11 @@ export default function BankAccounts() {
     fetchAccounts();
   }, []);
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchAccounts() {
     setLoading(true);
     setError(null);
@@ -47,7 +52,7 @@ export default function BankAccounts() {
       // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
       // Database Tables: Reads "BankAccount" with "isDisbursement" & "isReceiver" flags and aggregates "ARReceipt" & "APPayment"
       // Purpose: Loads all registered bank accounts, live balances, and role statuses
-      const res = await fetch("http://127.0.0.1:8000/api/bank");
+      const res = await fetch(`${API_URL}/api/bank`);
       if (!res.ok) throw new Error(`Bank API error: ${res.status}`);
       const data = await res.json();
       setAccounts(Array.isArray(data) ? data : []);
@@ -116,7 +121,7 @@ export default function BankAccounts() {
       // Database Tables: Reads "ARReceipt" and "APPayment" for the clicked bankAccountID
       // Purpose: Filters the Bank Statements table below to show only this specific bank's entries
       const res = await fetch(
-        `http://127.0.0.1:8000/api/bank/${account.bankAccountID}/transactions`
+        `${API_URL}/api/bank/${account.bankAccountID}/transactions`
       );
       if (res.ok) {
         setStatementLines(await res.json());
@@ -151,7 +156,7 @@ export default function BankAccounts() {
       // Database Table: Updates "BankAccount" ("isDisbursement", "isReceiver")
       // Purpose: Turns Disbursement (for BDO) or Receiver (for BPI Sales) ON or OFF
       const res = await fetch(
-        `http://127.0.0.1:8000/api/bank/${account.bankAccountID}/roles`,
+        `${API_URL}/api/bank/${account.bankAccountID}/roles`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -183,7 +188,7 @@ export default function BankAccounts() {
       // Backend File: finance/backend/routers/bank.py -> transfer_between_banks()
       // Database Tables: Deducts outflow from BPI Sales, deposits inflow into BDO Corporate Checking, and posts a Journal Entry
       // Purpose: Transfers collected sales money from BPI Sales into BDO Corporate Checking
-      const res = await fetch("http://127.0.0.1:8000/api/bank/transfer", {
+      const res = await fetch(`${API_URL}/api/bank/transfer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -222,7 +227,7 @@ export default function BankAccounts() {
       // FETCH 5: POST http://127.0.0
       // Backend File: finance/backend/routers/bank.py -> create_bank_account()
       // Database Table: Inserts new bank record into "BankAccount"
-      const res = await fetch("http://127.0.0.1:8000/api/bank", {
+      const res = await fetch(`${API_URL}/api/bank`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -253,7 +258,7 @@ export default function BankAccounts() {
       // FETCH 6: GET http://127.0.0{bankAccountID}/transactions
       // Backend File: finance/backend/routers/bank.py -> get_bank_transactions()
       const res = await fetch(
-        `http://127.0.0.1:8000/api/bank/${account.bankAccountID}/transactions`
+        `${API_URL}/api/bank/${account.bankAccountID}/transactions`
       );
       if (res.ok) {
         setTransactions(await res.json());

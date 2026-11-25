@@ -40,6 +40,11 @@ interface DashboardData {
   };
 }
 
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
 export default function Home() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,37 +61,37 @@ export default function Home() {
           // Backend File: finance/backend/routers/reports.py -> balance_sheet()
           // Database Tables: Reads "ChartOfAccounts" + "GeneralLedger"
           // Purpose: Computes live Total Assets, Total Liabilities, and Net Income
-          fetch("http://127.0.0.1:8000/api/reports/balance-sheet"),
+          fetch(`${API_URL}/api/reports/balance-sheet`),
 
           // FETCH 2: GET http://127.0.0
           // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
           // Database Tables: Reads "BankAccount" + sums "ARReceipt" inflows minus "APPayment", Payroll & Expenses
           // Purpose: Computes live Cash Balance across all active bank accounts
-          fetch("http://127.0.0.1:8000/api/bank"),
+          fetch(`${API_URL}/api/bank`),
 
           // FETCH 3: GET http://127.0.0
           // Backend File: finance/backend/routers/journal.py -> get_journal_entries()
           // Database Tables: Reads "JournalEntry" joined with "JournalEntryLine"
           // Purpose: Populates Recent Journal Entries and builds chronological Cash Flow line graph points
-          fetch("http://127.0.0.1:8000/api/journal"),
+          fetch(`${API_URL}/api/journal`),
 
           // FETCH 4: GET http://127.0.0
           // Backend File: finance/backend/routers/apinvoices.py -> get_ap_invoices()
           // Database Table: Reads "APInvoice"
           // Purpose: Filters out 'Paid' bills and sums remainingBalance + bills due within 7 days
-          fetch("http://127.0.0.1:8000/api/apinvoices"),
+          fetch(`${API_URL}/api/apinvoices`),
 
           // FETCH 5: GET http://127.0.0
           // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
           // Database Table: Reads "ARInvoice" joined with "Customer"
           // Purpose: Builds the Receivables Collection History list for auto-collected Sales Invoices
-          fetch("http://127.0.0.1:8000/api/arinvoices"),
+          fetch(`${API_URL}/api/arinvoices`),
 
           // FETCH 6: GET http://127.0.0
           // Backend File: finance/backend/routers/reports.py -> cash_flow()
           // Database Tables: Sums "ARReceipt" inflows and "APPayment", Payroll & Expense outflows
           // Purpose: Powers the Cash Flow Summary totals on the Dashboard
-          fetch("http://127.0.0.1:8000/api/reports/cash-flow"),
+          fetch(`${API_URL}/api/reports/cash-flow`),
         ]);
 
       const bsJson = bsRes.ok ? await bsRes.json() : {};

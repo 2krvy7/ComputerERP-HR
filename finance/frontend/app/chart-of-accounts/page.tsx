@@ -32,6 +32,12 @@ export default function ChartOfAccounts() {
   const [archivedIds, setArchivedIds] = useState<number[]>([]);
   const [showArchiveModal, setShowArchiveModal] = useState(false);
 
+    // Base backend URL from .env (falls back to localhost for local dev)
+  const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
+
+
   // Fetch all accounts from FastAPI backend
   async function fetchAccounts() {
     setLoading(true);
@@ -39,7 +45,7 @@ export default function ChartOfAccounts() {
       // FETCH 1: GET http://127.0.0
       // Backend Route: finance/backend/routers/coa.py -> get_accounts()
       // Purpose: Loads active Chart of Accounts records from PostgreSQL
-      const res = await fetch("http://127.0.0.1:8000/api/coa");
+      const res = await fetch(`${API_URL}/api/coa`);
       const data = await res.json();
       const sorted = Array.isArray(data)
         ? [...data].sort((a, b) => Number(b.accountID || 0) - Number(a.accountID || 0))
@@ -82,7 +88,7 @@ export default function ChartOfAccounts() {
       // FETCH 2: POST http://127.0.0
       // Backend Route: finance/backend/routers/coa.py -> create_account()
       // Purpose: Saves a new account into ChartOfAccounts
-      const res = await fetch("http://127.0.0.1:8000/api/coa", {
+      const res = await fetch(`${API_URL}/api/coa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
