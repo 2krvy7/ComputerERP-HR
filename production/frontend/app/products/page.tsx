@@ -180,17 +180,11 @@ const handleUpdateStatus = async (
     setUpdatingStatus(productionId);
 
     const response = await fetch(
-      `${API_URL}/production-orders/${productionId}/status`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          status: newStatus,
-        }),
-      }
-    );
+  `${API_URL}/production-orders/${productionId}/status?new_status=${encodeURIComponent(newStatus)}`,
+  {
+    method: "PATCH",
+  }
+);
 
     if (!response.ok) {
       throw new Error("Failed to update production status.");
@@ -264,6 +258,7 @@ const handleUpdateQuantity = async () => {
           ? {
               ...batch,
               QuantityProduced: updatedBatch.QuantityProduced,
+              status: updatedBatch.status,
             }
           : batch
       )
