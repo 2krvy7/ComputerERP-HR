@@ -278,7 +278,7 @@ export default function InvoicePanel() {
       orders.filter(
         (order) =>
           !invoicedOrderIds.has(order.order_id) &&
-          order.status !== "Cancelled"
+          ["Accepted", "Approved", "Processing", "Completed"].includes(order.status)
       ),
     [orders, invoicedOrderIds]
   );

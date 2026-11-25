@@ -165,15 +165,13 @@ export default function DashboardPage() {
       (order) => order.status !== "Cancelled"
     );
 
-    const orderStatuses = [
-      "Pending",
-      "Approved",
-      "Processing",
-      "Completed",
-      "Cancelled",
-    ].map((status) => ({
+    const orderStatuses = ["Pending", "Accepted"].map((status) => ({
       status,
-      count: orders.filter((order) => order.status === status).length,
+      count: orders.filter((order) =>
+        status === "Accepted"
+          ? ["Accepted", "Approved"].includes(order.status)
+          : order.status === status
+      ).length,
     }));
 
     const overdueAccounts = receivables.filter(

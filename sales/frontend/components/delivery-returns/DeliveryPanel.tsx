@@ -277,9 +277,9 @@ export default function DeliveryPanel() {
       (order) => order.order_id === Number(orderId)
     );
 
-    if (!selectedOrder || selectedOrder.status !== "Approved") {
+    if (!selectedOrder || !["Accepted", "Approved"].includes(selectedOrder.status)) {
       setError(
-        "Only approved sales orders can be added to customer pickup."
+        "Only accepted sales orders can be added to customer pickup."
       );
       return;
     }
@@ -676,7 +676,7 @@ export default function DeliveryPanel() {
             <div className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Approved Sales Order
+                  Accepted Sales Order
                 </label>
 
                 <select
@@ -687,7 +687,7 @@ export default function DeliveryPanel() {
                   <option value="">Select sales order</option>
 
                   {orders
-                    .filter((order) => order.status === "Approved")
+                    .filter((order) => ["Accepted", "Approved"].includes(order.status))
                     .filter(
                       (order) =>
                         !deliveries.some(
@@ -708,7 +708,7 @@ export default function DeliveryPanel() {
                 </select>
 
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Only approved orders without an existing pickup record are listed. Set a new order to Approved in Sales Processing first.
+                  Only accepted orders without an existing pickup record are listed. Inventory must accept the order request first.
                 </p>
               </div>
 

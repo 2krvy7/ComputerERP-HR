@@ -8,7 +8,6 @@ import type {
   SalesOrder,
   SalesOrderCreate,
   SalesOrderItem,
-  SalesOrderStatus,
 } from "../../types/order";
 
 interface OrderLine {
@@ -16,14 +15,6 @@ interface OrderLine {
   quantity: number;
   discount: number;
 }
-
-const statuses: SalesOrderStatus[] = [
-  "Pending",
-  "Approved",
-  "Processing",
-  "Completed",
-  "Cancelled",
-];
 
 const money = (amount: string | number) =>
   `₱${Number(amount).toLocaleString("en-PH", {
@@ -139,8 +130,8 @@ export default function OrdersPage() {
     (order) => order.status === "Pending"
   ).length;
 
-  const completedOrders = orders.filter(
-    (order) => order.status === "Completed"
+  const acceptedOrders = orders.filter(
+    (order) => order.status === "Accepted" || order.status === "Approved"
   ).length;
 
   function updateLine(index: number, changes: Partial<OrderLine>) {
@@ -228,32 +219,6 @@ export default function OrdersPage() {
     }
   }
 
-  async function handleStatusChange(
-    order: SalesOrder,
-    status: SalesOrderStatus
-  ) {
-    if (order.status === status) return;
-
-    setError("");
-
-    try {
-      const updated = await salesOrderAPI.updateStatus(
-        order.order_id,
-        status
-      );
-
-      setOrders((current) =>
-        current.map((item) =>
-          item.order_id === updated.order_id ? updated : item
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to update order status."
-      );
-    }
-  }
-
   return (
     <main className="min-h-screen bg-gray-50 p-6 text-gray-900 md:p-10">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -277,7 +242,7 @@ export default function OrdersPage() {
               onClick={() => setShowForm(true)}
               className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-700"
             >
-              + Create Sales Order
+              + Create Order Request
             </button>
           </div>
         </header>
@@ -310,9 +275,9 @@ export default function OrdersPage() {
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <p className="text-sm text-gray-500">Completed Orders</p>
+            <p className="text-sm text-gray-500">Accepted Requests</p>
             <p className="mt-2 text-2xl font-semibold text-green-600">
-              {completedOrders}
+              {acceptedOrders}
             </p>
           </div>
         </section>
@@ -320,9 +285,9 @@ export default function OrdersPage() {
         <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="flex flex-col justify-between gap-4 border-b border-gray-200 p-5 sm:flex-row sm:items-center">
             <div>
-              <h2 className="font-semibold">Sales Order List</h2>
+              <h2 className="font-semibold">Sales Order Requests</h2>
               <p className="mt-1 text-sm text-gray-500">
-                View and update your sales orders.
+                Submit requested items to Inventory and track its decision.
               </p>
             </div>
 
@@ -379,23 +344,9 @@ export default function OrdersPage() {
                         {money(order.total_amount)}
                       </td>
                       <td className="px-5 py-4">
-                        <select
-                          value={order.status}
-                          onChange={(e) =>
-                            void handleStatusChange(
-                              order,
-                              e.target.value as SalesOrderStatus
-                            )
-                          }
-                          className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs outline-none focus:border-gray-900"
-                          aria-label={`Status for order ${order.order_id}`}
-                        >
-                          {statuses.map((status) => (
-                            <option key={status} value={status}>
-                              {status}
-                            </option>
-                          ))}
-                        </select>
+                        <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${order.status === "Pending" ? "border-amber-200 bg-amber-50 text-amber-800" : ["Accepted", "Approved"].includes(order.status) ? "border-blue-200 bg-blue-50 text-blue-800" : order.status === "Cancelled" ? "border-red-200 bg-red-50 text-red-800" : "border-slate-300 bg-slate-100 text-slate-700"}`}>
+                          {order.status === "Pending" ? "Pending Inventory review" : order.status === "Approved" ? "Accepted" : order.status}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -411,7 +362,8 @@ export default function OrdersPage() {
           <div className="my-auto w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold">Create Sales Order</h2>
+                <h2 className="text-xl font-bold">Create Sales Order Request</h2>
+                <p className="mt-1 text-sm text-gray-500">Inventory will review the requested items before delivery can proceed.</p>
                 <p className="mt-1 text-sm text-gray-500">
                   Select a customer and add the items for this order.
                 </p>
@@ -596,7 +548,7 @@ export default function OrdersPage() {
                   disabled={saving}
                   className="rounded-lg bg-gray-900 px-5 py-3 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
                 >
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving ? "Submitting..." : "Submit Order Request"}
                 </button>
               </div>
             </div>

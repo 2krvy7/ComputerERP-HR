@@ -2,7 +2,6 @@
 import type {
   SalesOrder,
   SalesOrderCreate,
-  SalesOrderStatus,
   SalesOrderItem,
   FinishedGoodItem,
 } from "../types/order";
@@ -206,7 +205,7 @@ export const salesOrderAPI = {
       body: JSON.stringify(data),
     }),
 
-  updateStatus: (id: number, status: SalesOrderStatus) =>
+  updateStatus: (id: number, status: "Accepted") =>
     request<SalesOrder>(`/api/orders/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),

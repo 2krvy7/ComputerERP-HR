@@ -27,9 +27,6 @@ interface StockIssue {
 }
 
 const PAGE_SIZE = 10;
-const statuses = ["Pending", "Approved", "Completed", "Cancelled"] as const;
-
-type OrderStatusOption = (typeof statuses)[number];
 
 const money = (amount: string | number) =>
   `₱${Number(amount || 0).toLocaleString("en-PH", {
@@ -53,9 +50,11 @@ const formatDate = (value: string | null | undefined) => {
 
 const statusStyles: Partial<Record<SalesOrderStatus, string>> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
+  Accepted: "border-blue-200 bg-blue-50 text-blue-700",
   Approved: "border-blue-200 bg-blue-50 text-blue-700",
-  Completed: "border-green-200 bg-green-50 text-green-700",
   Cancelled: "border-red-200 bg-red-50 text-red-700",
+  Processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  Completed: "border-green-200 bg-green-50 text-green-700",
 };
 
 export default function OrdersPage() {
@@ -72,7 +71,6 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [loadingItems, setLoadingItems] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const [showForm, setShowForm] = useState(false);
@@ -211,8 +209,8 @@ export default function OrdersPage() {
     (order) => order.status === "Pending"
   ).length;
 
-  const completedOrders = orders.filter(
-    (order) => order.status === "Completed"
+  const acceptedOrders = orders.filter(
+    (order) => order.status === "Accepted" || order.status === "Approved"
   ).length;
 
   const requestedByItem = useMemo(() => {
@@ -388,16 +386,6 @@ export default function OrdersPage() {
       return;
     }
 
-    if (hasStockIssues) {
-      const issueMessages = stockIssues.map(
-        (issue) =>
-          `${issue.itemName}: requested ${issue.requested}, available ${issue.available}.`
-      );
-
-      setError(`Insufficient stock. ${issueMessages.join(" ")}`);
-      return;
-    }
-
     const data: SalesOrderCreate = {
       customer_id: Number(customerId),
       tax_type: taxType,
@@ -423,40 +411,6 @@ export default function OrdersPage() {
       );
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handleStatusChange(
-    order: SalesOrder,
-    newStatus: OrderStatusOption
-  ) {
-    if (order.status === newStatus) return;
-
-    if (order.status !== "Pending") {
-      setError("Completed and Cancelled orders cannot be changed.");
-      return;
-    }
-
-    setError("");
-    setUpdatingOrderId(order.order_id);
-
-    try {
-      const updated = await salesOrderAPI.updateStatus(
-        order.order_id,
-        newStatus as SalesOrderStatus
-      );
-
-      setOrders((current) =>
-        current.map((item) =>
-          item.order_id === updated.order_id ? updated : item
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to update order status."
-      );
-    } finally {
-      setUpdatingOrderId(null);
     }
   }
 
@@ -488,14 +442,14 @@ export default function OrdersPage() {
         <SummaryCard title="Total Sales" value={money(totalSales)} />
 
         <SummaryCard
-          title="Pending Orders"
+          title="Pending Requests"
           value={pendingOrders.toString()}
           valueColor="text-amber-600"
         />
 
         <SummaryCard
-          title="Completed Orders"
-          value={completedOrders.toString()}
+          title="Accepted Requests"
+          value={acceptedOrders.toString()}
           valueColor="text-green-700"
         />
       </section>
@@ -504,11 +458,11 @@ export default function OrdersPage() {
         <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-semibold text-slate-800">
-              Sales Order List
+              Sales Order Requests
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              View and update your sales orders.
+              Submit requested items to Inventory and track its decision.
             </p>
           </div>
 
@@ -532,7 +486,7 @@ export default function OrdersPage() {
               }}
               className="whitespace-nowrap rounded-lg bg-[#3F7657] px-4 py-2 text-sm font-semibold text-white hover:bg-[#315F46]"
             >
-              + Create Sales Order
+              + Create Order Request
             </button>
           </div>
         </div>
@@ -581,12 +535,6 @@ export default function OrdersPage() {
                 </tr>
               ) : (
                 paginatedOrders.map((order) => {
-                  const isUpdating = updatingOrderId === order.order_id;
-                  const canUpdate = order.status === "Pending";
-                  const knownStatus = statuses.includes(
-                    order.status as OrderStatusOption
-                  );
-
                   return (
                     <tr
                       key={order.order_id}
@@ -614,40 +562,9 @@ export default function OrdersPage() {
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <select
-                            value={knownStatus ? order.status : "Pending"}
-                            disabled={
-                              isUpdating || !canUpdate || !knownStatus
-                            }
-                            onChange={(e) =>
-                              void handleStatusChange(
-                                order,
-                                e.target.value as OrderStatusOption
-                              )
-                            }
-                            className={`rounded-full border px-3 py-1.5 text-xs font-semibold outline-none transition disabled:cursor-not-allowed disabled:opacity-70 ${
-                              statusStyles[order.status] ??
-                              "border-slate-300 bg-slate-100 text-slate-600"
-                            }`}
-                            aria-label={`Update status for order ${order.order_id}`}
-                          >
-                            {(order.status === "Pending"
-                              ? ["Pending", "Approved", "Cancelled"] as OrderStatusOption[]
-                              : [order.status]
-                            ).map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-
-                          {isUpdating && (
-                            <span className="text-xs text-slate-600">
-                              Saving...
-                            </span>
-                          )}
-                        </div>
+                        <span className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${statusStyles[order.status] ?? "border-slate-300 bg-slate-100 text-slate-600"}`}>
+                          {order.status === "Pending" ? "Pending Inventory review" : order.status === "Approved" ? "Accepted" : order.status}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -708,11 +625,11 @@ export default function OrdersPage() {
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">
-                  Create Sales Order
+                  Create Sales Order Request
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600">
-                  Select a customer and add the items for this order.
+                  Select a customer and add the requested items. Inventory will review the request.
                 </p>
               </div>
 
@@ -1075,13 +992,13 @@ export default function OrdersPage() {
                               <span
                                 className={
                                   isInsufficient
-                                    ? "font-semibold text-red-600"
+                                  ? "font-semibold text-amber-700"
                                     : "font-medium text-green-700"
                                 }
                               >
                                 {isInsufficient
-                                  ? `Insufficient stock: ${requested} requested, ${available} available`
-                                  : `Requested across order: ${requested} / ${available}`}
+                                  ? `Inventory review: ${requested} requested, ${available} available`
+                                  : `Requested / currently available: ${requested} / ${available}`}
                               </span>
                             </div>
 
@@ -1116,18 +1033,19 @@ export default function OrdersPage() {
 
                 {hasStockIssues && (
                   <div
-                    role="alert"
-                    className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                    role="status"
+                    className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
                   >
                     <p className="font-semibold">
-                      Insufficient stock for this order.
+                      Inventory review required.
                     </p>
+                    <p className="mt-1">You can still submit this request. Inventory will review it before accepting.</p>
 
                     <ul className="mt-1 list-disc space-y-1 pl-5">
                       {stockIssues.map((issue) => (
                         <li key={issue.IM_ID}>
                           {issue.itemName}: {issue.requested} requested,
-                          only {issue.available} available.
+                          {" "}{issue.available} currently available.
                         </li>
                       ))}
                     </ul>
@@ -1160,12 +1078,11 @@ export default function OrdersPage() {
                   disabled={
                     saving ||
                     !customerSelected ||
-                    hasStockIssues ||
                     loadingItems
                   }
                   className="rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {saving ? "Creating..." : "Create Order"}
+                  {saving ? "Submitting..." : "Submit Order Request"}
                 </button>
               </div>
             </div>

@@ -382,11 +382,11 @@ def create_delivery(
             detail="Sales order not found.",
         )
 
-    if order.status != "Approved":
+    if order.status not in ("Accepted", "Approved"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Only approved sales orders can have a delivery record."
+                "Only accepted sales orders can have a delivery record."
             ),
         )
 
@@ -539,11 +539,11 @@ def update_delivery_status(
                     detail="Related sales order not found.",
                 )
 
-            if order.status != "Approved":
+            if order.status not in ("Accepted", "Approved"):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        "The related sales order must be Approved "
+                        "The related sales order must be Accepted "
                         "before Inventory can release the items."
                     ),
                 )

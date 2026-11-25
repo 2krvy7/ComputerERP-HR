@@ -1,6 +1,8 @@
 
 export type SalesOrderStatus =
   | "Pending"
+  | "Accepted"
+  // Historical statuses returned for existing orders.
   | "Approved"
   | "Processing"
   | "Completed"

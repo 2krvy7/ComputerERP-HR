@@ -77,6 +77,12 @@ def create_invoice(
             detail="Sales order not found.",
         )
 
+    if order.status not in ("Accepted", "Approved", "Processing", "Completed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only Inventory-approved Sales orders can be invoiced.",
+        )
+
     existing_invoice = db.scalar(
         select(SalesInvoice).where(
             SalesInvoice.order_id == invoice_data.order_id
