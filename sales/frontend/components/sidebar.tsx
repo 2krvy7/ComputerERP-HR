@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authAPI, type AuthUser } from "../lib/api";
 import { useAuth } from "@/contexts/auth-context";
-import { isAdminRole } from "@/lib/roles";
+import { getRoleName, isAdminRole } from "@/lib/roles";
 
 type ProfileTab = "profile" | "edit" | "password";
 
@@ -46,6 +46,9 @@ export default function Sidebar() {
   const [error, setError] = useState("");
 
   const collapsed = !hovered;
+  const profileRoleName = profile
+    ? getRoleName(profile.role_id)
+    : "Unknown role";
 
   const resetMessages = () => {
     setMessage("");
@@ -443,7 +446,7 @@ export default function Sidebar() {
                         </p>
 
                         <span className="mt-3 rounded-full bg-[#E6F0F0] px-4 py-1 text-xs font-semibold text-[#315F68]">
-                          {profile.role}
+                          {profileRoleName}
                         </span>
                       </div>
 
@@ -452,7 +455,7 @@ export default function Sidebar() {
                           ["User ID", profile.user_id],
                           ["Username", profile.username],
                           ["Email", profile.email],
-                          ["Role", profile.role],
+                          ["Role", profileRoleName],
                           ["Role ID", String(profile.role_id)],
                           ["Department ID", profile.dept_id ?? "Not assigned"],
                         ].map(([label, value]) => (
