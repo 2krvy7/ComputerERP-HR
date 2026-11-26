@@ -86,10 +86,12 @@ export default function BalanceSheet() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const { currentAssets, nonCurrentAssets, currentAssetTotal, nonCurrentAssetTotal } =
     useMemo(() => {
@@ -196,31 +198,7 @@ export default function BalanceSheet() {
         </div>
       </div>
 
-      {/* Period Filter */}
-      <div className="tabs">
-        {(["This month", "This quarter", "This year", "Custom"] as const).map(
-          (tab) => (
-            <button
-              key={tab}
-              className={activePeriod === tab ? "active" : ""}
-              onClick={() => setActivePeriod(tab)}
-            >
-              {tab}
-            </button>
-          )
-        )}
-      </div>
-
-      <div className="filters">
-        <button className="btn-light">
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button className="btn-light">Period: {activePeriod}</button>
-        <button className="btn-light">Accrual basis</button>
-        <button className="btn-light push-right" onClick={fetchBalanceSheet}>
-          Update report
-        </button>
-      </div>
+     
 
       {/* Summary Cards */}
       <div className="summary-grid">

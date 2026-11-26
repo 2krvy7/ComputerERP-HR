@@ -47,3 +47,53 @@ def home():
     return {
         "message": "Finance ERP API Running"
     }
+
+
+
+
+
+
+
+
+from fastapi import Query
+from psycopg.rows import dict_row
+from database import get_db_connection
+
+@app.get("/api/me")
+def get_current_user_profile(
+    user_id: str | None = Query(default=None),
+    username: str | None = Query(default=None),
+):
+    conn = get_db_connection()
+    try:
+        with conn.cursor(row_factory=dict_row) as cur:
+            if user_id:
+                cur.execute(
+                    'SELECT "UserID", "Username", email, "RoleID", "DeptID" FROM public."User" WHERE "UserID" = %s LIMIT 1',
+                    (user_id,),
+                )
+            elif username:
+                cur.execute(
+                    'SELECT "UserID", "Username", email, "RoleID", "DeptID" FROM public."User" WHERE "Username" = %s LIMIT 1',
+                    (username,),
+                )
+            else:
+                cur.execute(
+                    'SELECT "UserID", "Username", email, "RoleID", "DeptID" FROM public."User" WHERE "DeptID" = \'FN\' ORDER BY "UserID" ASC LIMIT 1'
+                )
+
+            row = cur.fetchone()
+            if not row:
+                return {"UserID": "FN001", "Username": "Finance User", "RoleID": 2, "DeptID": "FN"}
+
+            role_map = {1: "SuperAdmin", 2: "Finance Staff", 3: "Administrator"}
+            return {
+                "UserID": row["UserID"],
+                "Username": row["Username"],
+                "email": row.get("email"),
+                "RoleID": row.get("RoleID"),
+                "roleName": role_map.get(row.get("RoleID"), "Finance Staff"),
+                "DeptID": row.get("DeptID") or "FN",
+            }
+    finally:
+        conn.close()

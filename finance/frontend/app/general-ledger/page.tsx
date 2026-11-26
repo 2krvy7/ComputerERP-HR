@@ -6,6 +6,9 @@ import "./general-ledger.css";
 export default function GeneralLedger() {
   const [rawRows, setRawRows] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [journalDateMap, setJournalDateMap] = useState<Record<string, string>>(
+    {}
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -13,29 +16,55 @@ export default function GeneralLedger() {
   const [selectedAccount, setSelectedAccount] = useState<string>("ALL");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [sourceFilter, setSourceFilter] = useState<string>("ALL");
 
   const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
 
   async function fetchLedgerData() {
     setLoading(true);
     setError(null);
     try {
-      const [ledgerRes, accRes] = await Promise.all([
+      const [ledgerRes, accRes, jeRes] = await Promise.all([
         fetch(`${API_URL}/api/ledger`),
-        fetch(`${API_URL}/api/ledger`),
+        fetch(`${API_URL}/api/coa`),
+        fetch(`${API_URL}/api/journal`).then((r) =>
+          r.ok ? r : fetch(`${API_URL}/api/journal-entries`)
+        ),
       ]);
 
-      if (!ledgerRes.ok) throw new Error(`Ledger API error: ${ledgerRes.status}`);
+      if (!ledgerRes.ok) {
+        throw new Error(`Ledger API error: ${ledgerRes.status}`);
+      }
       const ledgerJson = await ledgerRes.json();
       setRawRows(Array.isArray(ledgerJson) ? ledgerJson : []);
 
       if (accRes.ok) {
         const accJson = await accRes.json();
         setAccounts(Array.isArray(accJson) ? accJson : []);
+      }
+
+      if (jeRes.ok) {
+        const jeJson = await jeRes.json();
+        const map: Record<string, string> = {};
+        for (const je of Array.isArray(jeJson) ? jeJson : []) {
+          const rawId =
+            je.journalID ?? je.journalid ?? je.journal_id ?? je.id ?? "";
+          const jId = String(rawId).replace(/^JE-0*/i, "").trim();
+          const jDate =
+            je.journalDate ??
+            je.journaldate ??
+            je.journal_date ??
+            je.entryDate ??
+            je.entry_date ??
+            je.date ??
+            "";
+          if (jId && jDate) {
+            map[jId] = String(jDate);
+          }
+        }
+        setJournalDateMap(map);
       }
     } catch (err: any) {
       setError(err.message || "Failed to load General Ledger");
@@ -48,43 +77,116 @@ export default function GeneralLedger() {
     fetchLedgerData();
   }, []);
 
+    // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(val);
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
-    return new Date(dateStr).toLocaleDateString("en-US", {
+    const parsed = new Date(dateStr);
+    if (Number.isNaN(parsed.getTime())) return String(dateStr).slice(0, 10);
+    return parsed.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
     });
   };
 
-  // Compute filtered rows, running balance, and period totals
-  const { processedRows, openingBalance, totalDebits, totalCredits, closingBalance } = useMemo(() => {
-    // 1. Filter by account and status first
-    const accountAndStatusFiltered = rawRows.filter((row) => {
-      const rowAccId = String(row.accountID ?? row.accountId ?? row.accountCode ?? "");
-      const matchesAccount = selectedAccount === "ALL" || rowAccId === selectedAccount;
+  const extractRowDate = (row: any): string => {
+    const rawId =
+      row.journalID ??
+      row.journalid ??
+      row.journal_id ??
+      row.referenceNo ??
+      row.reference ??
+      "";
+    const jId = String(rawId).replace(/^JE-0*/i, "").trim();
 
-      const rowStatus = String(row.status ?? "Posted").toLowerCase();
-      const matchesStatus = statusFilter === "ALL" || rowStatus === statusFilter.toLowerCase();
+    return String(
+      (jId ? journalDateMap[jId] : undefined) ??
+        row.journalDate ??
+        row.journaldate ??
+        row.postingDate ??
+        row.postingdate ??
+        row.entryDate ??
+        row.date ??
+        ""
+    );
+  };
 
-      return matchesAccount && matchesStatus;
+  // Extract distinct source modules present in ledger rows for the dropdown
+  const availableSources = useMemo<string[]>(() => {
+    const sources = new Set<string>();
+    for (const row of rawRows) {
+      const src = String(
+        row.sourceModule ??
+          row.sourcemodule ??
+          row.source_module ??
+          row.source ??
+          row.module ??
+          ""
+      ).trim();
+      if (src) {
+        sources.add(src);
+      }
+    }
+    return Array.from(sources).sort((a, b) => a.localeCompare(b));
+  }, [rawRows]);
+
+  // Compute filtered rows, running balance chronologically, then reverse so newest postings appear on top
+  const {
+    processedRows,
+    openingBalance,
+    totalDebits,
+    totalCredits,
+    closingBalance,
+  } = useMemo(() => {
+    // 1. Filter by account and source module
+    const accountAndSourceFiltered = rawRows.filter((row) => {
+      const rowAccId = String(row.accountID ?? row.accountId ?? "");
+      const rowAccCode = String(row.accountCode ?? "");
+      const matchesAccount =
+        selectedAccount === "ALL" ||
+        rowAccId === selectedAccount ||
+        rowAccCode === selectedAccount;
+
+      const rowSource = String(
+        row.sourceModule ??
+          row.sourcemodule ??
+          row.source_module ??
+          row.source ??
+          row.module ??
+          ""
+      ).trim();
+      const matchesSource =
+        sourceFilter === "ALL" ||
+        rowSource.toLowerCase() === sourceFilter.toLowerCase();
+
+      return matchesAccount && matchesSource;
     });
 
-    // 2. Calculate Opening Balance from transactions strictly before startDate
+    // 2. Sort oldest -> newest to compute accurate running balances
+    const chronological = [...accountAndSourceFiltered].sort((a, b) => {
+      const dA = new Date(extractRowDate(a) || 0).getTime();
+      const dB = new Date(extractRowDate(b) || 0).getTime();
+      if (dA !== dB) return dA - dB;
+      return Number(a.ledgerID ?? a.id ?? 0) - Number(b.ledgerID ?? b.id ?? 0);
+    });
+
+    // 3. Separate Opening Balance (before startDate) vs Period Transactions
     let opening = 0;
     const periodTransactions: any[] = [];
 
-    for (const row of accountAndStatusFiltered) {
-      const txDateRaw = row.transactionDate ?? row.date ?? row.createdAt;
-      const txDate = txDateRaw ? new Date(txDateRaw).toISOString().split("T")[0] : "";
-      const debit = Number(row.debit ?? row.debitAmount ?? 0);
-      const credit = Number(row.credit ?? row.creditAmount ?? 0);
+    for (const row of chronological) {
+      const txDateRaw = extractRowDate(row);
+      const txDate = txDateRaw ? String(txDateRaw).slice(0, 10) : "";
+      const debit = Number(row.debitAmount ?? row.debit ?? 0);
+      const credit = Number(row.creditAmount ?? row.credit ?? 0);
 
       if (startDate && txDate && txDate < startDate) {
         opening += debit - credit;
@@ -95,38 +197,53 @@ export default function GeneralLedger() {
       }
     }
 
-    // 3. Build chronological rows with running balance
+
+    // 4. Calculate running balances chronologically
+       // 4. Calculate running balances chronologically
     let running = opening;
     let debitsSum = 0;
     let creditsSum = 0;
 
     const rowsWithBalance = periodTransactions.map((row) => {
-      const debit = Number(row.debit ?? row.debitAmount ?? 0);
-      const credit = Number(row.credit ?? row.creditAmount ?? 0);
+      const debit = Number(row.debitAmount ?? row.debit ?? 0);
+      const credit = Number(row.creditAmount ?? row.credit ?? 0);
 
       debitsSum += debit;
       creditsSum += credit;
       running += debit - credit;
 
+      const rawDesc = String(
+        row.description ?? row.remarks ?? "Journal Posting"
+      );
+      const shortDesc = rawDesc.split("—")[0].trim();
+
       return {
         id: row.ledgerID ?? row.id ?? Math.random(),
-        date: formatDate(row.transactionDate ?? row.date ?? row.createdAt),
-        description: row.description ?? row.remarks ?? "Journal Posting",
-        reference: row.reference ?? row.referenceNo ?? (row.journalID ? `JE-${row.journalID}` : "-"),
+        date: formatDate(extractRowDate(row)),
+        description: row.accountName
+          ? `${row.accountCode ? `${row.accountCode} · ` : ""}${row.accountName} (${shortDesc})`
+          : shortDesc,
+        reference:
+          row.referenceNo ??
+          row.reference ??
+          (row.journalID ? `JE-${row.journalID}` : "-"),
         debit,
         credit,
         balance: running,
       };
     });
 
+    // 5. Reverse rows so the newest postings appear at the top of the table
+    const newestFirstRows = [...rowsWithBalance].reverse();
+
     return {
-      processedRows: rowsWithBalance,
+      processedRows: newestFirstRows,
       openingBalance: opening,
       totalDebits: debitsSum,
       totalCredits: creditsSum,
       closingBalance: running,
     };
-  }, [rawRows, selectedAccount, startDate, endDate, statusFilter]);
+  }, [rawRows, journalDateMap, selectedAccount, startDate, endDate, sourceFilter]);
 
   const activeAccountLabel = useMemo(() => {
     if (selectedAccount === "ALL") return "All Accounts";
@@ -138,46 +255,57 @@ export default function GeneralLedger() {
       : selectedAccount;
   }, [accounts, selectedAccount]);
 
-  return (
+    return (
     <div className="ledger-page">
+      {/* Aligned Fixed Page Header (No subtitle, matches Chart of Accounts) */}
       <div className="ledger-header">
-        <div>
-          <h1>General Ledger</h1>
-          <p>
-            Trace account activity from opening balance to the last
-            posted transaction.
-          </p>
-        </div>
+        <h1>General Ledger</h1>
 
-        <button className="print-btn" onClick={() => window.print()}>
+        <button
+          type="button"
+          className="print-btn"
+          onClick={() => window.print()}
+        >
           Print Ledger
         </button>
       </div>
 
-      {/* Filters */}
+      {/* Filters Toolbar */}
       <div className="ledger-filters">
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          title="Start Date"
-        />
-
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          title="End Date"
-        />
+        <div className="date-range-group">
+          <span className="date-range-label">Date</span>
+          <input
+            type="date"
+            className="date-range-input"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            title="From Date"
+            aria-label="From Date"
+          />
+          <span className="date-range-sep">to</span>
+          <input
+            type="date"
+            className="date-range-input"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            title="To Date"
+            aria-label="To Date"
+          />
+        </div>
 
         <select
+          className="ledger-select"
           value={selectedAccount}
           onChange={(e) => setSelectedAccount(e.target.value)}
+          aria-label="Filter by Account"
         >
           <option value="ALL">All Accounts</option>
           {Array.from(
             new Map(
-              accounts.map((acc) => [String(acc.accountID ?? acc.accountCode), acc])
+              accounts.map((acc) => [
+                String(acc.accountID ?? acc.accountCode),
+                acc,
+              ])
             ).values()
           ).map((acc, idx) => {
             const val = String(acc.accountID ?? acc.accountCode);
@@ -190,15 +318,26 @@ export default function GeneralLedger() {
         </select>
 
         <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          className="ledger-select"
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          aria-label="Filter by Entry Source"
         >
           <option value="ALL">All Entries</option>
-          <option value="Posted">Posted Entries</option>
-          <option value="Draft">Draft Entries</option>
+          {availableSources.map((src) => (
+            <option key={src} value={src}>
+              {src}
+            </option>
+          ))}
         </select>
 
-        <button onClick={fetchLedgerData}>Update Report</button>
+        <button
+          type="button"
+          className="update-report-btn"
+          onClick={fetchLedgerData}
+        >
+          Update Report
+        </button>
       </div>
 
       {/* Summary Cards */}
@@ -229,11 +368,13 @@ export default function GeneralLedger() {
         <div className="ledger-table-header">
           <h3>{activeAccountLabel}</h3>
           <button
+            type="button"
+            className="reset-filters-btn"
             onClick={() => {
               setSelectedAccount("ALL");
               setStartDate("");
               setEndDate("");
-              setStatusFilter("ALL");
+              setSourceFilter("ALL");
             }}
           >
             Reset Filters
@@ -241,11 +382,11 @@ export default function GeneralLedger() {
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading general ledger...</p>
+          <p className="ledger-state-msg">Loading general ledger...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+          <p className="ledger-state-msg error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="ledger-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -258,19 +399,9 @@ export default function GeneralLedger() {
             </thead>
 
             <tbody>
-              {/* Opening Balance Row */}
-              <tr>
-                <td>{startDate ? formatDate(startDate) : "Beginning"}</td>
-                <td>Opening Balance</td>
-                <td>Prior Period</td>
-                <td>-</td>
-                <td>-</td>
-                <td>{formatCurrency(openingBalance)}</td>
-              </tr>
-
               {processedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={6} className="ledger-empty-cell">
                     No ledger transactions found for the selected filters.
                   </td>
                 </tr>
@@ -279,13 +410,27 @@ export default function GeneralLedger() {
                   <tr key={`${item.id ?? "row"}-${idx}`}>
                     <td>{item.date}</td>
                     <td>{item.description}</td>
-                    <td>{item.reference}</td>
+                    <td>
+                      <strong>{item.reference}</strong>
+                    </td>
                     <td>{item.debit > 0 ? formatCurrency(item.debit) : "-"}</td>
-                    <td>{item.credit > 0 ? formatCurrency(item.credit) : "-"}</td>
+                    <td>
+                      {item.credit > 0 ? formatCurrency(item.credit) : "-"}
+                    </td>
                     <td>{formatCurrency(item.balance)}</td>
                   </tr>
                 ))
               )}
+
+              {/* Opening Balance Row at bottom since newest postings are on top */}
+              <tr className="opening-balance-row">
+                <td>{startDate ? formatDate(startDate) : "Beginning"}</td>
+                <td>Opening Balance</td>
+                <td>Prior Period</td>
+                <td>-</td>
+                <td>-</td>
+                <td>{formatCurrency(openingBalance)}</td>
+              </tr>
             </tbody>
           </table>
         )}
@@ -313,4 +458,3 @@ export default function GeneralLedger() {
     </div>
   );
 }
-

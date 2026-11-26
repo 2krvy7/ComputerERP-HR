@@ -929,8 +929,9 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                         cur.execute(f'UPDATE "{exp_table}" SET "{e_post}" = %s WHERE "{e_pk}" = %s', (jid, eid))
                         approved_prod += 1
 
-            # 2. Approve & Post Selected HR Payroll Runs (Direct to JournalEntry & GeneralLedger)
+            # 2. Approve & Post Selected HR Payroll Runs (Direct to JournalEntry & GeneralLedger + Set Payroll.payroll_status = 'Paid')
             pay_table = get_exact_table_name(cur, "PayrollExpense")
+            hr_payroll_table = get_exact_table_name(cur, "Payroll")
             if pay_table and payload.payrollIds:
                 p_cols = get_exact_cols(cur, pay_table)
                 pk_col = p_cols.get("payrollexpenseid", "payrollExpenseID")
@@ -943,17 +944,17 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                     if not prow:
                         continue
 
-                    if je_table:
-                        cur.execute(f'SELECT 1 FROM "{je_table}" WHERE "sourceModule" = \'Payroll\' AND "sourceID" = %s', (prid,))
-                        if cur.fetchone():
-                            continue
-
                     amt = float(prow.get(amt_col) or 0)
                     run_id = prow.get(pid_col)
                     ref_no = f"PAYROLL-{run_id}"
                     desc = f"Payroll Run #{run_id} Disbursed (BDO Corporate Checking -> BPI Payroll)"
 
-                    if je_table and jel_table and sal_acc_id and cash_acc_id and amt > 0:
+                    already_posted = False
+                    if je_table:
+                        cur.execute(f'SELECT 1 FROM "{je_table}" WHERE "sourceModule" = \'Payroll\' AND "sourceID" = %s', (prid,))
+                        already_posted = cur.fetchone() is not None
+
+                    if not already_posted and je_table and jel_table and sal_acc_id and cash_acc_id and amt > 0:
                         cur.execute(f"""
                             INSERT INTO "{je_table}" ("journalDate", "referenceNo", "sourceModule", "description", "sourceID")
                             VALUES (COALESCE(%s::date, CURRENT_DATE), %s, 'Payroll', %s, %s)
@@ -968,7 +969,22 @@ def batch_approve_expenses(payload: BatchApproveExpensesPayload):
                             cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, %s, 0, %s)', (sal_acc_id, jid, amt, amt))
                             cur.execute(f'INSERT INTO "GeneralLedger" ("accountID", "journalID", "debitAmount", "creditAmount", "runningBalance") VALUES (%s, %s, 0, %s, %s)', (cash_acc_id, jid, amt, -amt))
 
-                    approved_pay += 1
+                    # Update HR's "Payroll" table: payroll_status = 'Paid' and payment_date
+                    if hr_payroll_table and run_id is not None:
+                        try:
+                            cur.execute("SAVEPOINT upd_hr_payroll_sp")
+                            cur.execute(f"""
+                                UPDATE "{hr_payroll_table}"
+                                SET "payroll_status" = 'Paid',
+                                    "payment_date" = COALESCE(%s::date, CURRENT_DATE)
+                                WHERE "payroll_id" = %s
+                            """, (payload.approvalDate, run_id))
+                            cur.execute("RELEASE SAVEPOINT upd_hr_payroll_sp")
+                        except Exception:
+                            cur.execute("ROLLBACK TO SAVEPOINT upd_hr_payroll_sp")
+
+                    if not already_posted:
+                        approved_pay += 1
 
             conn.commit()
             return {
