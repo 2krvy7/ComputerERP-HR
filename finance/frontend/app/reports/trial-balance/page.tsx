@@ -35,11 +35,16 @@ export default function TrialBalance() {
   const [nonZeroOnly, setNonZeroOnly] = useState(false);
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchTrialBalance() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reports/trial-balance/");
+      const res = await fetch(`${API_URL}/api/reports/trial-balance/`);
       if (!res.ok) throw new Error(`Trial Balance API error: ${res.status}`);
       const json = await res.json();
       setData({
@@ -67,11 +72,12 @@ export default function TrialBalance() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
-
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
   const normalizedRows = useMemo(() => {
     return data.accounts.map((acc) => {
       const rawDiff = Number(acc.totalDebit || 0) - Number(acc.totalCredit || 0);
@@ -169,46 +175,7 @@ export default function TrialBalance() {
         </div>
       </div>
 
-      {/* Period Tabs */}
-      <div className="tabs">
-        {(["This month", "This quarter", "This year", "Custom"] as const).map(
-          (tab) => (
-            <button
-              key={tab}
-              className={activePeriod === tab ? "active" : ""}
-              onClick={() => setActivePeriod(tab)}
-            >
-              {tab}
-            </button>
-          )
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="filters">
-        <button className="btn-light">
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-
-        <button className="btn-light">Accrual basis</button>
-
-        <button
-          className="btn-light"
-          onClick={() => setNonZeroOnly((prev) => !prev)}
-          style={
-            nonZeroOnly
-              ? { backgroundColor: "#111827", color: "#ffffff" }
-              : undefined
-          }
-        >
-          {nonZeroOnly ? "Non-zero accounts ✓" : "All accounts"}
-        </button>
-
-        <button className="btn-light push-right" onClick={fetchTrialBalance}>
-          Update report
-        </button>
-      </div>
-
+      
       {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card">

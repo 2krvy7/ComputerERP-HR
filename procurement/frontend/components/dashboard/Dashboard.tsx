@@ -142,6 +142,11 @@ export default function Dashboard() {
   const ticks = [0, max / 2, max];
   const hp = hover !== null ? series[hover] : null;
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+=======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   function handlePrint() {
     if (!value) return;
     const p = PERIODS.find((x) => x.key === period)!;
@@ -183,6 +188,10 @@ export default function Dashboard() {
     });
   }
 
+<<<<<<< HEAD
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", gap: "1.2vw" }}>
       {/* Row of 4 cards */}

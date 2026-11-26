@@ -4,15 +4,17 @@ import HRISSidebar from "@/components/HRISSidebar";
 import { useEffect, useState } from "react";
 import "./employee.css";
 
+const API = process.env.NEXT_PUBLIC_API_URL!;
+
 type Employee = {
   employee_id: number;
-  userid: string;
+  userid: string | null;
   position_id: number | null;
   first_name: string;
   last_name: string;
   birth_date: string;
   contact_no: string;
-  email: string;
+  email: string | null;
   address: string;
   hire_date: string;
   employment_status: string;
@@ -69,7 +71,7 @@ export default function EmployeesPage() {
 
   const fetchEmployees = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/employees/");
+      const response = await fetch(`${API}/employees/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch employees");
@@ -90,7 +92,7 @@ export default function EmployeesPage() {
 
   const fetchPositions = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/positions/");
+      const response = await fetch(`${API}/positions/`);
 
       if (!response.ok) {
         throw new Error("Failed to fetch positions");
@@ -169,22 +171,22 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${editingEmployeeId}`,
+        `${API}/employees/${editingEmployeeId}`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            userid: editForm.userid,
+            userid: editForm.userid || null,
             position_id: editForm.position_id
               ? Number(editForm.position_id)
               : null,
             first_name: editForm.first_name,
             last_name: editForm.last_name,
-            birth_date: editForm.birth_date,
+            birth_date: editForm.birth_date || null,
             contact_no: editForm.contact_no,
-            email: editForm.email,
+            email: editForm.email || null,
             address: editForm.address,
             hire_date: editForm.hire_date,
             employment_status: editForm.employment_status,
@@ -226,7 +228,7 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${employee.employee_id}`,
+        `${API}/employees/${employee.employee_id}`,
         {
           method: "PUT",
           headers: {
@@ -282,7 +284,7 @@ export default function EmployeesPage() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/employees/${employee.employee_id}`,
+        `${API}/employees/${employee.employee_id}`,
         {
           method: "PUT",
           headers: {
@@ -338,8 +340,8 @@ export default function EmployeesPage() {
 
     const searchMatch =
       fullName.includes(search.toLowerCase()) ||
-      employee.userid.toLowerCase().includes(search.toLowerCase()) ||
-      employee.email.toLowerCase().includes(search.toLowerCase());
+      (employee.userid ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (employee.email ?? "").toLowerCase().includes(search.toLowerCase());
 
     const statusMatch =
       statusFilter === "All" ||
@@ -369,8 +371,8 @@ export default function EmployeesPage() {
 
     return (
       fullName.includes(searchTerm) ||
-      employee.userid.toLowerCase().includes(searchTerm) ||
-      employee.email.toLowerCase().includes(searchTerm)
+      (employee.userid ?? "").toLowerCase().includes(searchTerm) ||
+      (employee.email ?? "").toLowerCase().includes(searchTerm)
     );
   });
 
@@ -617,7 +619,7 @@ export default function EmployeesPage() {
                           </div>
                         </td>
 
-                        <td>{employee.userid}</td>
+                        <td>{employee.userid || "-"}</td>
 
                         <td>
                           {getPositionName(employee.position_id)}
@@ -625,7 +627,7 @@ export default function EmployeesPage() {
 
                         <td>{employee.contact_no}</td>
 
-                        <td>{employee.email}</td>
+                        <td>{employee.email || "-"}</td>
 
                         <td>
                           {employee.hire_date
@@ -770,7 +772,7 @@ export default function EmployeesPage() {
                           </div>
                         </td>
 
-                        <td>{employee.userid}</td>
+                        <td>{employee.userid || "-"}</td>
 
                         <td>
                           {getPositionName(employee.position_id)}
@@ -856,7 +858,6 @@ export default function EmployeesPage() {
                     name="userid"
                     value={editForm.userid}
                     onChange={handleEditFormChange}
-                    required
                   />
                 </div>
 

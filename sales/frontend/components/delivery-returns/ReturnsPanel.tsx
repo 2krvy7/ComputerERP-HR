@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -60,12 +59,16 @@ function SummaryCard({
   description: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-600">{label}</p>
-      <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+    <div className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
+      <p className="text-xs font-medium text-slate-600 sm:text-sm">
+        {label}
+      </p>
+      <p className="mt-2 break-words text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
         {value}
       </p>
-      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <p className="mt-1 text-xs text-slate-500">
+        {description}
+      </p>
     </div>
   );
 }
@@ -277,14 +280,18 @@ export default function ReturnsPanel() {
     Math.ceil(filteredReturns.length / PAGE_SIZE)
   );
 
-  const paginatedReturns = useMemo(() => {
-    const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const safeCurrentPage = Math.min(currentPage, totalPages);
 
-    return filteredReturns.slice(
-      startIndex,
-      startIndex + PAGE_SIZE
-    );
-  }, [filteredReturns, currentPage]);
+  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+
+  const paginatedReturns = useMemo(
+    () =>
+      filteredReturns.slice(
+        startIndex,
+        startIndex + PAGE_SIZE
+      ),
+    [filteredReturns, startIndex]
+  );
 
   useEffect(() => {
     setCurrentPage(1);
@@ -367,18 +374,39 @@ export default function ReturnsPanel() {
     }
   }
 
+  function getReturnRowDetails(record: SalesReturn) {
+    const related = detailMap.get(record.Order_Detail_ID);
+    const relatedOrder = related?.order;
+    const relatedDetail = related?.detail;
+
+    const customer = relatedOrder
+      ? customerMap.get(relatedOrder.customer_id)
+      : undefined;
+
+    const item = relatedDetail
+      ? itemMap.get(relatedDetail.IM_ID)
+      : undefined;
+
+    return {
+      relatedOrder,
+      relatedDetail,
+      customer,
+      item,
+    };
+  }
+
   return (
-    <div className="min-w-0 space-y-5 bg-green-50 text-slate-800">
+    <div className="min-w-0 w-full space-y-5 bg-white text-slate-800">
       {error && (
         <div
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          className="break-words rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:p-4"
         >
           {error}
         </div>
       )}
 
-      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
         <SummaryCard
           label="Total Returns"
           value={returns.length}
@@ -398,9 +426,9 @@ export default function ReturnsPanel() {
         />
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-        <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-5 lg:flex-row lg:items-center">
-          <div>
+      <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex min-w-0 flex-col justify-between gap-4 border-b border-[#D1D5DB] p-4 sm:p-5 lg:flex-row lg:items-center">
+          <div className="min-w-0">
             <h3 className="font-semibold text-slate-900">
               Sales Return History
             </h3>
@@ -409,13 +437,13 @@ export default function ReturnsPanel() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row lg:w-auto">
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search return, order, item, or customer..."
-              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-80"
+              className="min-h-11 w-full min-w-0 rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-80"
             />
 
             <button
@@ -425,158 +453,245 @@ export default function ReturnsPanel() {
                 setShowForm(true);
               }}
               disabled={availableDetails.length === 0 || loading}
-              className="whitespace-nowrap rounded-lg bg-green-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 w-full shrink-0 whitespace-nowrap rounded-lg bg-green-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               + Create Sales Return
             </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-[#D1D5DB] text-slate-700">
-              <tr>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Return No.
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Order No.
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Customer
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Returned Item
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Return Date
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Quantity
-                </th>
-                <th className="px-5 py-4 text-center font-semibold">
-                  Return Amount
-                </th>
-              </tr>
-            </thead>
+        {loading ? (
+          <div className="px-4 py-12 text-center text-sm text-slate-600">
+            Loading sales returns...
+          </div>
+        ) : paginatedReturns.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-slate-600">
+            No sales returns found.
+          </div>
+        ) : (
+          <>
+            {/* Mobile return cards */}
+            <div className="space-y-3 p-3 md:hidden">
+              {paginatedReturns.map((record) => {
+                const {
+                  relatedOrder,
+                  relatedDetail,
+                  customer,
+                  item,
+                } = getReturnRowDetails(record);
 
-            <tbody className="divide-y divide-[#D1D5DB]">
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-12 text-center text-slate-600"
+                return (
+                  <article
+                    key={record.return_id}
+                    className="min-w-0 rounded-lg border border-[#D1D5DB] bg-white p-4 shadow-sm"
                   >
-                    Loading sales returns...
-                  </td>
-                </tr>
-              ) : paginatedReturns.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-12 text-center text-slate-600"
-                  >
-                    No sales returns found.
-                  </td>
-                </tr>
-              ) : (
-                paginatedReturns.map((record) => {
-                  const related = detailMap.get(record.Order_Detail_ID);
-                  const relatedOrder = related?.order;
-                  const relatedDetail = related?.detail;
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Return No.
+                        </p>
+                        <p className="mt-1 break-words font-bold text-slate-900">
+                          RET-{String(record.return_id).padStart(4, "0")}
+                        </p>
+                      </div>
 
-                  const customer = relatedOrder
-                    ? customerMap.get(relatedOrder.customer_id)
-                    : undefined;
+                      <div className="min-w-0 text-right">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Order No.
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          {relatedOrder
+                            ? `SO-${String(relatedOrder.order_id).padStart(4, "0")}`
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
 
-                  const item = relatedDetail
-                    ? itemMap.get(relatedDetail.IM_ID)
-                    : undefined;
+                    <div className="my-3 border-t border-slate-200" />
 
-                  return (
-                    <tr
-                      key={record.return_id}
-                      className="text-center transition hover:bg-[#DDE1E5]"
-                    >
-                      <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
-                        RET-{String(record.return_id).padStart(4, "0")}
-                      </td>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-xs font-medium text-slate-500">
+                          Customer
+                        </p>
+                        <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                          {customer?.name ?? "Unknown customer"}
+                        </p>
+                      </div>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        {relatedOrder
-                          ? `SO-${String(relatedOrder.order_id).padStart(4, "0")}`
-                          : "—"}
-                      </td>
-
-                      <td className="px-5 py-4 text-slate-700">
-                        {customer?.name ?? "Unknown customer"}
-                      </td>
-
-                      <td className="px-5 py-4 text-slate-700">
-                        <p className="font-medium text-slate-900">
+                      <div>
+                        <p className="text-xs font-medium text-slate-500">
+                          Returned Item
+                        </p>
+                        <p className="mt-1 break-words text-sm font-medium text-slate-900">
                           {item?.Item_Name ??
                             `Item #${relatedDetail?.IM_ID ?? "—"}`}
                         </p>
                         {item?.SKU && (
                           <p className="mt-1 text-xs text-slate-500">
-                            {item.SKU}
+                            SKU: {item.SKU}
                           </p>
                         )}
-                      </td>
+                      </div>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        {formatDate(record.return_date)}
-                      </td>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs font-medium text-slate-500">
+                            Return Date
+                          </p>
+                          <p className="mt-1 text-sm text-slate-800">
+                            {formatDate(record.return_date)}
+                          </p>
+                        </div>
 
-                      <td className="px-5 py-4 text-center font-medium text-slate-700">
-                        {record.quantity}
-                      </td>
+                        <div>
+                          <p className="text-xs font-medium text-slate-500">
+                            Quantity
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-800">
+                            {record.quantity}
+                          </p>
+                        </div>
+                      </div>
 
-                      <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-900">
-                        {money(record.return_amount ?? 0)}
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      <div className="border-t border-slate-200 pt-3">
+                        <p className="text-xs font-medium text-slate-500">
+                          Return Amount
+                        </p>
+                        <p className="mt-1 text-base font-bold text-slate-900">
+                          {money(record.return_amount ?? 0)}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
 
-        <div className="flex flex-col justify-between gap-3 border-t border-[#D1D5DB] px-5 py-4 sm:flex-row sm:items-center">
-          <p className="text-sm text-slate-600">
+            {/* Desktop return table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[900px] text-left text-sm">
+                <thead className="bg-[#D1D5DB] text-slate-700">
+                  <tr>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Return No.
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Order No.
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Customer
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Returned Item
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Return Date
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Quantity
+                    </th>
+                    <th className="px-5 py-4 text-center font-semibold">
+                      Return Amount
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-[#D1D5DB]">
+                  {paginatedReturns.map((record) => {
+                    const {
+                      relatedOrder,
+                      relatedDetail,
+                      customer,
+                      item,
+                    } = getReturnRowDetails(record);
+
+                    return (
+                      <tr
+                        key={record.return_id}
+                        className="text-center transition hover:bg-[#DDE1E5]"
+                      >
+                        <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
+                          RET-{String(record.return_id).padStart(4, "0")}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                          {relatedOrder
+                            ? `SO-${String(relatedOrder.order_id).padStart(4, "0")}`
+                            : "—"}
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-700">
+                          {customer?.name ?? "Unknown customer"}
+                        </td>
+
+                        <td className="px-5 py-4 text-slate-700">
+                          <p className="font-medium text-slate-900">
+                            {item?.Item_Name ??
+                              `Item #${relatedDetail?.IM_ID ?? "—"}`}
+                          </p>
+                          {item?.SKU && (
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.SKU}
+                            </p>
+                          )}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                          {formatDate(record.return_date)}
+                        </td>
+
+                        <td className="px-5 py-4 text-center font-medium text-slate-700">
+                          {record.quantity}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-right font-semibold text-slate-900">
+                          {money(record.return_amount ?? 0)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* Pagination */}
+        <div className="flex min-w-0 flex-col justify-between gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:px-5 md:flex-row md:items-center">
+          <p className="text-center text-sm text-slate-600 md:text-left">
             Showing{" "}
-            {filteredReturns.length === 0
-              ? 0
-              : (currentPage - 1) * PAGE_SIZE + 1}
+            {filteredReturns.length === 0 ? 0 : startIndex + 1}
             {" "}to{" "}
-            {Math.min(currentPage * PAGE_SIZE, filteredReturns.length)}
+            {Math.min(startIndex + PAGE_SIZE, filteredReturns.length)}
             {" "}of {filteredReturns.length} returns
           </p>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
             <button
               type="button"
               onClick={() =>
                 setCurrentPage((page) => Math.max(1, page - 1))
               }
-              disabled={currentPage === 1}
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safeCurrentPage === 1}
+              className="min-h-10 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
-            <span className="px-2 text-sm font-medium text-slate-700">
-              Page {currentPage} of {totalPages}
+            <span className="whitespace-nowrap px-2 text-sm font-medium text-slate-700">
+              Page {safeCurrentPage} of {totalPages}
             </span>
 
             <button
               type="button"
               onClick={() =>
-                setCurrentPage((page) => Math.min(totalPages, page + 1))
+                setCurrentPage((page) =>
+                  Math.min(totalPages, page + 1)
+                )
               }
-              disabled={currentPage >= totalPages}
-              className="rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safeCurrentPage >= totalPages}
+              className="min-h-10 rounded-lg border border-[#D1D5DB] bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-[#DDE1E5] disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -584,12 +699,13 @@ export default function ReturnsPanel() {
         </div>
       </section>
 
+      {/* Create Sales Return Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4">
-          <div className="my-auto w-full max-w-lg rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-2xl">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-950/50 p-0 sm:items-center sm:p-4">
+          <div className="my-auto max-h-[95dvh] w-full overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-2xl sm:max-h-[90dvh] sm:max-w-lg sm:rounded-xl sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-4 sm:mb-6">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
                   Create Sales Return
                 </h2>
                 <p className="mt-1 text-sm text-slate-600">
@@ -601,7 +717,7 @@ export default function ReturnsPanel() {
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className="rounded-lg px-2 py-1 text-slate-500 hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-40"
+                className="shrink-0 rounded-lg px-2 py-1 text-slate-500 hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-40"
                 aria-label="Close form"
               >
                 ✕
@@ -621,7 +737,7 @@ export default function ReturnsPanel() {
                     setQuantity("1");
                     setReturnAmount("");
                   }}
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
                   <option value="">Select order item</option>
 
@@ -650,7 +766,7 @@ export default function ReturnsPanel() {
                     Selected Item
                   </p>
 
-                  <p className="mt-1 font-semibold text-slate-900">
+                  <p className="mt-1 break-words font-semibold text-slate-900">
                     {itemMap.get(selectedDetail.IM_ID)?.Item_Name ??
                       `Item #${selectedDetail.IM_ID}`}
                   </p>
@@ -671,7 +787,7 @@ export default function ReturnsPanel() {
                     </div>
                   </div>
 
-                  <p className="mt-3 text-sm text-slate-600">
+                  <p className="mt-3 break-words text-sm text-slate-600">
                     Invoice: SI-
                     {String(selectedInvoice?.invoice_id ?? "").padStart(4, "0")}
                   </p>
@@ -690,7 +806,7 @@ export default function ReturnsPanel() {
                   step="1"
                   value={quantity}
                   onChange={(event) => setQuantity(event.target.value)}
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="min-h-11 w-full rounded-lg border border-[#D1D5D1] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
@@ -703,7 +819,7 @@ export default function ReturnsPanel() {
                   type="date"
                   value={returnDate}
                   onChange={(event) => setReturnDate(event.target.value)}
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="min-h-11 w-full rounded-lg border border-[#D1D5D1] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
@@ -717,7 +833,7 @@ export default function ReturnsPanel() {
                   onChange={(event) => setReason(event.target.value)}
                   rows={3}
                   placeholder="Enter the reason for returning the item..."
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="w-full resize-y rounded-lg border border-[#D1D5D1] bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
 
@@ -733,7 +849,7 @@ export default function ReturnsPanel() {
                   value={returnAmount}
                   onChange={(event) => setReturnAmount(event.target.value)}
                   placeholder="Leave blank for automatic calculation"
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="min-h-11 w-full rounded-lg border border-[#D1D5D1] bg-white px-4 py-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
 
                 <p className="mt-2 text-xs text-slate-600">
@@ -747,7 +863,7 @@ export default function ReturnsPanel() {
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-lg border border-[#D1D5D1] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-[#D1D5DB] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-[#DDE1E5] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -756,7 +872,7 @@ export default function ReturnsPanel() {
                   type="button"
                   onClick={() => void handleCreateReturn()}
                   disabled={saving || availableDetails.length === 0}
-                  className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Create Return"}
                 </button>

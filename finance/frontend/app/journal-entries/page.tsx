@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./journal-entries.css";
 
+// Individual debit/credit line inside a journal entry
 interface JournalLine {
   lineID?: number;
   accountID?: number | string;
@@ -12,6 +13,7 @@ interface JournalLine {
   credit: number | string;
 }
 
+// Journal entry header returned from backend API
 interface JournalEntry {
   id?: string | number;
   journalID?: string | number;
@@ -27,21 +29,23 @@ interface JournalEntry {
 }
 
 export default function JournalEntries() {
+  // Core directory & filter states
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [coaAccounts, setCoaAccounts] = useState<any[]>([]);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
   const [currentPeriod, setCurrentPeriod] = useState<{
     month: number;
     year: number;
   } | null>(null);
 
-  // View Entry Details Modal
+  // View Entry Details modal state
   const [viewingEntry, setViewingEntry] = useState<any | null>(null);
 
-  // New Journal Entry Modal
+  // New Manual Journal Entry modal states
   const [showNewModal, setShowNewModal] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newRef, setNewRef] = useState("");
@@ -52,6 +56,15 @@ export default function JournalEntries() {
   ]);
   const [submitting, setSubmitting] = useState(false);
 
+ 
+
+
+
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+  // Load journal entries and Chart of Accounts options from FastAPI backend
   async function fetchAll() {
     setLoading(true);
     setError(null);
@@ -61,13 +74,13 @@ export default function JournalEntries() {
         // Backend File: finance/backend/routers/journal.py -> get_journal_entries()
         // Database Tables: Reads "JournalEntry" joined with "JournalEntryLine" and "ChartOfAccounts"
         // Purpose: Loads all posted journal entries, debit/credit totals, and line details
-        fetch("http://127.0.0.1:8000/api/journal"),
+        fetch(`${API_URL}/api/journal`),
 
         // FETCH 2: GET http://127.0.0
         // Backend File: finance/backend/routers/coa.py -> get_accounts()
         // Database Table: Reads "ChartOfAccounts"
         // Purpose: Populates account dropdowns inside the New Journal Entry modal
-        fetch("http://127.0.0.1:8000/api/coa"),
+        fetch(`${API_URL}/api/journal`),
       ]);
 
       if (!jRes.ok) throw new Error(`Server error: ${jRes.status}`);
@@ -85,6 +98,7 @@ export default function JournalEntries() {
     }
   }
 
+  // Initialize current period and default modal date on mount
   useEffect(() => {
     const now = new Date();
     setCurrentPeriod({ month: now.getMonth(), year: now.getFullYear() });
@@ -92,12 +106,17 @@ export default function JournalEntries() {
     fetchAll();
   }, []);
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("en-US", {
+  // Format numeric currency values
+    const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(amount || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(val || 0));
 
+
+  // Format ISO dates into readable short labels
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -107,7 +126,24 @@ export default function JournalEntries() {
     });
   };
 
-  // Normalize PostgreSQL & API fields
+  // Condenses long auto-generated descriptions into concise identifiers for the table
+const formatShortDescription = (rawDesc: string) => {
+  if (!rawDesc) return "-";
+  // Strip verbose "— Net Sales: ..., Output VAT: ..." tail on AR Collections
+      let short = rawDesc.split("—")[0].trim();
+
+  // Strip "(BDO Corporate Checking -> BPI Payroll)" transfer note
+  short = short.replace(/\s*\(BDO Corporate Checking\s*->\s*BPI Payroll\)/i, "");
+  // Shorten common verbose prefixes
+  short = short
+    .replace(/^Supplier payment for /i, "")
+    .replace(/^Customer collection for /i, "")
+    .replace(/^Approved Production Batch /i, "Production Batch ")
+    .replace(/^Operating Expense /i, "Expense ");
+  return short;
+};
+
+  // Normalize PostgreSQL fields and compute debit/credit totals per entry
   const normalizedEntries = useMemo(() => {
     return entries.map((entry, idx) => {
       const rawId = entry.journalID ?? entry.id ?? idx + 1;
@@ -148,25 +184,38 @@ export default function JournalEntries() {
     });
   }, [entries]);
 
+  // Extract unique source modules for the Source dropdown filter
   const availableSources = useMemo(
     () => Array.from(new Set(normalizedEntries.map((e) => e.sourceLabel))),
     [normalizedEntries]
   );
 
+    // Filter journal entries by source & search text (newest first)
   const filteredEntries = useMemo(() => {
-    return normalizedEntries.filter((entry) => {
+    const q = search.toLowerCase();
+    const filtered = normalizedEntries.filter((entry) => {
       if (sourceFilter !== "ALL" && entry.sourceLabel !== sourceFilter) {
         return false;
       }
-      const q = search.toLowerCase();
       return (
         entry.entryCode.toLowerCase().includes(q) ||
         (entry.description || "").toLowerCase().includes(q) ||
         entry.sourceLabel.toLowerCase().includes(q)
       );
     });
+
+    return [...filtered].sort((a, b) => {
+      const timeA = a.journalDate ? new Date(a.journalDate).getTime() : 0;
+      const timeB = b.journalDate ? new Date(b.journalDate).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      return Number(b.normalizedId || 0) - Number(a.normalizedId || 0);
+    });
   }, [normalizedEntries, search, sourceFilter]);
 
+
+
+
+    // Summary card counts
   const entriesThisMonth = currentPeriod
     ? normalizedEntries.filter((e) => {
         const d = new Date(e.journalDate);
@@ -187,7 +236,7 @@ export default function JournalEntries() {
     (e) => e.statusLabel.toLowerCase() === "draft"
   ).length;
 
-  // New Entry Line Helpers
+  // Live debit/credit balance validation inside New Entry modal
   const modalDebitTotal = newLines.reduce(
     (sum, l) => sum + Number(l.debit || 0),
     0
@@ -199,21 +248,25 @@ export default function JournalEntries() {
   const isModalBalanced =
     modalDebitTotal > 0 && Math.abs(modalDebitTotal - modalCreditTotal) < 0.01;
 
+  // Update a specific field on a manual journal line
   function updateLine(index: number, field: keyof JournalLine, value: string) {
     setNewLines((prev) =>
       prev.map((line, i) => (i === index ? { ...line, [field]: value } : line))
     );
   }
 
+  // Add another debit/credit row to the modal
   function addLine() {
     setNewLines((prev) => [...prev, { accountID: "", debit: "", credit: "" }]);
   }
 
+  // Remove an extra debit/credit row (minimum 2 lines required)
   function removeLine(index: number) {
     if (newLines.length <= 2) return;
     setNewLines((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Validate and submit a new balanced manual journal entry
   async function handleCreateEntry(e: React.FormEvent) {
     e.preventDefault();
     if (!newDate || !newDesc.trim()) {
@@ -248,7 +301,7 @@ export default function JournalEntries() {
       // Backend File: finance/backend/routers/journal.py -> create_journal_entry()
       // Database Tables: Inserts balanced entry into "JournalEntry", "JournalEntryLine", and "GeneralLedger"
       // Purpose: Posts a new manual journal entry to the accounting ledger
-      const res = await fetch("http://127.0.0.1:8000/api/journal", {
+      const res = await fetch(`${API_URL}/api/journal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -285,37 +338,25 @@ export default function JournalEntries() {
 
     return (
     <div className="journal-page">
+      {/* Fixed Aligned Page Header */}
       <div className="page-header">
-        <div>
-          <h1>Journal Entries</h1>
-          <p>Review, approve and post balanced entries.</p>
-        </div>
+        <h1>Journal Entries</h1>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            type="button"
-            onClick={fetchAll}
-            style={{
-              padding: "0.55rem 1rem",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              backgroundColor: "#ffffff",
-              cursor: "pointer",
-            }}
-          >
+        <div className="header-actions">
+          <button type="button" className="refresh-btn" onClick={fetchAll}>
             Refresh
           </button>
           <button
             type="button"
             className="new-entry-btn"
             onClick={() => setShowNewModal(true)}
-            style={{ cursor: "pointer" }}
           >
             New Entry
           </button>
         </div>
       </div>
 
+      {/* Summary KPI Cards */}
       <div className="stats-grid">
         <div className="stat-card">
           <h3>Entries this month</h3>
@@ -338,36 +379,44 @@ export default function JournalEntries() {
         </div>
       </div>
 
+      {/* Search Bar & Interactive Source Dropdown Filter */}
+             {/* Search Bar & Entry Source Dropdown */}
       <div className="toolbar">
         <input
+          className="toolbar-search"
           placeholder="Search entry code, description, or source..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <button
-          type="button"
-          onClick={() => {
-            if (availableSources.length === 0) return;
-            const order = ["ALL", ...availableSources];
-            const nextIdx = (order.indexOf(sourceFilter) + 1) % order.length;
-            setSourceFilter(order[nextIdx]);
-          }}
+
+        <select
+          className="source-select"
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          aria-label="Filter by entry source"
         >
-          {sourceFilter === "ALL" ? "All Sources" : `Source: ${sourceFilter}`}
-        </button>
+          <option value="ALL">All Sources</option>
+          {availableSources.map((src) => (
+            <option key={src} value={src}>
+              {src}
+            </option>
+          ))}
+        </select>
       </div>
 
+
+      {/* Entry Register Table (Left-aligned section header, centered columns) */}
       <div className="table-container">
         <div className="table-header">
           <h2>Entry Register</h2>
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading journal entries...</p>
+          <p className="table-state-msg">Loading journal entries...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+          <p className="table-state-msg error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="journal-table">
             <thead>
               <tr>
                 <th>Entry</th>
@@ -383,9 +432,7 @@ export default function JournalEntries() {
             <tbody>
               {filteredEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
-                    No journal entries found.
-                  </td>
+                  <td colSpan={7}>No journal entries found.</td>
                 </tr>
               ) : (
                 filteredEntries.map((entry) => (
@@ -394,9 +441,9 @@ export default function JournalEntries() {
                       <strong>{entry.entryCode}</strong>
                     </td>
                     <td>{formatDate(entry.journalDate)}</td>
-                    <td>{entry.description}</td>
+                    {/* ⬇️ REPLACE <td>{entry.description}</td> WITH THIS LINE (around line 405) ⬇️ */}
+                    <td>{formatShortDescription(entry.description)}</td>
                     <td>{formatCurrency(entry.totalDebit)}</td>
-                    <td>{formatCurrency(entry.totalCredit)}</td>
                     <td>
                       <span
                         className={`status ${entry.statusLabel.toLowerCase()}`}
@@ -409,7 +456,6 @@ export default function JournalEntries() {
                         type="button"
                         className="view-btn"
                         onClick={() => setViewingEntry(entry)}
-                        style={{ cursor: "pointer" }}
                       >
                         View Entry
                       </button>
@@ -422,45 +468,20 @@ export default function JournalEntries() {
         )}
       </div>
 
-      {/* 1. View Journal Entry Modal */}
+      {/* 1. View Journal Entry Details Modal */}
       {viewingEntry && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "560px",
-              maxHeight: "82vh",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>
+        <div className="je-modal-overlay">
+          <div className="je-view-modal">
+            <h3>
               {viewingEntry.entryCode} — {viewingEntry.sourceLabel}
             </h3>
-            <p style={{ margin: 0, color: "#4b5563", fontSize: "0.9rem" }}>
+            <p className="je-meta-text">
               <strong>Date:</strong> {formatDate(viewingEntry.journalDate)} ·{" "}
               <strong>Status:</strong> {viewingEntry.statusLabel}
             </p>
-            <p style={{ margin: 0, fontWeight: 500 }}>
-              {viewingEntry.description}
-            </p>
+            <p className="je-desc-text">{viewingEntry.description}</p>
 
-            <table style={{ marginTop: "0.5rem" }}>
+            <table className="je-lines-preview-table">
               <thead>
                 <tr>
                   <th>Account</th>
@@ -471,7 +492,7 @@ export default function JournalEntries() {
               <tbody>
                 {viewingEntry.lines.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={{ textAlign: "center", padding: "0.75rem" }}>
+                    <td colSpan={3}>
                       No individual line items returned from backend.
                     </td>
                   </tr>
@@ -495,7 +516,7 @@ export default function JournalEntries() {
                     </tr>
                   ))
                 )}
-                <tr style={{ fontWeight: 700, borderTop: "2px solid #e5e7eb" }}>
+                <tr className="je-total-row">
                   <td>Total</td>
                   <td>{formatCurrency(viewingEntry.totalDebit)}</td>
                   <td>{formatCurrency(viewingEntry.totalCredit)}</td>
@@ -503,23 +524,11 @@ export default function JournalEntries() {
               </tbody>
             </table>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="je-modal-footer">
               <button
                 type="button"
+                className="je-cancel-btn"
                 onClick={() => setViewingEntry(null)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  border: "1px solid #d1d5db",
-                  backgroundColor: "#f9fafb",
-                  cursor: "pointer",
-                }}
               >
                 Close
               </button>
@@ -528,142 +537,113 @@ export default function JournalEntries() {
         </div>
       )}
 
-
-      {/* 2. New Journal Entry Modal */}
+      {/* 2. Expanded No-Scroll New Manual Journal Entry Modal */}
       {showNewModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleCreateEntry}
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "620px",
-              maxHeight: "88vh",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.85rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>New Manual Journal Entry</h3>
+        <div className="je-modal-overlay">
+          <form className="je-new-modal" onSubmit={handleCreateEntry}>
+            <h3>New Manual Journal Entry</h3>
 
-            <div style={{ display: "flex", gap: "0.75rem" }}>
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+            <div className="je-form-grid">
+              <div className="je-field-group">
                 <label>Date *</label>
                 <input
                   type="date"
                   required
+                  className="je-input"
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
                 />
               </div>
 
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+              <div className="je-field-group">
                 <label>Reference No.</label>
                 <input
                   type="text"
+                  className="je-input"
                   placeholder={`e.g. JE-${String(entries.length + 1).padStart(4, "0")}`}
                   value={newRef}
                   onChange={(e) => setNewRef(e.target.value)}
-                  style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
+                />
+              </div>
+
+              <div className="je-field-group">
+                <label>Description *</label>
+                <input
+                  type="text"
+                  required
+                  className="je-input"
+                  placeholder="e.g. Initial Owner Capital Investment"
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
                 />
               </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-              <label>Description *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Initial Owner Capital Investment"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
-              />
-            </div>
-
-            {/* Debit / Credit Lines */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {/* Debit & Credit Account Lines */}
+            <div className="je-lines-box">
+              <div className="je-lines-header">
                 <strong>Journal Lines (Debits must equal Credits)</strong>
                 <button
                   type="button"
+                  className="je-add-line-btn"
                   onClick={addLine}
-                  style={{
-                    padding: "0.3rem 0.7rem",
-                    borderRadius: "6px",
-                    border: "1px solid #2563eb",
-                    backgroundColor: "#eff6ff",
-                    color: "#1d4ed8",
-                    cursor: "pointer",
-                    fontSize: "0.82rem",
-                  }}
                 >
                   + Add Line
                 </button>
               </div>
 
               {newLines.map((line, idx) => (
-                <div key={idx} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <div key={idx} className="je-line-row">
                   <select
                     required
+                    className="je-select"
                     value={line.accountID}
-                    onChange={(e) => updateLine(idx, "accountID", e.target.value)}
-                    style={{ flex: 2, padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
+                    onChange={(e) =>
+                      updateLine(idx, "accountID", e.target.value)
+                    }
                   >
                     <option value="">-- Select Account --</option>
-                    {coaAccounts.map((acc) => (
-                      <option key={acc.accountID} value={acc.accountID}>
-                        {acc.accountCode} - {acc.accountName}
-                      </option>
-                    ))}
+                    {Array.from(
+                      new Map(
+                        coaAccounts.map((acc) => [String(acc.accountID ?? acc.accountCode), acc])
+                      ).values()
+                    ).map((acc, aIdx) => {
+                      const val = String(acc.accountID ?? acc.accountCode);
+                      return (
+                        <option key={`${val}-${aIdx}`} value={val}>
+                          {acc.accountCode} - {acc.accountName}
+                        </option>
+                      );
+                    })}
+
                   </select>
 
                   <input
                     type="number"
                     step="0.01"
                     min="0"
+                    className="je-input"
                     placeholder="Debit"
                     value={line.debit}
                     onChange={(e) => updateLine(idx, "debit", e.target.value)}
-                    style={{ flex: 1, padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
                   />
 
                   <input
                     type="number"
                     step="0.01"
                     min="0"
+                    className="je-input"
                     placeholder="Credit"
                     value={line.credit}
                     onChange={(e) => updateLine(idx, "credit", e.target.value)}
-                    style={{ flex: 1, padding: "0.5rem", borderRadius: "6px", border: "1px solid #ccc" }}
                   />
 
                   {newLines.length > 2 && (
                     <button
                       type="button"
+                      className="je-remove-line-btn"
                       onClick={() => removeLine(idx)}
-                      style={{
-                        padding: "0.45rem 0.65rem",
-                        borderRadius: "6px",
-                        border: "1px solid #fecaca",
-                        backgroundColor: "#fef2f2",
-                        color: "#dc2626",
-                        cursor: "pointer",
-                      }}
+                      title="Remove line"
                     >
                       ✕
                     </button>
@@ -672,18 +652,11 @@ export default function JournalEntries() {
               ))}
             </div>
 
-            {/* Balance Status Bar */}
+            {/* Live Balance Status Strip */}
             <div
-              style={{
-                padding: "0.65rem 0.85rem",
-                borderRadius: "6px",
-                backgroundColor: isModalBalanced ? "#ecfdf5" : "#fef2f2",
-                color: isModalBalanced ? "#065f46" : "#991b1b",
-                fontSize: "0.88rem",
-                display: "flex",
-                justifyContent: "space-between",
-                fontWeight: 600,
-              }}
+              className={`je-balance-bar ${
+                isModalBalanced ? "balanced" : "unbalanced"
+              }`}
             >
               <span>Total Debit: {formatCurrency(modalDebitTotal)}</span>
               <span>Total Credit: {formatCurrency(modalCreditTotal)}</span>
@@ -692,23 +665,11 @@ export default function JournalEntries() {
               </span>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="je-modal-footer">
               <button
                 type="button"
+                className="je-cancel-btn"
                 onClick={() => setShowNewModal(false)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                  cursor: "pointer",
-                }}
               >
                 Cancel
               </button>
@@ -716,10 +677,6 @@ export default function JournalEntries() {
                 type="submit"
                 className="new-entry-btn"
                 disabled={submitting || !isModalBalanced}
-                style={{
-                  opacity: submitting || !isModalBalanced ? 0.6 : 1,
-                  cursor: submitting || !isModalBalanced ? "not-allowed" : "pointer",
-                }}
               >
                 {submitting ? "Posting..." : "Post Journal Entry"}
               </button>

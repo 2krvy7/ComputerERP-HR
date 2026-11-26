@@ -47,6 +47,11 @@ export default function ARAgingPage() {
   const [selectedCustomer, setSelectedCustomer] = useState("ALL");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchARAging() {
     setLoading(true);
     setError(null);
@@ -54,7 +59,7 @@ export default function ARAgingPage() {
       // FETCH: GET http://127.0.0
       // Backend File: finance/backend/routers/reports.py -> ar_aging()
       // Database Tables: Reads unpaid "ARInvoice" rows joined with Team 4 "Customer" and ages by CURRENT_DATE - dueDate
-      const res = await fetch("http://127.0.0.1:8000/api/reports/ar-aging");
+      const res = await fetch(`${API_URL}/api/reports/ar-aging`);
       if (!res.ok) throw new Error(`AR Aging API error: ${res.status}`);
       const data = await res.json();
       setItems(Array.isArray(data.items) ? data.items : []);
@@ -78,10 +83,12 @@ export default function ARAgingPage() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
@@ -224,32 +231,7 @@ export default function ARAgingPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters">
-        <button onClick={fetchARAging}>
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button>Age by due date</button>
-        <select
-          value={selectedCustomer}
-          onChange={(e) => setSelectedCustomer(e.target.value)}
-          style={{
-            padding: "0.45rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            background: "#fff",
-          }}
-        >
-          <option value="ALL">All customers ({customerRows.length})</option>
-          {customerRows.map((r) => (
-            <option key={r.customer} value={r.customer}>
-              {r.customer}
-            </option>
-          ))}
-        </select>
-        <button>USD</button>
-      </div>
-
+      
       {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card">

@@ -20,8 +20,17 @@ type Invoice = {
   dueDate: string | null;
 };
 
+<<<<<<< HEAD
+<<<<<<< HEAD
+const FILTERS = ["All", "Awaiting Finance", "Outstanding", "Paid"] as const;
+=======
 const PAGE_SIZE = 10;
 const FILTERS = ["All", "Outstanding", "Paid"] as const;
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+const PAGE_SIZE = 10;
+const FILTERS = ["All", "Outstanding", "Paid"] as const;
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
 const money = (n: number | null) =>
   n === null || n === undefined
@@ -75,6 +84,12 @@ export default function InvoiceList({ limit }: { limit?: number }) {
       i.Item_Name.toLowerCase().includes(text);
     return matchesFilter && matchesSearch;
   });
+<<<<<<< HEAD
+<<<<<<< HEAD
+  const shown = limit ? filtered.slice(0, limit) : filtered;
+=======
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
   const shown = limit ? filtered.slice(0, limit) : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function handlePrint() {
@@ -103,6 +118,10 @@ export default function InvoiceList({ limit }: { limit?: number }) {
     const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     if (page > pages) setPage(pages);
   }, [filtered.length, page]);
+<<<<<<< HEAD
+>>>>>>> 14311e6ed9671185fbb4e8f0b1abb6da0fd67c1d
+=======
+>>>>>>> 42daefcabcdee6fab2820c7f25aa9d12f557d7ca
 
   const note = (t: string) => (
     <p style={{ padding: "2vw", textAlign: "center", color: "#888", fontSize: "0.85vw", margin: 0 }}>

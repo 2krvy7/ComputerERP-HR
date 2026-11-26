@@ -47,6 +47,11 @@ export default function APAgingPage() {
   const [selectedSupplier, setSelectedSupplier] = useState("ALL");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchAPAging() {
     setLoading(true);
     setError(null);
@@ -54,7 +59,7 @@ export default function APAgingPage() {
       // FETCH: GET http://127.0.0
       // Backend File: finance/backend/routers/reports.py -> ap_aging()
       // Database Tables: Reads unpaid "APInvoice" rows joined with Team 1 "Supplier" and ages by CURRENT_DATE - dueDate
-      const res = await fetch("http://127.0.0.1:8000/api/reports/ap-aging");
+      const res = await fetch(`${API_URL}/api/reports/ap-aging`);
       if (!res.ok) throw new Error(`AP Aging API error: ${res.status}`);
       const data = await res.json();
       setItems(Array.isArray(data.items) ? data.items : []);
@@ -78,10 +83,12 @@ export default function APAgingPage() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
@@ -213,31 +220,7 @@ export default function APAgingPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters">
-        <button onClick={fetchAPAging}>
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button>Age by due date</button>
-        <select
-          value={selectedSupplier}
-          onChange={(e) => setSelectedSupplier(e.target.value)}
-          style={{
-            padding: "0.45rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            background: "#fff",
-          }}
-        >
-          <option value="ALL">All suppliers ({supplierRows.length})</option>
-          {supplierRows.map((r) => (
-            <option key={r.supplier} value={r.supplier}>
-              {r.supplier}
-            </option>
-          ))}
-        </select>
-        <button>USD</button>
-      </div>
+      
 
       {/* Summary Cards */}
       <div className="summary-grid">

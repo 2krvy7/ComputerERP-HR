@@ -24,11 +24,16 @@ export default function CashFlowStatement() {
   >("This month");
   const [todayLabel, setTodayLabel] = useState("");
 
+  const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/$/, "");
+
+
   async function fetchCashFlow() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/reports/cash-flow/");
+      const res = await fetch(`${API_URL}/api/reports/cash-flow/`);
       if (!res.ok) throw new Error(`Cash Flow API error: ${res.status}`);
       const json = await res.json();
       setData({
@@ -56,10 +61,12 @@ export default function CashFlowStatement() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatSignedCurrency = (val: number) => {
     const num = Number(val || 0);
@@ -146,32 +153,7 @@ export default function CashFlowStatement() {
         </div>
       </div>
 
-      {/* Period Selector */}
-      <div className="tabs">
-        {(["This month", "This quarter", "This year", "Custom"] as const).map(
-          (tab) => (
-            <button
-              key={tab}
-              className={activePeriod === tab ? "active" : ""}
-              onClick={() => setActivePeriod(tab)}
-            >
-              {tab}
-            </button>
-          )
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="filters">
-        <button className="btn-light">
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button className="btn-light">Direct Method</button>
-        <button className="btn-light">Period: {activePeriod}</button>
-        <button className="btn-light push-right" onClick={fetchCashFlow}>
-          Update Report
-        </button>
-      </div>
+      
 
       {/* Summary Cards */}
       <div className="summary-grid">

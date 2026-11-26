@@ -19,6 +19,27 @@ DeliveryStatus = Literal[
 ]
 
 
+def normalize_delivery_status(value):
+    if not isinstance(value, str):
+        return value
+
+    normalized = value.strip().lower()
+
+    status_mapping = {
+        "pending": "Pending",
+        "preparing": "Preparing",
+        "released": "Released",
+        "shipped": "Released",
+        "released by inventory": "Released",
+        "released to sales": "Released",
+        "delivered": "Delivered",
+        "cancelled": "Cancelled",
+        "canceled": "Cancelled",
+    }
+
+    return status_mapping.get(normalized, value)
+
+
 class DeliveryCreate(BaseModel):
     order_id: int = Field(gt=0)
     WH_ID: int = Field(gt=0)
@@ -39,10 +60,12 @@ class DeliveryResponse(BaseModel):
     @field_validator("status", mode="before")
     @classmethod
     def convert_legacy_status(cls, value):
-        if value in ("Shipped", "Released by Inventory"):
-            return "Released"
+        return normalize_delivery_status(value)
 
-        return value
+    @field_validator("delivery_address", mode="before")
+    @classmethod
+    def normalize_delivery_address(cls, value):
+        return value or ""
 
 
 class DeliveryStatusUpdate(BaseModel):

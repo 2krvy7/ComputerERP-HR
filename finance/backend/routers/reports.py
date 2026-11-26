@@ -26,7 +26,7 @@ def get_exact_table_name(cur, table_name: str) -> str | None:
     return row["table_name"] if row else None
 
 def fetch_account_balances(cur) -> list[dict]:
-    """Aggregates GeneralLedger debit and credit totals per ChartOfAccounts entry."""
+    """Aggregates GeneralLedger debit and credit totals per ChartOfAccounts entry, syncing real unpaid AR."""
     coa_table = get_exact_table_name(cur, "ChartOfAccounts")
     if not coa_table:
         return []
@@ -37,6 +37,24 @@ def fetch_account_balances(cur) -> list[dict]:
     c_name = c_cols.get("accountname", "accountName")
     c_type = c_cols.get("accounttype", "accountType")
 
+    # Calculate true unpaid Accounts Receivable from ARInvoice (excluding seed row 1 and Paid rows)
+    true_unpaid_ar = 0.0
+    ar_table = get_exact_table_name(cur, "ARInvoice")
+    if ar_table:
+        a_cols = get_exact_cols(cur, ar_table)
+        a_pk = a_cols.get("arinvoiceid", "arInvoiceID")
+        a_amt = a_cols.get("amount", "amount")
+        a_rem = a_cols.get("remainingbalance", "remainingBalance")
+        a_stat = a_cols.get("status", "status")
+        cur.execute(f"""
+            SELECT COALESCE(SUM(COALESCE("{a_rem}", "{a_amt}")), 0) AS unpaid_ar
+            FROM "{ar_table}"
+            WHERE "{a_pk}" != 1
+              AND COALESCE("{a_rem}", "{a_amt}") > 0
+              AND LOWER(COALESCE("{a_stat}", 'open')) != 'paid'
+        """)
+        true_unpaid_ar = float(cur.fetchone()["unpaid_ar"] or 0)
+
     gl_table = get_exact_table_name(cur, "GeneralLedger")
     if not gl_table:
         cur.execute(f"""
@@ -44,21 +62,26 @@ def fetch_account_balances(cur) -> list[dict]:
                 "{c_id}" AS "accountID",
                 "{c_code}" AS "accountCode",
                 "{c_name}" AS "accountName",
-                "{c_type}" AS "accountType",
-                0.0 AS "totalDebit",
-                0.0 AS "totalCredit"
+                "{c_type}" AS "accountType"
             FROM "{coa_table}"
             ORDER BY "{c_code}" ASC
         """)
-        return [
-            {
-                **r,
-                "totalDebit": 0.0,
+        results = []
+        for r in cur.fetchall():
+            code_str = str(r["accountCode"] or "")
+            name_low = str(r["accountName"] or "").lower()
+            is_ar = code_str == "1100" or "receivable" in name_low
+            deb = true_unpaid_ar if is_ar else 0.0
+            results.append({
+                "accountID": r["accountID"],
+                "accountCode": r["accountCode"],
+                "accountName": r["accountName"],
+                "accountType": (r["accountType"] or "").strip(),
+                "totalDebit": deb,
                 "totalCredit": 0.0,
-                "netBalance": 0.0,
-            }
-            for r in cur.fetchall()
-        ]
+                "netBalance": deb,
+            })
+        return results
 
     g_cols = get_exact_cols(cur, gl_table)
     g_acc = g_cols.get("accountid", "accountID")
@@ -82,11 +105,20 @@ def fetch_account_balances(cur) -> list[dict]:
 
     results = []
     for r in rows:
-        debit = float(r["totalDebit"] or 0)
-        credit = float(r["totalCredit"] or 0)
+        code_str = str(r["accountCode"] or "")
+        name_low = str(r["accountName"] or "").lower()
         acc_type = (r["accountType"] or "").strip()
-        is_debit_normal = acc_type.lower() in ("asset", "expense")
-        net_balance = (debit - credit) if is_debit_normal else (credit - debit)
+
+        # Override Accounts Receivable with true unpaid ARInvoice balance so collected invoices show $0.00
+        if code_str == "1100" or "receivable" in name_low:
+            debit = true_unpaid_ar
+            credit = 0.0
+            net_balance = true_unpaid_ar
+        else:
+            debit = float(r["totalDebit"] or 0)
+            credit = float(r["totalCredit"] or 0)
+            is_debit_normal = acc_type.lower() in ("asset", "expense")
+            net_balance = (debit - credit) if is_debit_normal else (credit - debit)
 
         results.append({
             "accountID": r["accountID"],
@@ -117,6 +149,7 @@ def trial_balance():
             }
     finally:
         conn.close()
+
 
 @router.get("/income-statement")
 def income_statement():
@@ -195,7 +228,20 @@ def cash_flow():
                 p_cols = get_exact_cols(cur, pay_table)
                 amt_col = p_cols.get("amount", "amount")
                 cur.execute(f'SELECT COALESCE(SUM("{amt_col}"), 0) AS s FROM "{pay_table}"')
-                outflows = float(cur.fetchone()["s"])
+                outflows += float(cur.fetchone()["s"])
+
+            # Include approved HR Payroll and Direct Operating Expenses from JournalEntry
+            je_table = get_exact_table_name(cur, "JournalEntry")
+            jel_table = get_exact_table_name(cur, "JournalEntryLine")
+            if je_table and jel_table:
+                cur.execute(f"""
+                    SELECT COALESCE(SUM(l."debit"), 0) AS s
+                    FROM "{je_table}" j
+                    JOIN "{jel_table}" l ON j."journalID" = l."journalID"
+                    WHERE j."sourceModule" IN ('Payroll', 'Expenses')
+                      AND COALESCE(l."debit", 0) > 0
+                """)
+                outflows += float(cur.fetchone()["s"] or 0)
 
             net_cash_flow = inflows - outflows
 
@@ -242,18 +288,21 @@ def calculate_aging(cur, invoice_table: str, pk_key: str, party_key: str, party_
                 join_sql = f'LEFT JOIN "{p_t}" p ON i."{party_col}" = p."{p_pk}"'
                 select_party = f'COALESCE(p."{p_name}", CAST(i."{party_col}" AS TEXT)) AS party_name'
 
+    seed_filter = f'AND i."{pk_col}" != 1' if pk_key == "arinvoiceid" else ""
+
     cur.execute(f"""
         SELECT 
             i."{pk_col}" AS id,
             {select_party},
             i."{due_col}" AS due_date,
             COALESCE(i."{rem_col}", i."{amt_col}") AS balance,
-            GREATEST((CURRENT_DATE - CAST(i."{due_col}" AS DATE)), 0) AS days_overdue
+            GREATEST((CURRENT_DATE - COALESCE(CAST(i."{due_col}" AS DATE), CURRENT_DATE)), 0) AS days_overdue
         FROM "{inv_t}" i
         {join_sql}
         WHERE COALESCE(i."{rem_col}", i."{amt_col}") > 0
           AND LOWER(COALESCE(i."{stat_col}", 'open')) != 'paid'
-        ORDER BY i."{due_col}" ASC
+          {seed_filter}
+        ORDER BY i."{due_col}" ASC NULLS LAST
     """)
     rows = cur.fetchall()
 

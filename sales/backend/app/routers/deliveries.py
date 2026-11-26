@@ -1,15 +1,24 @@
 
 from collections import defaultdict
 from datetime import datetime
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.core.roles import ADMIN_ROLE_IDS
-from app.dependencies.auth import get_current_user, require_password_change_completed
+from app.core.roles import (
+    ADMIN_ROLE_ID,
+    ADMIN_ROLE_IDS,
+    STAFF_ROLE_ID,
+    SUPERADMIN_ROLE_ID,
+)
+from app.dependencies.auth import (
+    get_current_user,
+    require_password_change_completed,
+)
 from app.models.user import User
 from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
@@ -47,10 +56,31 @@ SALES_DEPT_ID = "SL"
 
 
 def normalize_status(value: str) -> str:
-    if value in ("Shipped", "Released by Inventory"):
-        return "Released"
+    if not isinstance(value, str):
+        return value
 
-    return value
+    normalized = value.strip().lower()
+
+    legacy_statuses = {
+        "shipped": "Released",
+        "released by inventory": "Released",
+        "released to sales": "Released",
+    }
+
+    return legacy_statuses.get(normalized, value.strip())
+
+
+def is_finished_goods_warehouse(name: str | None) -> bool:
+    normalized = re.sub(
+        r"[^a-z0-9]",
+        "",
+        (name or "").lower(),
+    )
+
+    return normalized in {
+        "warehouseafinishedgoods",
+        "warehousebfinishedgoods",
+    }
 
 
 def is_admin(user: User) -> bool:
@@ -72,18 +102,27 @@ def authorize_status_update(
     user: User,
     target_status: str,
 ):
-    if is_admin(user):
+    if user.role_id == SUPERADMIN_ROLE_ID:
         return
 
     if (
-        target_status in ("Preparing", "Released")
+        user.role_id in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+        and target_status in ("Preparing", "Released")
         and user.dept_id == INVENTORY_DEPT_ID
     ):
         return
 
     if (
-        target_status == "Delivered"
+        user.role_id in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+        and target_status == "Delivered"
         and user.dept_id == SALES_DEPT_ID
+    ):
+        return
+
+    if (
+        user.role_id == ADMIN_ROLE_ID
+        and user.dept_id == INVENTORY_DEPT_ID
+        and target_status == "Cancelled"
     ):
         return
 
@@ -289,8 +328,9 @@ def get_deliveries(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    statement = select(Delivery).order_by(
-        Delivery.delivery_id.desc()
+    statement = (
+        select(Delivery)
+        .order_by(Delivery.delivery_id.desc())
     )
 
     return db.scalars(statement).all()
@@ -301,16 +341,24 @@ def get_warehouses(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    statement = text("""
-        SELECT
-            "WH_ID",
-            "Warehouse_Name",
-            "Location"
-        FROM public."WAREHOUSE"
-        ORDER BY "Warehouse_Name"
-    """)
+    statement = (
+        select(Warehouse)
+        .order_by(Warehouse.Warehouse_Name)
+    )
 
-    return db.execute(statement).mappings().all()
+    warehouses = db.scalars(statement).all()
+
+    return [
+        {
+            "WH_ID": warehouse.WH_ID,
+            "Warehouse_Name": warehouse.Warehouse_Name,
+            "Location": warehouse.Location,
+        }
+        for warehouse in warehouses
+        if is_finished_goods_warehouse(
+            warehouse.Warehouse_Name
+        )
+    ]
 
 
 @router.get(
@@ -356,11 +404,11 @@ def create_delivery(
             detail="Sales order not found.",
         )
 
-    if order.status != "Approved":
+    if order.status not in ("Accepted", "Approved"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Only approved sales orders can have a delivery record."
+                "Only accepted sales orders can have a delivery record."
             ),
         )
 
@@ -373,6 +421,14 @@ def create_delivery(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Warehouse not found.",
+        )
+
+    if not is_finished_goods_warehouse(warehouse.Warehouse_Name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Deliveries must use a Finished Goods Warehouse."
+            ),
         )
 
     existing_delivery = db.scalar(
@@ -401,10 +457,12 @@ def create_delivery(
         db.add(delivery)
         db.commit()
         db.refresh(delivery)
+
         return delivery
 
     except IntegrityError:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unable to create the delivery record.",
@@ -505,11 +563,11 @@ def update_delivery_status(
                     detail="Related sales order not found.",
                 )
 
-            if order.status != "Approved":
+            if order.status not in ("Accepted", "Approved"):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        "The related sales order must be Approved "
+                        "The related sales order must be Accepted "
                         "before Inventory can release the items."
                     ),
                 )
@@ -530,6 +588,7 @@ def update_delivery_status(
 
     except IntegrityError:
         db.rollback()
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(

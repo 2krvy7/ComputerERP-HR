@@ -1,31 +1,29 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
+/* =====================================================
+   1. PAGE CONTAINER & ALIGNED FIXED HEADER
+   Matches Chart of Accounts, Journal Entries & General Ledger
+===================================================== */
 .bank-page {
-  background: #f6f8fb;
+  background: #f5f7fb;
   min-height: 100vh;
-  padding: 32px;
-  font-family: Inter, sans-serif;
+  padding: 24px 28px;
+  font-family: "Segoe UI", Inter, sans-serif;
   color: #111827;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  min-height: 48px;
   margin-bottom: 24px;
 }
 
 .page-header h1 {
-  font-size: 32px;
-  margin-bottom: 6px;
-}
-
-.page-header p {
-  color: #6b7280;
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  line-height: 1.2;
 }
 
 .header-actions {
@@ -38,194 +36,347 @@
   border-radius: 8px;
   cursor: pointer;
   padding: 10px 18px;
-  font-weight: 500;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.primary {
-  background: #2563eb;
-  color: white;
+.btn.primary {
+  background: #4f46e5;
+  color: #ffffff;
 }
 
-.secondary {
-  background: white;
+.btn.primary:hover {
+  background: #4338ca;
+}
+
+.btn.primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn.secondary {
+  background: #ffffff;
   border: 1px solid #dbe1ea;
   color: #374151;
 }
 
+.btn.secondary:hover {
+  background: #f8fafc;
+}
+
+/* =====================================================
+   2. SUMMARY KPI CARDS (PHP CURRENCY)
+===================================================== */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .stat-card {
-  background: white;
-  padding: 24px;
-  border-radius: 14px;
-  border: 1px solid #ebeff5;
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
 }
 
 .stat-card span {
   color: #6b7280;
   font-size: 13px;
+  font-weight: 600;
 }
 
 .stat-card h2 {
-  margin: 10px 0;
-  font-size: 32px;
+  margin: 8px 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
 }
 
 .stat-card small {
+  font-size: 12px;
   color: #10b981;
+  font-weight: 500;
 }
 
+/* =====================================================
+   3. INSTITUTION FILTER BAR
+===================================================== */
 .filters {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
   margin-bottom: 24px;
-}
-
-.more-filter {
-  margin-left: auto;
-  border: none;
-  background: white;
-  border-radius: 8px;
-  padding: 10px 16px;
-  cursor: pointer;
 }
 
 .filter-btn {
   border: 1px solid #dce3ec;
   padding: 9px 14px;
-  background: white;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13.5px;
+  font-weight: 500;
   border-radius: 8px;
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.active {
-  background: #eef4ff;
-  color: #2563eb;
+.filter-btn:hover {
+  background: #f8fafc;
 }
 
+.filter-btn.active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.more-filter {
+  margin-left: auto;
+  border: 1px solid #dce3ec;
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.more-filter:hover {
+  background: #f8fafc;
+}
+
+/* =====================================================
+   4. BANK ACCOUNT CARDS GRID
+===================================================== */
 .accounts-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .account-card {
-  background: white;
+  background: #ffffff;
   border-radius: 14px;
-  padding: 24px;
-  border: 1px solid #e8edf5;
+  padding: 22px;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.account-card:hover {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.account-card.selected-stmt {
+  border: 2px solid #4f46e5;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  margin-bottom: 14px;
 }
 
 .card-header h3 {
-  font-size: 18px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px;
 }
 
 .card-header span {
   color: #6b7280;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .menu-btn {
   border: none;
   background: transparent;
+  color: #64748b;
+  font-size: 16px;
   cursor: pointer;
+  padding: 2px 6px;
 }
 
 .balance {
-  font-size: 40px;
+  font-size: 28px;
   font-weight: 700;
-  margin-bottom: 12px;
+  color: #111827;
+  margin-bottom: 8px;
 }
 
 .account-meta {
   color: #6b7280;
   font-size: 13px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
+}
+
+/* =====================================================
+   5. CARD BADGES & ACTION BUTTONS
+===================================================== */
+.status-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .badge {
   display: inline-block;
   background: #ecfdf3;
   color: #059669;
-  padding: 6px 12px;
+  padding: 5px 11px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
 }
 
-.card-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
+.badge.disb-on {
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
+.badge.role-off {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.btn.disb-btn-active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.btn.rec-btn-active {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+/* =====================================================
+   6. BANK STATEMENTS TABLE (LATEST ON TOP)
+===================================================== */
 .statements-card {
-  background: white;
-  border-radius: 16px;
+  background: #ffffff;
+  border-radius: 14px;
   overflow: hidden;
-  border: 1px solid #e5eaf1;
+  border: 1px solid #e5e7eb;
 }
 
 .table-header {
-  padding: 24px;
+  padding: 18px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
 }
 
 .table-header p {
   color: #6b7280;
+  font-size: 13px;
   margin-top: 4px;
 }
 
-table {
+.table-header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.state-message {
+  padding: 16px 20px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.state-message.error {
+  color: #dc2626;
+}
+
+.empty-table-cell {
+  text-align: center;
+  padding: 20px;
+  color: #64748b;
+}
+
+.statements-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-thead {
+.statements-table thead {
   background: #f8fafc;
 }
 
-th,
-td {
-  padding: 16px 24px;
+.statements-table th,
+.statements-table td {
+  padding: 14px 20px;
   text-align: left;
   border-top: 1px solid #edf2f7;
+  font-size: 14px;
 }
 
-th {
-  color: #6b7280;
-  font-size: 13px;
+.statements-table th {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.statements-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.tx-amount-in {
   font-weight: 600;
+  color: #16a34a;
+}
+
+.tx-amount-out {
+  font-weight: 600;
+  color: #dc2626;
 }
 
 .status {
-  padding: 6px 12px;
+  display: inline-block;
+  padding: 5px 11px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
 }
 
-.success {
+.status.success {
   background: #ecfdf3;
   color: #059669;
 }
 
-.warning {
+.status.warning {
   background: #fff7ed;
   color: #ea580c;
 }
@@ -233,9 +384,74 @@ th {
 .link-btn {
   border: none;
   background: transparent;
-  color: #2563eb;
+  color: #4f46e5;
   cursor: pointer;
   font-weight: 600;
+  font-size: 13.5px;
+}
+
+/* =====================================================
+   7. MODALS (TRANSFER, ADD ACCOUNT & VIEW TRANSACTIONS)
+===================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-box {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  width: 420px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.modal-box.tx-modal {
+  width: 540px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-box h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.modal-subtext {
+  margin: 0;
+  font-size: 13.5px;
+  color: #4b5563;
+}
+
+.modal-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.modal-input {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 @media (max-width: 1200px) {
@@ -253,7 +469,8 @@ th {
 
   .page-header {
     flex-direction: column;
-    gap: 16px;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .table-header {
