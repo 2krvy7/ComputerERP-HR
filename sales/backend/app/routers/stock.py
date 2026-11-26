@@ -41,6 +41,13 @@ def get_on_hand_stocks(
             Stock,
             Stock.IM_ID == ItemMaster.IM_ID,
         )
+        .where(
+    func.lower(
+        func.trim(
+            func.coalesce(ItemMaster.ItemType, "")
+        )
+    ) == "finished goods"
+)
         .group_by(
             ItemMaster.IM_ID,
             ItemMaster.SKU,
