@@ -46,7 +46,9 @@ def get_on_hand_stocks(
         func.trim(
             func.coalesce(ItemMaster.ItemType, "")
         )
-    ) == "finished goods"
+    ) == "Finished",
+    (func.coalesce(Stock.quantity_on_hand, 0) -
+     func.coalesce(Stock.quantity_reserved, 0)) > 0
 )
         .group_by(
             ItemMaster.IM_ID,
