@@ -83,10 +83,12 @@ export default function ARAgingPage() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
@@ -229,32 +231,7 @@ export default function ARAgingPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters">
-        <button onClick={fetchARAging}>
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button>Age by due date</button>
-        <select
-          value={selectedCustomer}
-          onChange={(e) => setSelectedCustomer(e.target.value)}
-          style={{
-            padding: "0.45rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            background: "#fff",
-          }}
-        >
-          <option value="ALL">All customers ({customerRows.length})</option>
-          {customerRows.map((r) => (
-            <option key={r.customer} value={r.customer}>
-              {r.customer}
-            </option>
-          ))}
-        </select>
-        <button>USD</button>
-      </div>
-
+      
       {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card">

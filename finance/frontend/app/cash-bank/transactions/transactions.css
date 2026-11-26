@@ -1,26 +1,29 @@
+/* =====================================================
+   1. PAGE CONTAINER & ALIGNED FIXED HEADER
+   Matches Chart of Accounts, Journal Entries & Bank Accounts
+===================================================== */
 .transactions-page {
   min-height: 100vh;
-  background: #f7f9fc;
-  padding: 32px;
-  font-family: Inter, sans-serif;
+  background: #f5f7fb;
+  padding: 24px 28px;
+  font-family: "Segoe UI", Inter, sans-serif;
+  color: #111827;
 }
-
-/* HEADER */
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  min-height: 48px;
   margin-bottom: 24px;
 }
 
 .page-header h1 {
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-
-.page-header p {
-  color: #6b7280;
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  line-height: 1.2;
 }
 
 .header-actions {
@@ -28,108 +31,163 @@
   gap: 12px;
 }
 
-/* BUTTONS */
-
+/* =====================================================
+   2. BUTTONS
+===================================================== */
 .btn {
   border: none;
   cursor: pointer;
   padding: 10px 18px;
-  border-radius: 10px;
+  border-radius: 8px;
+  font-size: 14px;
   font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.primary {
-  color: white;
-  background: #2563eb;
+.btn.primary {
+  color: #ffffff;
+  background: #4f46e5;
 }
 
-.secondary {
-  background: white;
-  border: 1px solid #e5e7eb;
+.btn.primary:hover {
+  background: #4338ca;
 }
 
-/* STATS */
+.btn.secondary {
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
 
+.btn.secondary:hover {
+  background: #f8fafc;
+}
+
+/* =====================================================
+   3. SUMMARY KPI CARDS
+===================================================== */
 .stats-grid {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   margin-bottom: 24px;
   grid-template-columns: repeat(4, 1fr);
 }
 
 .stat-card {
-  background: white;
-  border-radius: 16px;
-  padding: 22px;
-  border: 1px solid #edf0f5;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
 }
 
 .stat-card span {
   color: #6b7280;
   font-size: 13px;
+  font-weight: 600;
 }
 
 .stat-card h2 {
-  margin: 10px 0;
-  font-size: 34px;
+  margin: 8px 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
 }
 
-/* TABS */
+.stat-card small {
+  font-size: 12px;
+  color: #10b981;
+  font-weight: 500;
+}
 
+/* =====================================================
+   4. STATUS TABS & FILTER TOOLBAR
+===================================================== */
 .tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
 }
 
 .tab {
-  background: white;
+  background: #ffffff;
   border: 1px solid #e5e7eb;
-  padding: 10px 16px;
+  color: #374151;
+  padding: 9px 15px;
   border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  background: #f8fafc;
 }
 
 .tab.active {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+  font-weight: 600;
 }
-
-/* FILTERS */
 
 .filters {
   display: flex;
+  align-items: center;
   gap: 12px;
-  margin-bottom: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
 }
 
 .search,
-select {
-  height: 42px;
-  border-radius: 10px;
+.filter-select,
+.date-input {
+  height: 40px;
+  border-radius: 8px;
   border: 1px solid #dbe1ea;
   padding: 0 14px;
-  background: white;
+  background: #ffffff;
+  font-size: 13.5px;
+  color: #1f2937;
+  outline: none;
+}
+
+.search:focus,
+.filter-select:focus,
+.date-input:focus {
+  border-color: #4f46e5;
 }
 
 .search {
   flex: 1;
+  min-width: 220px;
 }
 
 .filter-btn {
-  border: none;
-  border-radius: 10px;
-  background: white;
-  padding: 0 18px;
+  height: 40px;
+  border: 1px solid #dbe1ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 0 16px;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-/* TABLE */
+.filter-btn:hover {
+  background: #f8fafc;
+}
 
+/* =====================================================
+   5. BANK TRANSACTION REGISTER TABLE
+===================================================== */
 .table-card {
-  background: white;
-  border-radius: 18px;
-  border: 1px solid #e8edf5;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
   overflow: hidden;
 }
 
@@ -137,39 +195,72 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
 }
 
 .table-header p {
   color: #6b7280;
+  font-size: 13px;
   margin-top: 4px;
 }
 
-table {
+.state-message {
+  padding: 18px 20px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.state-message.error {
+  color: #dc2626;
+}
+
+.empty-table-cell {
+  text-align: center;
+  padding: 20px;
+  color: #64748b;
+}
+
+.tx-table {
   width: 100%;
   border-collapse: collapse;
 }
 
-thead {
+.tx-table thead {
   background: #f8fafc;
 }
 
-th,
-td {
-  padding: 16px 18px;
+.tx-table th,
+.tx-table td {
+  padding: 14px 16px;
   border-top: 1px solid #eef2f6;
   text-align: left;
+  font-size: 14px;
 }
 
-th {
-  font-size: 13px;
-  color: #6b7280;
+.tx-table th {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.tx-table tbody tr:hover {
+  background: #f9fafb;
 }
 
 .desc {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .desc span {
@@ -189,31 +280,28 @@ th {
   color: #dc2626;
 }
 
-/* STATUS */
-
+/* =====================================================
+   6. STATUS BADGES & ACTION LINK
+===================================================== */
 .status {
-  padding: 6px 10px;
+  display: inline-block;
+  padding: 4px 10px;
   font-size: 12px;
   font-weight: 600;
   border-radius: 999px;
 }
 
-.match-found {
-  background: #e0e7ff;
-  color: #4338ca;
-}
-
-.needs-category {
+.status.needs-review {
   background: #fff7ed;
   color: #ea580c;
 }
 
-.matched {
+.status.matched {
   background: #ecfdf3;
   color: #059669;
 }
 
-.reconciled {
+.status.reconciled {
   background: #dcfce7;
   color: #16a34a;
 }
@@ -221,12 +309,76 @@ th {
 .link-btn {
   border: none;
   background: transparent;
-  color: #2563eb;
+  color: #4f46e5;
   cursor: pointer;
+  font-size: 13.5px;
   font-weight: 600;
 }
 
-/* RESPONSIVE */
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* =====================================================
+   7. INSPECT / RECONCILE MODAL
+===================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-box {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  width: 420px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.modal-box h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.modal-box p {
+  margin: 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.modal-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+  margin-top: 4px;
+}
+
+.modal-select {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  padding: 0 12px;
+  font-size: 14px;
+  background: #ffffff;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
 
 @media (max-width: 1200px) {
   .stats-grid {
@@ -241,11 +393,13 @@ th {
 
   .filters {
     flex-direction: column;
+    align-items: stretch;
   }
 
   .page-header {
     flex-direction: column;
-    gap: 16px;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .table-card {

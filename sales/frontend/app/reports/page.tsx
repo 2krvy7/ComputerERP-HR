@@ -89,6 +89,7 @@ const categoryDescriptions: Record<ReportCategory, string> = {
 export default function ReportsPage() {
   const { user } = useAuth();
   const canExport = isAdminRole(user?.role_id);
+
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -365,8 +366,8 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="min-h-full space-y-5 bg-green-50 p-4 text-slate-800 sm:p-6">
-      <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm">
+    <div className="min-h-full min-w-0 space-y-5 bg-white p-3 text-slate-800 sm:space-y-6 sm:p-5 lg:p-6">
+      <section className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-slate-800">
             Reporting Date Range
@@ -376,8 +377,8 @@ export default function ReportsPage() {
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="w-full lg:flex-1">
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+          <div className="min-w-0">
             <label
               htmlFor="report-start-date"
               className="mb-1.5 block text-xs font-medium text-slate-600"
@@ -393,11 +394,11 @@ export default function ReportsPage() {
                 setStartDate(event.target.value);
                 setRangeError("");
               }}
-              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </div>
 
-          <div className="w-full lg:flex-1">
+          <div className="min-w-0">
             <label
               htmlFor="report-end-date"
               className="mb-1.5 block text-xs font-medium text-slate-600"
@@ -413,15 +414,15 @@ export default function ReportsPage() {
                 setEndDate(event.target.value);
                 setRangeError("");
               }}
-              className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 gap-2 lg:flex">
             <button
               type="button"
               onClick={applyDateRange}
-              className="rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800"
+              className="min-h-11 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 sm:px-5"
             >
               Apply Filter
             </button>
@@ -429,7 +430,7 @@ export default function ReportsPage() {
             <button
               type="button"
               onClick={clearDateRange}
-              className="rounded-lg border border-[#D1D5DB] bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="min-h-11 rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:px-5"
             >
               Clear
             </button>
@@ -457,11 +458,11 @@ export default function ReportsPage() {
           role="alert"
           className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
         >
-          <span>{error}</span>
+          <span className="min-w-0 break-words">{error}</span>
           <button
             type="button"
             onClick={() => setError("")}
-            className="font-semibold hover:text-red-900"
+            className="shrink-0 font-semibold hover:text-red-900"
             aria-label="Dismiss error"
           >
             ✕
@@ -469,12 +470,12 @@ export default function ReportsPage() {
         </div>
       )}
 
-      <section className="space-y-3">
+      <section className="min-w-0 space-y-3">
         <h2 className="text-sm font-semibold text-slate-800">
           Report Categories
         </h2>
 
-        <div className="flex gap-2 overflow-x-auto pb-2">
+        <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-2 sm:mx-0 sm:px-0">
           {PAGE_CATEGORIES.map((category) => {
             const isActive = activeCategory === category;
 
@@ -483,7 +484,8 @@ export default function ReportsPage() {
                 key={category}
                 type="button"
                 onClick={() => setActiveCategory(category)}
-                className={`whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition ${
+                aria-pressed={isActive}
+                className={`min-h-10 shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition sm:px-4 sm:text-sm ${
                   isActive
                     ? "border-blue-700 bg-blue-700 text-white shadow-sm"
                     : "border-[#D1D5DB] bg-[#E5E7EB] text-slate-700 hover:bg-[#DDE1E5]"
@@ -502,8 +504,8 @@ export default function ReportsPage() {
         </div>
       ) : !error ? (
         <>
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <h2 className="font-semibold text-slate-900">
                 {activeCategory}
               </h2>
@@ -512,7 +514,7 @@ export default function ReportsPage() {
               </p>
             </div>
 
-            <p className="text-sm text-slate-600">
+            <p className="text-xs text-slate-600 sm:text-sm">
               Period:{" "}
               <span className="font-semibold text-slate-900">
                 {dateRangeLabel}
@@ -520,7 +522,7 @@ export default function ReportsPage() {
             </p>
           </div>
 
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {activeCategory === "Dashboard" && (
               <>
                 <SummaryCard
@@ -620,9 +622,9 @@ export default function ReportsPage() {
             )}
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-            <div className="border-b border-[#D1D5DB] p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+          <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+            <div className="border-b border-[#D1D5DB] p-4 sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="font-semibold text-slate-900">
                     Report Summary
@@ -639,7 +641,7 @@ export default function ReportsPage() {
                     type="button"
                     onClick={exportCSV}
                     disabled={visibleRows.length === 0}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                   >
                     <span aria-hidden="true">↓</span>
                     Export to CSV
@@ -648,8 +650,60 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            {/* Mobile Report Cards */}
+            <div className="space-y-3 p-3 md:hidden">
+              {visibleRows.length > 0 ? (
+                visibleRows.map((row) => (
+                  <article
+                    key={`${row.category}-${row.title}`}
+                    className="rounded-lg border border-[#D1D5DB] bg-white p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="break-words text-sm font-semibold text-slate-800">
+                          {row.title}
+                        </h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {row.category}
+                        </p>
+                      </div>
+
+                      <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                        {row.period}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-slate-500">
+                          Total Records
+                        </p>
+                        <p className="mt-1 text-sm font-semibold text-slate-800">
+                          {row.count.toLocaleString("en-PH")}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0 text-right">
+                        <p className="text-xs text-slate-500">
+                          Total Amount
+                        </p>
+                        <p className="mt-1 break-words text-sm font-bold text-slate-800">
+                          {money(row.amount)}
+                        </p>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  No report records available for this category.
+                </p>
+              )}
+            </div>
+
+            {/* Desktop Report Table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[650px] text-left text-sm">
                 <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-600">
                   <tr>
                     <th className="whitespace-nowrap px-5 py-3">
@@ -723,12 +777,18 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">{title}</p>
-      <p className={`mt-2 text-2xl font-bold ${color}`}>
+    <div className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
+      <p className="text-sm font-medium text-slate-500">
+        {title}
+      </p>
+
+      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${color}`}>
         {value}
       </p>
-      <p className="mt-2 text-xs text-slate-500">{description}</p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {description}
+      </p>
     </div>
   );
 }

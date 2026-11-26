@@ -28,8 +28,7 @@ const departmentSections = {
   ],
   Sales: [
     "Sales Orders",
-    "Stock Reservation",
-    "Delivery Requests",
+    "Preparing Orders",
     "Sales Returns",
   ],
 };
@@ -71,7 +70,7 @@ type PurchaseRequest = {
   Item_Name: string;
   SKU: string;
   ItemType: string;
-  Quantity: number;
+  QuantityRequested: number;
   WH_ID: number;
   Warehouse_Name: string;
 };
@@ -159,11 +158,32 @@ type MaterialRelease = {
   materials: ReleasedMaterial[];
 };
 
+type SalesOrderItem = {
+  IM_ID: number;
+  Item_Name: string;
+  SKU: string;
+  ItemType: string;
+  QuantityRequested: number;
+  AvailableStock: number;
+};
+
+type SalesOrder = {
+  order_id: number;
+  CustomerName: string;
+  CustomerContact: string | null;
+  order_date: string;
+  total_amount: number;
+  status: string;
+  all_available: boolean;
+  items: SalesOrderItem[];
+};
+
 type InspectionInput = {
   quantityReceived: string;
   itemCondition: "Good" | "Partial" | "Damaged" | "";
   remarks: string;
 };
+
 
 const sectionDescriptions: Record<string, string> = {
   "Upcoming Requests":
@@ -193,11 +213,8 @@ const sectionDescriptions: Record<string, string> = {
   "Sales Orders":
     "View customer orders submitted by the Sales department.",
 
-  "Stock Reservation":
-    "Monitor inventory allocated for customer orders.",
-
-  "Delivery Requests":
-    "Monitor items requested for customer delivery.",
+  "Preparing Orders":
+  "Check finished PC stock, prepare accepted customer orders, and release completed preparations to Sales.",
 
   "Sales Returns":
     "Inspect returned products and record accepted items.",
@@ -296,12 +313,47 @@ const [inspectionInputs, setInspectionInputs] = useState<
 
   const [releasingMR, setReleasingMR] =
     useState<number | null>(null);
+  
+  // Sales Orders
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
+  const [salesOrdersLoading, setSalesOrdersLoading] = useState(true);
+  const [salesOrdersError, setSalesOrdersError] = useState("");
+  const [processingSalesOrder, setProcessingSalesOrder] =
+  useState<number | null>(null);
+  const [expandedSalesOrder, setExpandedSalesOrder] =
+  useState<number | null>(null);
 
   // Expanded rows
   const [expandedMR, setExpandedMR] = useState<number | null>(null);
   const [expandedRelease, setExpandedRelease] = useState<number | null>(null);
 
+  // Fetch Sales Orders
+useEffect(() => {
+  const fetchSalesOrders = async () => {
+    try {
+      const response = await apiFetch("/orders/sales-orders");
 
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to load Sales Orders.");
+      }
+
+      const data: SalesOrder[] = await response.json();
+      setSalesOrders(data);
+    } catch (error) {
+      setSalesOrdersError(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong."
+      );
+    } finally {
+      setSalesOrdersLoading(false);
+    }
+  };
+
+  fetchSalesOrders();
+}, []);
+  
 
   // Inspection inputs
 
@@ -583,6 +635,69 @@ const [inspectionInputs, setInspectionInputs] = useState<
     }
   };
 
+  // Sales Order Actions
+const handleSalesOrderAction = async (
+  orderId: number,
+  action: "accept" | "prepare" | "release"
+) => {
+  const actionLabels = {
+    accept: "accept this Sales Order",
+    prepare: "prepare this Sales Order",
+    release: "release this PC to Sales",
+  };
+
+  const confirmed = window.confirm(
+    `Are you sure you want to ${actionLabels[action]}?`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    setProcessingSalesOrder(orderId);
+
+    const response = await apiFetch(
+      `/orders/sales-orders/${orderId}/${action}`,
+      {
+        method: "POST",
+      }
+    );
+
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.detail || `Failed to ${action} Sales Order.`
+      );
+    }
+
+    alert(data?.message || "Sales Order updated successfully.");
+
+    // Refresh Sales Orders
+    const refreshResponse = await apiFetch(
+      "/orders/sales-orders"
+    );
+
+    const refreshedData = await refreshResponse.json().catch(() => null);
+
+    if (!refreshResponse.ok) {
+      throw new Error(
+        refreshedData?.detail || "Unable to refresh Sales Orders."
+      );
+    }
+
+    setSalesOrders(refreshedData);
+    setSalesOrdersError("");
+  } catch (error) {
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Something went wrong."
+    );
+  } finally {
+    setProcessingSalesOrder(null);
+  }
+};
+
   // Change Main Tab
   const handleDepartmentChange = (tab: MainTab) => {
     setActiveDepartment(tab);
@@ -790,6 +905,25 @@ const handleConfirmStock = async (record: GoodsReceived) => {
   const procurementIncomingRequests = incomingRequests.filter(
     (request) => request.ItemType === "Raw"
   );
+
+  // Sales Orders: Show only orders waiting for Inventory acceptance.
+const pendingSalesOrders = salesOrders.filter(
+  (order) => order.status === "Pending"
+);
+
+// Preparing Orders: Show accepted orders that are still being processed.
+const preparingSalesOrders = salesOrders.filter(
+  (order) =>
+    ["Accepted", "Waiting for Stock", "Preparing", "Released to Sales"].includes(
+      order.status
+    )
+);
+
+// Display the correct orders based on the selected Sales tab.
+const displayedSalesOrders =
+  activeSection === "Sales Orders"
+    ? pendingSalesOrders
+    : preparingSalesOrders;
 
   return (
     <DashboardLayout
@@ -1704,6 +1838,280 @@ const handleConfirmStock = async (record: GoodsReceived) => {
               </div>
             )}
 
+          {/* Sales - Sales Orders */}
+{activeDepartment === "Sales" &&
+  (activeSection === "Sales Orders" ||
+    activeSection === "Preparing Orders") && (
+    <div className="space-y-4">
+
+      {salesOrdersLoading ? (
+        <p className="rounded-xl bg-[#F2F7F8] p-8 text-center text-sm text-[#587176]">
+          Loading Sales Orders...
+        </p>
+      ) : salesOrdersError ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5">
+          <p className="text-sm text-red-600">
+            {salesOrdersError}
+          </p>
+          <button
+            type="button"
+            onClick={async () => {
+              setSalesOrdersLoading(true);
+              setSalesOrdersError("");
+
+              try {
+                const response = await apiFetch(
+                  "/orders/sales-orders"
+                );
+
+                const data = await response.json().catch(() => null);
+
+                if (!response.ok) {
+                  throw new Error(
+                    data?.detail || "Failed to load Sales Orders."
+                  );
+                }
+
+                setSalesOrders(data);
+              } catch (error) {
+                setSalesOrdersError(
+                  error instanceof Error
+                    ? error.message
+                    : "Something went wrong."
+                );
+              } finally {
+                setSalesOrdersLoading(false);
+              }
+            }}
+            className="mt-3 rounded-lg bg-[#365f68] px-4 py-2 text-sm font-semibold text-white"
+          >
+            Try Again
+          </button>
+        </div>
+      ) : displayedSalesOrders.length === 0 ? (
+        <div className="rounded-xl bg-[#F2F7F8] p-8 text-center">
+          <h3 className="font-bold text-[#1F3338]">
+            {activeSection === "Sales Orders"
+              ? "No Pending Sales Orders"
+              : "No Orders to Prepare"}
+          </h3>
+
+          <p className="mt-2 text-sm text-[#587176]">
+            {activeSection === "Sales Orders"
+              ? "New Sales Orders waiting for Inventory acceptance will appear here."
+              : "Accepted Sales Orders waiting for stock checking, preparation, or release will appear here."}
+          </p>
+        </div>
+      ) : (
+        displayedSalesOrders.map((order) => (
+          <div
+            key={order.order_id}
+            className="rounded-xl border border-[#DCE7EA] bg-white p-5 shadow-sm"
+          >
+            {/* Order Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-[#587176]">
+                  Sales Order
+                </p>
+                <h3 className="mt-1 text-lg font-bold text-[#1F3338]">
+                  SO #{order.order_id}
+                </h3>
+              </div>
+
+              <span className="rounded-full bg-[#F2F7F8] px-3 py-1.5 text-xs font-semibold text-[#365f68]">
+                {order.status}
+              </span>
+            </div>
+
+            {/* Customer Information */}
+            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-[#587176]">Customer</p>
+                <p className="mt-1 text-sm font-semibold text-[#1F3338]">
+                  {order.CustomerName}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs text-[#587176]">Contact</p>
+                <p className="mt-1 text-sm font-semibold text-[#1F3338]">
+                  {order.CustomerContact || "-"}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-xs text-[#587176]">Order Date</p>
+                <p className="mt-1 text-sm font-semibold text-[#1F3338]">
+                  {order.order_date
+                    ? new Date(order.order_date).toLocaleDateString()
+                    : "-"}
+                </p>
+              </div>
+            </div>
+
+            {/* Order Items */}
+            <div className="mt-5 rounded-xl bg-[#F2F7F8] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-bold text-[#1F3338]">
+                  Finished PC Items ({order.items.length})
+                </h4>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setExpandedSalesOrder(
+                      expandedSalesOrder === order.order_id
+                        ? null
+                        : order.order_id
+                    )
+                  }
+                  className="text-xs font-semibold text-[#365f68] hover:underline"
+                >
+                  {expandedSalesOrder === order.order_id
+                    ? "Hide Items"
+                    : "View Items"}
+                </button>
+              </div>
+
+              {expandedSalesOrder === order.order_id && (
+                <div className="mt-4 space-y-3">
+                  {order.items.map((item) => (
+                    <div
+                      key={item.IM_ID}
+                      className="rounded-lg border border-[#DCE7EA] bg-white p-3"
+                    >
+                      <p className="text-sm font-semibold text-[#1F3338]">
+                        {item.Item_Name}
+                      </p>
+
+                      <div className="mt-2 grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
+                        <div>
+                          <p className="text-[#587176]">SKU</p>
+                          <p className="mt-1 font-medium text-[#1F3338]">
+                            {item.SKU}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[#587176]">
+                            Requested Quantity
+                          </p>
+                          <p className="mt-1 font-semibold text-[#1F3338]">
+                            {item.QuantityRequested}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-[#587176]">
+                            Available in Warehouse A
+                          </p>
+                          <p className="mt-1 font-semibold text-[#1F3338]">
+                            {item.AvailableStock}
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="mt-3 text-xs font-semibold">
+                        {item.AvailableStock >= item.QuantityRequested ? (
+                          <span className="text-green-700">
+                            Sufficient stock
+                          </span>
+                        ) : (
+                          <span className="text-red-600">
+                            Insufficient stock
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Total */}
+            <div className="mt-4 flex justify-between border-t border-[#DCE7EA] pt-4">
+              <p className="text-sm text-[#587176]">
+                Total Amount
+              </p>
+              <p className="text-base font-bold text-[#1F3338]">
+                ₱{Number(order.total_amount).toLocaleString()}
+              </p>
+            </div>
+
+            {/* Inventory Actions */}
+            <div className="mt-5 flex flex-wrap gap-2 border-t border-[#DCE7EA] pt-5">
+
+              {order.status === "Pending" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSalesOrderAction(order.order_id, "accept")
+                  }
+                  disabled={processingSalesOrder === order.order_id}
+                  className="rounded-lg bg-[#365f68] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#24363B] disabled:opacity-50"
+                >
+                  {processingSalesOrder === order.order_id
+                    ? "Processing..."
+                    : "Accept Order"}
+                </button>
+              )}
+
+              {(order.status === "Accepted" ||
+                order.status === "Waiting for Stock") && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSalesOrderAction(order.order_id, "prepare")
+                  }
+                  disabled={processingSalesOrder === order.order_id}
+                  className="rounded-lg bg-[#365f68] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#24363B] disabled:opacity-50"
+                >
+                  {processingSalesOrder === order.order_id
+                    ? "Processing..."
+                    : "Check Stock / Prepare"}
+                </button>
+              )}
+
+              {order.status === "Preparing" && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSalesOrderAction(order.order_id, "release")
+                  }
+                  disabled={processingSalesOrder === order.order_id}
+                  className="rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
+                >
+                  {processingSalesOrder === order.order_id
+                    ? "Processing..."
+                    : "Release to Sales"}
+                </button>
+              )}
+
+              {order.status === "Waiting for Stock" && (
+                <p className="w-full text-xs text-amber-700">
+                  Waiting for sufficient finished PC stock in Warehouse A.
+                </p>
+              )}
+
+              {order.status === "Released to Sales" && (
+                <p className="text-xs font-semibold text-green-700">
+                  PC released to Sales. Waiting for customer pickup completion.
+                </p>
+              )}
+
+              {order.status === "Completed" && (
+                <p className="text-xs font-semibold text-green-700">
+                  Sales Order completed.
+                </p>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )}
+
           {/* Other Sections */}
             {activeDepartment !== "Upcoming Requests" &&
               !(
@@ -1720,7 +2128,13 @@ const handleConfirmStock = async (record: GoodsReceived) => {
                   activeSection === "Material Requests" ||
                   activeSection === "Material Release"
                 )
-              ) && (
+              ) && !(
+                activeDepartment === "Sales" &&
+                (
+                  activeSection === "Sales Orders" ||
+                  activeSection === "Preparing Orders"
+                )
+              ) &&(
               <div className="flex min-h-[220px] flex-col items-center justify-center rounded-xl bg-[#F2F7F8] p-8 text-center">
                 <h3 className="font-bold text-[#1F3338]">
                   {activeSection}

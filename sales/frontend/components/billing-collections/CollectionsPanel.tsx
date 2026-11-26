@@ -38,7 +38,7 @@ const getToday = () => {
   return `${year}-${month}-${day}`;
 };
 
-const formatDate = (value: string) => {
+const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
 
   const dateOnly = value.slice(0, 10);
@@ -73,7 +73,6 @@ export default function CollectionsPage() {
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
   const [formError, setFormError] = useState("");
 
   const [form, setForm] = useState<CollectionCreate>({
@@ -207,13 +206,20 @@ export default function CollectionsPage() {
     [records]
   );
 
+  const unpaidReceivables = useMemo(
+    () =>
+      receivables.filter(
+        (record) => Number(record.balance) > 0
+      ),
+    [receivables]
+  );
+
   const totalPages = Math.max(
     1,
     Math.ceil(filteredRecords.length / PAGE_SIZE)
   );
 
   const currentPage = Math.min(page, totalPages);
-
   const startIndex = (currentPage - 1) * PAGE_SIZE;
 
   const paginatedRecords = useMemo(
@@ -233,13 +239,17 @@ export default function CollectionsPage() {
     filteredRecords.length
   );
 
-  const hasOutstandingAccounts = receivables.some(
-    (record) => Number(record.balance) > 0
+  const hasOutstandingAccounts = unpaidReceivables.length > 0;
+
+  const selectedAR = receivables.find(
+    (record) => record.AR_ID === form.AR_ID
   );
 
   const openModal = () => {
     setForm(createEmptyForm());
     setFormError("");
+    setError("");
+    setSuccess("");
     setModalOpen(true);
   };
 
@@ -265,7 +275,10 @@ export default function CollectionsPage() {
       return;
     }
 
-    if (form.amount_paid <= 0) {
+    if (
+      !Number.isFinite(form.amount_paid) ||
+      form.amount_paid <= 0
+    ) {
       setFormError("Payment amount must be greater than zero.");
       return;
     }
@@ -285,18 +298,18 @@ export default function CollectionsPage() {
       return;
     }
 
-    const selectedAR = receivables.find(
+    const selectedAccount = receivables.find(
       (record) => record.AR_ID === form.AR_ID
     );
 
-    if (!selectedAR) {
+    if (!selectedAccount) {
       setFormError(
         "Selected accounts receivable record was not found."
       );
       return;
     }
 
-    if (form.amount_paid > Number(selectedAR.balance)) {
+    if (form.amount_paid > Number(selectedAccount.balance)) {
       setFormError(
         "Payment cannot exceed the remaining balance."
       );
@@ -334,9 +347,8 @@ export default function CollectionsPage() {
   };
 
   return (
-    <main className="min-h-full bg-green-50 p-4 text-slate-800 sm:p-6 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        {/* Notifications */}
+    <main className="min-h-full w-full bg-white p-3 text-slate-800 sm:p-5 lg:p-6">
+      <div className="mx-auto max-w-7xl space-y-5 sm:space-y-6">
         {error && (
           <div
             role="alert"
@@ -355,41 +367,39 @@ export default function CollectionsPage() {
           </div>
         )}
 
-        {/* Summary Cards */}
-        <section className="grid gap-4 sm:grid-cols-3">
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
           <SummaryCard
             title="Total Collected"
             value={money(totals.collected)}
-            color="text-green-600"
+            color="text-green-700"
           />
 
           <SummaryCard
             title="Payment Transactions"
             value={String(totals.count)}
-            color="text-blue-600"
+            color="text-blue-700"
           />
 
           <SummaryCard
             title="Cash Transactions"
             value={String(totals.cash)}
-            color="text-orange-600"
+            color="text-orange-700"
           />
         </section>
 
-        {/* Payment History */}
         <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-800">
+          <div className="flex flex-col gap-4 border-b border-[#D1D5DB] p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-slate-800 sm:text-lg">
                 Payment History
               </h2>
 
-              <p className="mt-1 text-xs text-slate-600">
+              <p className="mt-1 text-xs text-slate-600 sm:text-sm">
                 View and manage recorded customer payments.
               </p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row lg:w-auto">
               <input
                 type="text"
                 placeholder="Search payment, customer, or transaction..."
@@ -398,14 +408,14 @@ export default function CollectionsPage() {
                   setSearch(event.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-72"
+                className="min-w-0 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-72"
               />
 
               <button
                 type="button"
                 onClick={openModal}
                 disabled={loading || !hasOutstandingAccounts}
-                className="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-green-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <span className="text-lg leading-none">+</span>
                 Add New Payment
@@ -414,129 +424,199 @@ export default function CollectionsPage() {
           </div>
 
           {loading ? (
-            <p className="py-12 text-center text-sm text-slate-500">
+            <div className="px-4 py-12 text-center text-sm text-slate-500">
               Loading payment history...
-            </p>
+            </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1100px] text-left text-sm">
-                  <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase text-slate-600">
-                    <tr>
-                      <th className="px-4 py-3 text-center">
-                        Payment No.
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        AR No.
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Invoice No.
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Customer
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Payment Date
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Amount
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Method
-                      </th>
-                      <th className="px-4 py-3 text-center">
-                        Transaction No.
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-[#D1D5DB] bg-[#E5E7EB]">
+              {paginatedRecords.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-slate-500">
+                  {search
+                    ? "No matching payment records found."
+                    : "No payment records yet."}
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3 p-3 md:hidden">
                     {paginatedRecords.map((record) => (
-                      <tr
+                      <article
                         key={record.payment_id}
-                        className="text-center transition hover:bg-[#DDE1E5]"
+                        className="rounded-lg border border-[#D1D5DB] bg-white p-4 shadow-sm"
                       >
-                        <td className="px-4 py-3 font-medium text-slate-800">
-                          PAY-{record.payment_id}
-                        </td>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                              Payment No.
+                            </p>
+                            <p className="mt-1 font-semibold text-slate-800">
+                              PAY-{record.payment_id}
+                            </p>
+                          </div>
 
-                        <td className="px-4 py-3">
-                          AR-{record.AR_ID}
-                        </td>
+                          <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                            {record.payment_method ?? "—"}
+                          </span>
+                        </div>
 
-                        <td className="px-4 py-3">
-                          {record.invoice_id
-                            ? `INV-${record.invoice_id}`
-                            : "—"}
-                        </td>
+                        <div className="mt-4">
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                            Customer
+                          </p>
+                          <p className="mt-1 break-words text-sm font-semibold text-slate-800">
+                            {record.customer_name}
+                          </p>
+                        </div>
 
-                        <td className="px-4 py-3">
-                          {record.customer_name}
-                        </td>
+                        <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+                          <div>
+                            <p className="text-xs text-slate-500">AR No.</p>
+                            <p className="mt-1 text-sm font-medium text-slate-700">
+                              AR-{record.AR_ID}
+                            </p>
+                          </div>
 
-                        <td className="whitespace-nowrap px-4 py-3">
-                          {formatDate(record.payment_date)}
-                        </td>
+                          <div>
+                            <p className="text-xs text-slate-500">Invoice No.</p>
+                            <p className="mt-1 text-sm font-medium text-blue-700">
+                              {record.invoice_id
+                                ? `INV-${record.invoice_id}`
+                                : "—"}
+                            </p>
+                          </div>
 
-                        <td className="px-4 py-3 font-semibold tabular-nums">
-                          {money(record.amount_paid)}
-                        </td>
+                          <div>
+                            <p className="text-xs text-slate-500">Payment Date</p>
+                            <p className="mt-1 text-sm text-slate-700">
+                              {formatDate(record.payment_date)}
+                            </p>
+                          </div>
 
-                        <td className="px-4 py-3">
-                          {record.payment_method ?? "—"}
-                        </td>
+                          <div>
+                            <p className="text-xs text-slate-500">Amount</p>
+                            <p className="mt-1 text-sm font-bold tabular-nums text-green-700">
+                              {money(record.amount_paid)}
+                            </p>
+                          </div>
+                        </div>
 
-                        <td className="px-4 py-3">
-                          {record.transaction_number || "—"}
-                        </td>
-                      </tr>
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <p className="text-xs text-slate-500">
+                            Transaction No.
+                          </p>
+                          <p className="mt-1 break-all text-sm text-slate-700">
+                            {record.transaction_number || "—"}
+                          </p>
+                        </div>
+                      </article>
                     ))}
+                  </div>
 
-                    {paginatedRecords.length === 0 && (
-                      <tr>
-                        <td
-                          colSpan={8}
-                          className="px-4 py-12 text-center text-slate-500"
-                        >
-                          {search
-                            ? "No matching payment records found."
-                            : "No payment records yet."}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  <div className="hidden overflow-x-auto md:block">
+                    <table className="w-full min-w-[1050px] text-left text-sm">
+                      <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-600">
+                        <tr>
+                          <th className="px-4 py-3 text-center">
+                            Payment No.
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            AR No.
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Invoice No.
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Customer
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Payment Date
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Amount
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Method
+                          </th>
+                          <th className="px-4 py-3 text-center">
+                            Transaction No.
+                          </th>
+                        </tr>
+                      </thead>
 
-              {/* Pagination */}
-              <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-gray px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-slate-500">
+                      <tbody className="divide-y divide-[#D1D5DB] bg-[#E5E7EB]">
+                        {paginatedRecords.map((record) => (
+                          <tr
+                            key={record.payment_id}
+                            className="text-center transition hover:bg-[#DDE1E5]"
+                          >
+                            <td className="px-4 py-3 font-medium text-slate-800">
+                              PAY-{record.payment_id}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              AR-{record.AR_ID}
+                            </td>
+
+                            <td className="px-4 py-3 font-medium text-blue-700">
+                              {record.invoice_id
+                                ? `INV-${record.invoice_id}`
+                                : "—"}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              {record.customer_name}
+                            </td>
+
+                            <td className="whitespace-nowrap px-4 py-3">
+                              {formatDate(record.payment_date)}
+                            </td>
+
+                            <td className="px-4 py-3 font-semibold tabular-nums text-green-700">
+                              {money(record.amount_paid)}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              {record.payment_method ?? "—"}
+                            </td>
+
+                            <td className="px-4 py-3">
+                              {record.transaction_number || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
+                <p className="text-center text-xs text-slate-600 sm:text-sm md:text-left">
                   Showing{" "}
-                  <span className="font-semibold text-slate-700">
+                  <span className="font-semibold text-slate-800">
                     {startRecord}
                   </span>
                   {" "}to{" "}
-                  <span className="font-semibold text-slate-700">
+                  <span className="font-semibold text-slate-800">
                     {endRecord}
                   </span>
                   {" "}of{" "}
-                  <span className="font-semibold text-slate-700">
+                  <span className="font-semibold text-slate-800">
                     {filteredRecords.length}
                   </span>
                   {" "}payments
                 </p>
 
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <button
                     type="button"
                     disabled={currentPage === 1}
                     onClick={() => setPage(currentPage - 1)}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Previous
                   </button>
 
-                  <span className="px-2 text-sm font-medium text-slate-600">
+                  <span className="min-w-24 text-center text-xs font-medium text-slate-600 sm:text-sm">
                     Page {currentPage} of {totalPages}
                   </span>
 
@@ -544,7 +624,7 @@ export default function CollectionsPage() {
                     type="button"
                     disabled={currentPage === totalPages}
                     onClick={() => setPage(currentPage + 1)}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next
                   </button>
@@ -555,10 +635,9 @@ export default function CollectionsPage() {
         </section>
       </div>
 
-      {/* Add Payment Modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-3 sm:p-4"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeModal();
@@ -569,19 +648,18 @@ export default function CollectionsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="payment-modal-title"
-            className="my-auto w-full max-w-2xl overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-xl"
+            className="my-auto flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[#D1D5DB] bg-white shadow-xl sm:max-h-[calc(100dvh-2rem)]"
           >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#D1D5DB] px-6 py-4">
-              <div>
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#D1D5DB] px-4 py-4 sm:px-6">
+              <div className="min-w-0">
                 <h2
                   id="payment-modal-title"
-                  className="text-lg font-semibold text-slate-900"
+                  className="text-base font-semibold text-slate-900 sm:text-lg"
                 >
                   Record New Payment
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-xs text-slate-500 sm:text-sm">
                   Enter the customer's payment information.
                 </p>
               </div>
@@ -591,16 +669,17 @@ export default function CollectionsPage() {
                 onClick={closeModal}
                 disabled={saving}
                 aria-label="Close modal"
-                className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+                className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
               >
                 <span className="text-xl leading-none">×</span>
               </button>
             </div>
 
-            {/* Modal Form */}
-            <form onSubmit={handleSubmit}>
-              <div className="max-h-[70vh] space-y-4 overflow-y-auto p-6">
-                {/* Accounts Receivable */}
+            <form
+              onSubmit={handleSubmit}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
                 <div>
                   <label
                     htmlFor="payment-ar"
@@ -612,35 +691,35 @@ export default function CollectionsPage() {
                   <select
                     id="payment-ar"
                     value={form.AR_ID || ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setForm({
                         ...form,
                         AR_ID: Number(event.target.value),
-                      })
-                    }
+                      });
+                      setFormError("");
+                    }}
                     required
-                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    disabled={!hasOutstandingAccounts}
+                    className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
                   >
-                    <option value="">Select an account</option>
+                    <option value="">
+                      {hasOutstandingAccounts
+                        ? "Select an account"
+                        : "No outstanding accounts"}
+                    </option>
 
-                    {receivables
-                      .filter(
-                        (record) => Number(record.balance) > 0
-                      )
-                      .map((record) => (
-                        <option
-                          key={record.AR_ID}
-                          value={record.AR_ID}
-                        >
-                          AR-{record.AR_ID} · Invoice #
-                          {record.invoice_id} · Balance:{" "}
-                          {money(record.balance)}
-                        </option>
-                      ))}
+                    {unpaidReceivables.map((record) => (
+                      <option
+                        key={record.AR_ID}
+                        value={record.AR_ID}
+                      >
+                        AR-{record.AR_ID} · Invoice #{record.invoice_id} · Balance:{" "}
+                        {money(record.balance)}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
-                {/* Payment Date */}
                 <div>
                   <label
                     htmlFor="payment-date"
@@ -653,18 +732,19 @@ export default function CollectionsPage() {
                     id="payment-date"
                     type="date"
                     value={form.payment_date}
-                    onChange={(event) =>
+                    max={getToday()}
+                    onChange={(event) => {
                       setForm({
                         ...form,
                         payment_date: event.target.value,
-                      })
-                    }
+                      });
+                      setFormError("");
+                    }}
                     required
-                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
 
-                {/* Payment Method */}
                 <div>
                   <label
                     htmlFor="payment-method"
@@ -676,14 +756,15 @@ export default function CollectionsPage() {
                   <select
                     id="payment-method"
                     value={form.payment_method ?? "Cash"}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setForm({
                         ...form,
                         payment_method: event.target.value,
                         transaction_number: null,
-                      })
-                    }
-                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      });
+                      setFormError("");
+                    }}
+                    className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   >
                     <option value="Cash">Cash</option>
                     <option value="E-Wallet">E-Wallet</option>
@@ -691,7 +772,6 @@ export default function CollectionsPage() {
                   </select>
                 </div>
 
-                {/* E-Wallet Transaction Number */}
                 {form.payment_method === "E-Wallet" && (
                   <div>
                     <label
@@ -705,21 +785,21 @@ export default function CollectionsPage() {
                       id="transaction-number"
                       type="text"
                       value={form.transaction_number ?? ""}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setForm({
                           ...form,
                           transaction_number: event.target.value,
-                        })
-                      }
+                        });
+                        setFormError("");
+                      }}
                       required
                       maxLength={100}
                       placeholder="Enter e-wallet transaction number"
-                      className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     />
                   </div>
                 )}
 
-                {/* Amount Received */}
                 <div>
                   <label
                     htmlFor="payment-amount"
@@ -733,43 +813,39 @@ export default function CollectionsPage() {
                     type="number"
                     min="0.01"
                     step="0.01"
+                    max={
+                      selectedAR
+                        ? Number(selectedAR.balance)
+                        : undefined
+                    }
                     value={form.amount_paid || ""}
-                    onChange={(event) =>
+                    onChange={(event) => {
                       setForm({
                         ...form,
                         amount_paid: Number(event.target.value),
-                      })
-                    }
+                      });
+                      setFormError("");
+                    }}
                     required
                     placeholder="Enter payment amount"
-                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
 
-                {/* Selected Account Balance */}
-                {form.AR_ID !== 0 && (
+                {selectedAR && (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                    {(() => {
-                      const selectedAR = receivables.find(
-                        (record) => record.AR_ID === form.AR_ID
-                      );
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span className="font-medium text-blue-800">
+                        Remaining Balance
+                      </span>
 
-                      return selectedAR ? (
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="font-medium text-blue-800">
-                            Remaining Balance
-                          </span>
-
-                          <span className="font-bold text-blue-900">
-                            {money(selectedAR.balance)}
-                          </span>
-                        </div>
-                      ) : null;
-                    })()}
+                      <span className="font-bold text-blue-900">
+                        {money(selectedAR.balance)}
+                      </span>
+                    </div>
                   </div>
                 )}
 
-                {/* Form Error */}
                 {formError && (
                   <div
                     role="alert"
@@ -780,13 +856,12 @@ export default function CollectionsPage() {
                 )}
               </div>
 
-              {/* Modal Footer */}
-              <div className="flex flex-col-reverse gap-2 border-t border-[#D1D5DB] bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end">
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-[#D1D5DB] bg-slate-50 px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
                 <button
                   type="button"
                   onClick={closeModal}
                   disabled={saving}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -794,7 +869,7 @@ export default function CollectionsPage() {
                 <button
                   type="submit"
                   disabled={saving || !hasOutstandingAccounts}
-                  className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {saving ? "Recording Payment..." : "Save Payment"}
                 </button>
@@ -817,12 +892,12 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-500">
+    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
+      <p className="text-sm font-medium text-slate-600">
         {title}
       </p>
 
-      <p className={`mt-2 text-2xl font-bold ${color}`}>
+      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${color}`}>
         {value}
       </p>
     </div>

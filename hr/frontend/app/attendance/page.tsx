@@ -40,7 +40,7 @@ type DailyAttendance = {
   attendance_id: number | null;
 };
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 export default function AttendancePage() {
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -116,33 +116,6 @@ export default function AttendancePage() {
 
     fetchAttendance();
     fetchEmployees();
-
-    // Automatically refresh attendance every 3 seconds
-    const attendanceInterval = setInterval(() => {
-      fetchAttendance();
-
-      const refreshDate = new Date();
-
-      setCurrentDate(
-        refreshDate.toLocaleDateString("en-US", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          timeZone: "Asia/Manila",
-        })
-      );
-
-      setToday(
-        new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Manila",
-        }).format(refreshDate)
-      );
-    }, 3000);
-
-    return () => {
-      clearInterval(attendanceInterval);
-    };
   }, []);
 
   const fetchAttendance = async () => {
@@ -1310,6 +1283,7 @@ export default function AttendancePage() {
                                 </button>
 
                               </>
+
                             ) : (
 
                               <button

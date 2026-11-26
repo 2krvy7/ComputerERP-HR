@@ -380,3 +380,31 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* =====================================================
+   GLOBAL PRINT RULES (HIDES SIDEBAR ON ALL REPORTS)
+===================================================== */
+@media print {
+  .sidebar,
+  aside,
+  nav,
+  button,
+  .print-btn,
+  .export-btn,
+  .header-actions {
+    display: none !important;
+  }
+
+  .app-shell,
+  .main-content,
+  main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+}

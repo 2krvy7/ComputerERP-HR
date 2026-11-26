@@ -14,7 +14,8 @@ export default function ExpensesPage() {
   const [search, setSearch] = useState("");
   const [accountFilter, setAccountFilter] = useState("ALL");
 
-  // Multi-Select Checkboxes (Unique keys so check & uncheck always toggle cleanly)
+  // Interactive Selection Mode (Revealed when tapping "Select" on Expense Register)
+  const [isSelecting, setIsSelecting] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [bulkSelectAction, setBulkSelectAction] = useState("");
   const [approving, setApproving] = useState(false);
@@ -28,18 +29,17 @@ export default function ExpensesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
 
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [expRes, optRes] = await Promise.all([
-        // FETCH 1: GET http://127.0.0
+        // FETCH 1: GET ${API_URL}/api/expense
         fetch(`${API_URL}/api/expense`),
-        // FETCH 2: GET http://127.0.0options
+        // FETCH 2: GET ${API_URL}/api/expense/options
         fetch(`${API_URL}/api/expense/options`),
       ]);
 
@@ -66,63 +66,71 @@ export default function ExpensesPage() {
     fetchData();
   }, []);
 
-
+  // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Number(val || 0));
 
-
+      // Normalize expenses & sort newest register entries on top (rawId DESC)
   const normalizedExpenses = useMemo(() => {
-    return expenses.map((e, idx) => {
-      const isPayroll =
-        e.source_type === "Payroll" ||
-        String(e.expenseID || "").startsWith("PR-");
-      const isProductionOrder =
-        e.source_type === "ProductionOrder" ||
-        String(e.expenseID || "").startsWith("PO-");
+    return expenses
+      .map((e, idx) => {
+        const isPayroll =
+          e.source_type === "Payroll" ||
+          String(e.expenseID || "").startsWith("PR-");
+        const isProductionOrder =
+          e.source_type === "ProductionOrder" ||
+          String(e.expenseID || "").startsWith("PO-");
 
-      const rawId = isPayroll
-        ? Number(
-            e.payrollExpenseID ??
-              String(e.expenseID).replace("PR-", "") ??
-              idx + 1
-          )
-        : isProductionOrder
-        ? Number(
-            e.productionOrderID ??
-              String(e.expenseID).replace("PO-", "") ??
-              idx + 1
-          )
-        : Number(e.expenseID ?? idx + 1);
+        const rawId = isPayroll
+          ? Number(
+              e.payrollExpenseID ??
+                String(e.expenseID).replace("PR-", "") ??
+                idx + 1
+            )
+          : isProductionOrder
+          ? Number(
+              e.productionOrderID ??
+                String(e.expenseID).replace("PO-", "") ??
+                idx + 1
+            )
+          : Number(e.expenseID ?? idx + 1);
 
-      const rowKey = isPayroll
-        ? `PR-${rawId}`
-        : isProductionOrder
-        ? `PO-${rawId}`
-        : `EXP-${rawId}`;
-      const isPosted = e.postingID != null;
+        const rowKey = isPayroll
+          ? `PR-${rawId}`
+          : isProductionOrder
+          ? `PO-${rawId}`
+          : `EXP-${rawId}`;
+        const isPosted = e.postingID != null;
 
-      return {
-        ...e,
-        rowKey,
-        rawId,
-        isPayroll,
-        isProductionOrder,
-        isProduction: !isPayroll && (isProductionOrder || e.productionID != null),
-        isPosted,
-      };
-    });
+        return {
+          ...e,
+          rowKey,
+          rawId,
+          isPayroll,
+          isProductionOrder,
+          isProduction:
+            !isPayroll && (isProductionOrder || e.productionID != null),
+          isPosted,
+        };
+      })
+      .sort((a, b) => {
+        const timeA = a.expenseDate || a.createdAt ? new Date(a.expenseDate ?? a.createdAt).getTime() : 0;
+        const timeB = b.expenseDate || b.createdAt ? new Date(b.expenseDate ?? b.createdAt).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return b.rawId - a.rawId;
+      });
   }, [expenses]);
 
-   const stats = useMemo(() => {
-    // 1. Operating & Production Expenses: includes Direct Overhead, Approved Production, AND Approved HR Payroll
+  const stats = useMemo(() => {
     const approvedOperatingAndProd = normalizedExpenses
       .filter((e) => !e.isPayroll || e.isPosted)
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
 
-    // 2. Unapproved (Pending) HR Payroll runs not yet added into Operating & Production Expenses
     const pendingPayroll = normalizedExpenses
       .filter((e) => e.isPayroll && !e.isPosted)
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
@@ -157,6 +165,16 @@ export default function ExpensesPage() {
     });
   }, [normalizedExpenses, search, accountFilter]);
 
+  function toggleSelectMode() {
+    if (isSelecting) {
+      setIsSelecting(false);
+      setSelectedKeys([]);
+      setBulkSelectAction("");
+    } else {
+      setIsSelecting(true);
+    }
+  }
+
   function toggleSelectRow(rowKey: string) {
     setSelectedKeys((prev) =>
       prev.includes(rowKey)
@@ -189,7 +207,10 @@ export default function ExpensesPage() {
   }
 
   async function handleBatchApprove() {
-    if (selectedKeys.length === 0) return;
+    if (selectedKeys.length === 0) {
+      alert("Please check at least one pending item to pay/approve.");
+      return;
+    }
 
     const expenseIds = selectedKeys
       .filter((k) => k.startsWith("EXP-"))
@@ -203,9 +224,9 @@ export default function ExpensesPage() {
 
     setApproving(true);
     try {
-      // FETCH 3: POST http://127.0.0.1:8000/api/expense/batch-approve
+      // FETCH 3: POST ${API_URL}/api/expense/batch-approve
       // Backend File: finance/backend/routers/expense.py -> batch_approve_expenses()
-      // Purpose: Approves ProductionOrder (PO-#) & Expense (EXP-#) to Journal Entries, and transfers Payroll (PR-#) to BPI Payroll
+      // Purpose: Approves ProductionOrder & Expense to Journal Entries, releases HR Payroll to BPI Payroll, and marks HR Payroll status as Paid
       const res = await fetch(`${API_URL}/api/expense/batch-approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -213,6 +234,7 @@ export default function ExpensesPage() {
           expenseIds,
           payrollIds,
           productionOrderIds,
+          payrollStatus: "Paid",
         }),
       });
 
@@ -222,9 +244,10 @@ export default function ExpensesPage() {
       }
 
       const result = await res.json();
-      alert(result.message || "Approved and posted to Journal Entries!");
+      alert(result.message || "Approved, paid, and posted to Journal Entries!");
       setSelectedKeys([]);
       setBulkSelectAction("");
+      setIsSelecting(false);
       await fetchData();
     } catch (err: any) {
       alert(err.message || "Error approving expenses");
@@ -236,71 +259,72 @@ export default function ExpensesPage() {
   async function handleCreateExpense(e: React.FormEvent) {
     e.preventDefault();
     if (!formAccountId || !formDescription.trim() || Number(formAmount) <= 0) {
-    alert("Please fill in Account, Description, and Amount.");
-    return;
-  }
-
-  setSubmitting(true);
-  try {
-
-    // EXACT FETCH PATH: POST http://127.0.0
-      // FRONTEND FILE: finance/frontend/app/expenses/page.tsx -> handleCreateExpense()
-      // BACKEND ROUTE: finance/backend/routers/expense.py -> create_expense()
-    const res = await fetch("http://127.0.0.1:8000/api/expense", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        accountID: Number(formAccountId),
-        productionID: formProductionId ? Number(formProductionId) : null,
-        description: formDescription.trim(),
-        amount: Number(formAmount),
-      }),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.detail || "Failed to save expense");
+      alert("Please fill in Account, Description, and Amount.");
+      return;
     }
 
-    setShowAddModal(false);
-    setFormAccountId("");
-    setFormDescription("");
-    setFormProductionId("");
-    setFormAmount("");
-    await fetchData();
-  } catch (err: any) {
-    alert(err.message);
-  } finally {
-    setSubmitting(false);
-  }
-}
+    setSubmitting(true);
+    try {
+      // EXACT FETCH PATH: POST http://127.0.0
+      const res = await fetch("http://127.0.0", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountID: Number(formAccountId),
+          productionID: formProductionId ? Number(formProductionId) : null,
+          description: formDescription.trim(),
+          amount: Number(formAmount),
+        }),
+      });
 
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || "Failed to save expense");
+      }
+
+      setShowAddModal(false);
+      setFormAccountId("");
+      setFormDescription("");
+      setFormProductionId("");
+      setFormAmount("");
+      await fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const pendingFiltered = filteredExpenses.filter((e) => !e.isPosted);
   const allPendingChecked =
     pendingFiltered.length > 0 &&
     pendingFiltered.every((e) => selectedKeys.includes(e.rowKey));
 
-  return (
+      return (
     <div className="expenses-page">
+      {/* Aligned Fixed Header (No subtitle, clean Sync & Refresh button) */}
       <div className="page-header">
-        <div>
-          <h1>Expenses &amp; Production Costing</h1>
-          <p>
-            Approve production costs for ledger posting, release HR payroll to BPI Payroll, and record direct expenses.
-          </p>
-        </div>
+        <h1>Expenses &amp; Production Costing</h1>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button className="btn-secondary" onClick={fetchData}>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={fetchData}
+          >
             Sync &amp; Refresh
           </button>
-          <button className="btn-primary" onClick={() => setShowAddModal(true)}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => setShowAddModal(true)}
+          >
             Add Expense
           </button>
         </div>
       </div>
 
+      {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card">
           <span>Operating &amp; Production Expenses</span>
@@ -323,7 +347,9 @@ export default function ExpensesPage() {
         <div className="summary-card">
           <span>Journal Posting Status</span>
           <h2>
-            {loading ? "..." : `${stats.postedCount} / ${normalizedExpenses.length}`}
+            {loading
+              ? "..."
+              : `${stats.postedCount} / ${normalizedExpenses.length}`}
           </h2>
           <small>
             {stats.unpostedCount === 0
@@ -333,108 +359,116 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <div
-        className="filter-bar"
-        style={{ margin: "1rem 0", display: "flex", gap: "0.65rem", flexWrap: "wrap", alignItems: "center" }}
-      >
+      {/* Search & Account Filter Bar */}
+      <div className="filter-bar">
         <input
           type="text"
+          className="filter-search-input"
           placeholder="Search ID, description, or account..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            flex: 1,
-            minWidth: "200px",
-            padding: "0.55rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-          }}
         />
 
         <select
+          className="filter-select"
           value={accountFilter}
           onChange={(e) => setAccountFilter(e.target.value)}
-          style={{
-            padding: "0.55rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            backgroundColor: "#fff",
-          }}
+          aria-label="Filter by Account"
         >
           <option value="ALL">All Accounts ({accounts.length})</option>
           {accounts.map((acc, idx) => {
             const id = acc.accountID ?? acc.accountid ?? idx;
             const code = acc.accountCode ?? acc.accountcode ?? "";
-            const name = acc.accountName ?? acc.accountname ?? `Account #${id}`;
+            const name =
+              acc.accountName ?? acc.accountname ?? `Account #${id}`;
             return (
               <option key={id} value={id}>
-                {code ? `${code} - ` : ""}{name}
+                {code ? `${code} - ` : ""}
+                {name}
               </option>
             );
           })}
         </select>
-
-        <select
-          value={bulkSelectAction}
-          onChange={(e) => handleBulkDropdownChange(e.target.value)}
-          style={{
-            padding: "0.55rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #93c5fd",
-            backgroundColor: "#eff6ff",
-            color: "#1e40af",
-            fontWeight: 500,
-          }}
-        >
-          <option value="">-- Select Category to Check --</option>
-          <option value="ALL_PRODUCTION">Check All Pending Production</option>
-          <option value="ALL_PAYROLL">Check All Pending Payroll</option>
-          <option value="ALL_PENDING">Check All Pending Items</option>
-          <option value="CLEAR">Uncheck All</option>
-        </select>
-
-        {selectedKeys.length > 0 && (
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={approving}
-            onClick={handleBatchApprove}
-            style={{ backgroundColor: "#16a34a" }}
-          >
-            {approving ? "Posting..." : `Approve & Post Selected (${selectedKeys.length})`}
-          </button>
-        )}
       </div>
 
+      {/* Expense Register Table Card */}
       <div className="table-card">
         <div className="table-header">
           <div>
             <h3>Expense Register</h3>
-            <p>Check pending items to approve for Journal Posting or Payroll Transfer</p>
+            <p>
+              Tap Select to choose pending items for category checking and
+              payment
+            </p>
+          </div>
+
+          {/* Right-side Select / Select Category to Check / Pay controls */}
+          <div className="register-actions">
+            {isSelecting && (
+              <>
+                <select
+                  className="category-check-select"
+                  value={bulkSelectAction}
+                  onChange={(e) => handleBulkDropdownChange(e.target.value)}
+                  aria-label="Select Category to Check"
+                >
+                  <option value="">Select Category to Check</option>
+                  <option value="ALL_PRODUCTION">
+                    Check All Pending Production
+                  </option>
+                  <option value="ALL_PAYROLL">
+                    Check All Pending Payroll
+                  </option>
+                  <option value="ALL_PENDING">Check All Pending Items</option>
+                  <option value="CLEAR">Uncheck All</option>
+                </select>
+
+                <button
+                  type="button"
+                  className="btn-pay"
+                  disabled={approving || selectedKeys.length === 0}
+                  onClick={handleBatchApprove}
+                >
+                  {approving
+                    ? "Paying..."
+                    : `Pay${selectedKeys.length > 0 ? ` (${selectedKeys.length})` : ""}`}
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              className={`select-toggle-btn ${isSelecting ? "active" : ""}`}
+              onClick={toggleSelectMode}
+            >
+              {isSelecting ? "Cancel" : "Select"}
+            </button>
           </div>
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading expenses...</p>
+          <p className="state-message">Loading expenses...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
+          <p className="state-message error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="expenses-table">
             <thead>
               <tr>
-                <th style={{ width: "40px" }}>
-                  <input
-                    type="checkbox"
-                    checked={allPendingChecked}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedKeys(pendingFiltered.map((x) => x.rowKey));
-                      } else {
-                        setSelectedKeys([]);
-                      }
-                    }}
-                  />
-                </th>
+                {isSelecting && (
+                  <th className="checkbox-col">
+                    <input
+                      type="checkbox"
+                      checked={allPendingChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedKeys(pendingFiltered.map((x) => x.rowKey));
+                        } else {
+                          setSelectedKeys([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
                 <th>Expense ID</th>
                 <th>Account</th>
                 <th>Description</th>
@@ -447,7 +481,10 @@ export default function ExpensesPage() {
             <tbody>
               {filteredExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td
+                    colSpan={isSelecting ? 7 : 6}
+                    className="empty-table-cell"
+                  >
                     No expenses recorded yet.
                   </td>
                 </tr>
@@ -457,17 +494,21 @@ export default function ExpensesPage() {
                   return (
                     <tr
                       key={exp.rowKey}
-                      style={{ backgroundColor: isChecked ? "#f0fdf4" : undefined }}
+                      className={isChecked ? "checked-row" : undefined}
                     >
+                      {isSelecting && (
+                        <td>
+                          <input
+                            type="checkbox"
+                            disabled={exp.isPosted}
+                            checked={isChecked}
+                            onChange={() => toggleSelectRow(exp.rowKey)}
+                          />
+                        </td>
+                      )}
                       <td>
-                        <input
-                          type="checkbox"
-                          disabled={exp.isPosted}
-                          checked={isChecked}
-                          onChange={() => toggleSelectRow(exp.rowKey)}
-                        />
+                        <strong>{exp.rowKey}</strong>
                       </td>
-                      <td><strong>{exp.rowKey}</strong></td>
                       <td>
                         {exp.account_code ? `${exp.account_code} - ` : ""}
                         {exp.account_name || `Account #${exp.accountID}`}
@@ -480,23 +521,35 @@ export default function ExpensesPage() {
                       </td>
                       <td>
                         {exp.isPayroll ? (
-                          <span className="badge">HR Payroll → BPI Payroll</span>
+                          <span className="badge">
+                            HR Payroll → BPI Payroll
+                          </span>
                         ) : exp.isProduction ? (
                           <span>Production #{exp.productionID}</span>
                         ) : (
-                          <span style={{ color: "#6b7280" }}>Direct Overhead</span>
+                          <span className="muted-label">Direct Overhead</span>
                         )}
                       </td>
                       <td>
                         {exp.isPosted ? (
                           <span className="status posted">
-                            {exp.reference_no || `JE-${String(exp.postingID).padStart(4, "0")}`}
+                            {exp.isPayroll
+                              ? `Paid • ${
+                                  exp.reference_no ||
+                                  `JE-${String(exp.postingID).padStart(4, "0")}`
+                                }`
+                              : exp.reference_no ||
+                                `JE-${String(exp.postingID).padStart(4, "0")}`}
                           </span>
                         ) : (
-                          <span className="status pending">Pending Approval</span>
+                          <span className="status pending">
+                            Pending Approval
+                          </span>
                         )}
                       </td>
-                      <td><strong>{formatCurrency(exp.amount)}</strong></td>
+                      <td>
+                        <strong>{formatCurrency(exp.amount)}</strong>
+                      </td>
                     </tr>
                   );
                 })
@@ -506,34 +559,17 @@ export default function ExpensesPage() {
         )}
       </div>
 
+      {/* Add Direct Expense Modal */}
       {showAddModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleCreateExpense}
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "430px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <form className="modal-box" onSubmit={handleCreateExpense}>
             <h3>Add Direct Expense</h3>
 
-            <label>Expense Account (Chart of Accounts) *</label>
+            <label className="modal-label">
+              Expense Account (Chart of Accounts) *
+            </label>
             <select
+              className="modal-input"
               required
               value={formAccountId}
               onChange={(e) => setFormAccountId(e.target.value)}
@@ -542,27 +578,35 @@ export default function ExpensesPage() {
               {accounts.map((acc, idx) => {
                 const id = acc.accountID ?? acc.accountid ?? idx;
                 const code = acc.accountCode ?? acc.accountcode ?? "";
-                const name = acc.accountName ?? acc.accountname ?? `Account #${id}`;
+                const name =
+                  acc.accountName ?? acc.accountname ?? `Account #${id}`;
                 return (
                   <option key={id} value={id}>
-                    {code ? `${code} - ` : ""}{name}
+                    {code ? `${code} - ` : ""}
+                    {name}
                   </option>
                 );
               })}
             </select>
 
-            <label>Description (Auto-posted to Journal Entries) *</label>
+            <label className="modal-label">
+              Description (Auto-posted to Journal Entries) *
+            </label>
             <input
               type="text"
+              className="modal-input"
               required
               placeholder="e.g. Meralco Electricity Bill or Office Supplies"
               value={formDescription}
               onChange={(e) => setFormDescription(e.target.value)}
             />
 
-            <label>Production Order (Optional — Leave blank for Overhead)</label>
+            <label className="modal-label">
+              Production Order (Optional — Leave blank for Overhead)
+            </label>
             {productions.length > 0 ? (
               <select
+                className="modal-input"
                 value={formProductionId}
                 onChange={(e) => setFormProductionId(e.target.value)}
               >
@@ -582,36 +626,35 @@ export default function ExpensesPage() {
             ) : (
               <input
                 type="number"
+                className="modal-input"
                 placeholder="Optional: Production Order ID (leave blank for overhead)"
                 value={formProductionId}
                 onChange={(e) => setFormProductionId(e.target.value)}
               />
             )}
 
-            <label>Amount *</label>
+            <label className="modal-label">Amount *</label>
             <input
               type="number"
               step="0.01"
+              className="modal-input"
               required
               placeholder="0.00"
               value={formAmount}
               onChange={(e) => setFormAmount(e.target.value)}
             />
 
-            <p style={{ fontSize: "0.8rem", color: "#4b5563", margin: 0 }}>
+            <p className="modal-hint">
               Note: Saving automatically marks this expense paid and posts it
               directly to Journal Entries &amp; General Ledger.
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              <button type="button" onClick={() => setShowAddModal(false)}>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="cancel-btn"
+                onClick={() => setShowAddModal(false)}
+              >
                 Cancel
               </button>
               <button
@@ -628,4 +671,3 @@ export default function ExpensesPage() {
     </div>
   );
 }
-

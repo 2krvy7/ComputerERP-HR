@@ -1,10 +1,10 @@
 "use client";
 
 import HRISSidebar from "@/components/HRISSidebar";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./payroll.css";
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 type Employee = {
   employee_id: number;
@@ -28,6 +28,15 @@ type Payroll = {
   "13th_month_pay": number;
   payroll_status: string;
   payment_date: string | null;
+
+  present_days?: number;
+  absent_days?: number;
+  late_days?: number;
+  leave_days?: number;
+  attendance_deduction?: number;
+
+  period_basic_salary?: number;
+  period_days?: number;
 };
 
 type PayrollForm = {
@@ -70,6 +79,19 @@ export default function PayrollPage() {
 
   const [currentDate, setCurrentDate] = useState("");
 
+  /*
+   * PAY PERIOD CALENDAR
+   */
+  const [showPayPeriodCalendar, setShowPayPeriodCalendar] =
+    useState(false);
+
+  const [payPeriodStart, setPayPeriodStart] = useState("");
+  const [payPeriodEnd, setPayPeriodEnd] = useState("");
+  const [selectingEndDate, setSelectingEndDate] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState("");
+
+  const calculationRequestRef = useRef(0);
+
   const [form, setForm] = useState<PayrollForm>({
     employee_id: "",
     basic_salary: "0",
@@ -111,17 +133,18 @@ export default function PayrollPage() {
       })
     );
 
+    setCalendarMonth(
+      `${now.getFullYear()}-${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}`
+    );
+
     fetchPayroll();
     fetchEmployees();
   }, []);
 
   /* =========================
-     AUTO-REFRESH ATTENDANCE
-     
-     This is the important fix.
-     While Add/Edit Payroll is open,
-     attendance is recalculated every
-     3 seconds.
+     AUTO-REFRESH PAYROLL CALCULATION
   ========================= */
 
   useEffect(() => {
@@ -133,20 +156,19 @@ export default function PayrollPage() {
       return;
     }
 
-    // Calculate immediately
-    calculatePayroll(
-      form.employee_id,
-      form.pay_period,
-      form.overtime
-    );
-
-    // Keep attendance updated while modal is open
-    const interval = setInterval(() => {
+    const runCalculation = () => {
       calculatePayroll(
         form.employee_id,
         form.pay_period,
-        form.overtime
+        form.overtime,
+        form.deductions
       );
+    };
+
+    runCalculation();
+
+    const interval = setInterval(() => {
+      runCalculation();
     }, 3000);
 
     return () => {
@@ -156,6 +178,8 @@ export default function PayrollPage() {
     showModal,
     form.employee_id,
     form.pay_period,
+    form.overtime,
+    form.deductions,
   ]);
 
   /* =========================
@@ -165,23 +189,21 @@ export default function PayrollPage() {
   const fetchPayroll = async () => {
     try {
       const response = await fetch(
-        `${API}/payroll/?_=${Date.now()}`
+        `${API}/payroll/?_=${Date.now()}`,
+        {
+          cache: "no-store",
+        }
       );
 
       if (!response.ok) {
-        throw new Error(
-          "Failed to fetch payroll"
-        );
+        throw new Error("Failed to fetch payroll");
       }
 
       const data = await response.json();
 
       setPayroll(data);
     } catch (error) {
-      console.error(
-        "Error fetching payroll:",
-        error
-      );
+      console.error("Error fetching payroll:", error);
     }
   };
 
@@ -192,24 +214,401 @@ export default function PayrollPage() {
   const fetchEmployees = async () => {
     try {
       const response = await fetch(
-        `${API}/employees/?_=${Date.now()}`
+        `${API}/employees/?_=${Date.now()}`,
+        {
+          cache: "no-store",
+        }
       );
 
       if (!response.ok) {
-        throw new Error(
-          "Failed to fetch employees"
-        );
+        throw new Error("Failed to fetch employees");
       }
 
       const data = await response.json();
 
       setEmployees(data);
     } catch (error) {
-      console.error(
-        "Error fetching employees:",
-        error
+      console.error("Error fetching employees:", error);
+    }
+  };
+
+  /* =========================
+     PAY PERIOD HELPERS
+  ========================= */
+
+  const formatDateForInput = (date: Date) => {
+    return `${date.getFullYear()}-${String(
+      date.getMonth() + 1
+    ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  };
+
+  const formatSingleCalendarDate = (dateString: string) => {
+    if (!dateString) {
+      return "";
+    }
+
+    const date = new Date(`${dateString}T00:00:00`);
+
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const formatPayPeriod = (
+    start: string,
+    end: string
+  ) => {
+    if (!start || !end) {
+      return "";
+    }
+
+    const startDate = new Date(`${start}T00:00:00`);
+    const endDate = new Date(`${end}T00:00:00`);
+
+    const monthFormatter = new Intl.DateTimeFormat(
+      "en-US",
+      {
+        month: "long",
+      }
+    );
+
+    const startMonth = monthFormatter.format(startDate);
+    const endMonth = monthFormatter.format(endDate);
+
+    const startYear = startDate.getFullYear();
+    const endYear = endDate.getFullYear();
+
+    if (
+      startMonth === endMonth &&
+      startYear === endYear
+    ) {
+      return `${startMonth} ${startDate.getDate()}-${endDate.getDate()}, ${startYear}`;
+    }
+
+    return `${startMonth} ${startDate.getDate()}, ${startYear} - ${endMonth} ${endDate.getDate()}, ${endYear}`;
+  };
+
+  const parseExistingPayPeriod = (
+    period: string
+  ) => {
+    if (!period) {
+      return null;
+    }
+
+    /*
+     * Same month:
+     * November 17-19, 2026
+     */
+    const sameMonthMatch = period.match(
+      /^([A-Za-z]+)\s+(\d+)-(\d+),\s+(\d{4})$/
+    );
+
+    if (sameMonthMatch) {
+      const monthName = sameMonthMatch[1];
+      const startDay = Number(sameMonthMatch[2]);
+      const endDay = Number(sameMonthMatch[3]);
+      const year = Number(sameMonthMatch[4]);
+
+      const monthIndex = new Date(
+        `${monthName} 1, ${year}`
+      ).getMonth();
+
+      if (monthIndex >= 0) {
+        const startDate = new Date(
+          year,
+          monthIndex,
+          startDay
+        );
+
+        const endDate = new Date(
+          year,
+          monthIndex,
+          endDay
+        );
+
+        return {
+          start: formatDateForInput(startDate),
+          end: formatDateForInput(endDate),
+        };
+      }
+    }
+
+    /*
+     * Different months:
+     * November 28, 2026 - December 3, 2026
+     */
+    const differentMonthMatch = period.match(
+      /^([A-Za-z]+)\s+(\d+),\s+(\d{4})\s+-\s+([A-Za-z]+)\s+(\d+),\s+(\d{4})$/
+    );
+
+    if (differentMonthMatch) {
+      const startMonth = differentMonthMatch[1];
+      const startDay = Number(differentMonthMatch[2]);
+      const startYear = Number(differentMonthMatch[3]);
+
+      const endMonth = differentMonthMatch[4];
+      const endDay = Number(differentMonthMatch[5]);
+      const endYear = Number(differentMonthMatch[6]);
+
+      const startMonthIndex = new Date(
+        `${startMonth} 1, ${startYear}`
+      ).getMonth();
+
+      const endMonthIndex = new Date(
+        `${endMonth} 1, ${endYear}`
+      ).getMonth();
+
+      if (
+        startMonthIndex >= 0 &&
+        endMonthIndex >= 0
+      ) {
+        return {
+          start: formatDateForInput(
+            new Date(
+              startYear,
+              startMonthIndex,
+              startDay
+            )
+          ),
+          end: formatDateForInput(
+            new Date(
+              endYear,
+              endMonthIndex,
+              endDay
+            )
+          ),
+        };
+      }
+    }
+
+    return null;
+  };
+
+  /* =========================
+     CALENDAR HELPERS
+  ========================= */
+
+  const getCalendarDate = () => {
+    if (!calendarMonth) {
+      return new Date();
+    }
+
+    const [year, month] = calendarMonth
+      .split("-")
+      .map(Number);
+
+    return new Date(year, month - 1, 1);
+  };
+
+  const getCalendarDays = () => {
+    const date = getCalendarDate();
+
+    const year = date.getFullYear();
+    const month = date.getMonth();
+
+    const firstDay = new Date(
+      year,
+      month,
+      1
+    ).getDay();
+
+    const daysInMonth = new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
+
+    const days: (string | null)[] = [];
+
+    for (let i = 0; i < firstDay; i++) {
+      days.push(null);
+    }
+
+    for (
+      let day = 1;
+      day <= daysInMonth;
+      day++
+    ) {
+      days.push(
+        formatDateForInput(
+          new Date(
+            year,
+            month,
+            day
+          )
+        )
       );
     }
+
+    return days;
+  };
+
+  const changeCalendarMonth = (
+    amount: number
+  ) => {
+    const date = getCalendarDate();
+
+    date.setMonth(
+      date.getMonth() + amount
+    );
+
+    setCalendarMonth(
+      `${date.getFullYear()}-${String(
+        date.getMonth() + 1
+      ).padStart(2, "0")}`
+    );
+  };
+
+  const openPayPeriodCalendar = () => {
+    if (form.pay_period) {
+      const existing =
+        parseExistingPayPeriod(
+          form.pay_period
+        );
+
+      if (existing) {
+        setPayPeriodStart(
+          existing.start
+        );
+
+        setPayPeriodEnd(
+          existing.end
+        );
+
+        setSelectingEndDate(false);
+
+        setCalendarMonth(
+          existing.start.substring(
+            0,
+            7
+          )
+        );
+      }
+    } else {
+      const now = new Date();
+
+      setPayPeriodStart("");
+      setPayPeriodEnd("");
+      setSelectingEndDate(false);
+
+      setCalendarMonth(
+        `${now.getFullYear()}-${String(
+          now.getMonth() + 1
+        ).padStart(2, "0")}`
+      );
+    }
+
+    setShowPayPeriodCalendar(true);
+  };
+
+  const handlePayPeriodDateClick = (
+    date: string
+  ) => {
+    /*
+     * First click = start date
+     */
+    if (!selectingEndDate) {
+      setPayPeriodStart(date);
+      setPayPeriodEnd("");
+      setSelectingEndDate(true);
+      return;
+    }
+
+    /*
+     * If second date is before
+     * first date, restart selection.
+     */
+    if (date < payPeriodStart) {
+      setPayPeriodStart(date);
+      setPayPeriodEnd("");
+      return;
+    }
+
+    /*
+     * Second click = end date
+     */
+    setPayPeriodEnd(date);
+    setSelectingEndDate(false);
+  };
+
+  const applyPayPeriod = () => {
+    if (
+      !payPeriodStart ||
+      !payPeriodEnd
+    ) {
+      alert(
+        "Please select a start date and end date."
+      );
+      return;
+    }
+
+    const formattedPeriod =
+      formatPayPeriod(
+        payPeriodStart,
+        payPeriodEnd
+      );
+
+    setForm((prev) => ({
+      ...prev,
+      pay_period: formattedPeriod,
+    }));
+
+    setShowPayPeriodCalendar(false);
+
+    if (form.employee_id) {
+      calculatePayroll(
+        form.employee_id,
+        formattedPeriod,
+        form.overtime,
+        form.deductions
+      );
+    }
+  };
+
+  const cancelPayPeriodSelection = () => {
+    setShowPayPeriodCalendar(false);
+  };
+
+  const isDateInSelectedRange = (
+    date: string
+  ) => {
+    if (
+      !payPeriodStart ||
+      !payPeriodEnd
+    ) {
+      return false;
+    }
+
+    return (
+      date >= payPeriodStart &&
+      date <= payPeriodEnd
+    );
+  };
+
+  const isSelectedStart = (
+    date: string
+  ) => {
+    return date === payPeriodStart;
+  };
+
+  const isSelectedEnd = (
+    date: string
+  ) => {
+    return date === payPeriodEnd;
+  };
+
+  const calendarTitle = () => {
+    const date = getCalendarDate();
+
+    return date.toLocaleDateString(
+      "en-US",
+      {
+        month: "long",
+        year: "numeric",
+      }
+    );
   };
 
   /* =========================
@@ -244,6 +643,11 @@ export default function PayrollPage() {
     setEmployeeSearch("");
     setShowEmployeeDropdown(false);
     setEditingId(null);
+
+    setPayPeriodStart("");
+    setPayPeriodEnd("");
+    setSelectingEndDate(false);
+    setShowPayPeriodCalendar(false);
   };
 
   /* =========================
@@ -259,61 +663,110 @@ export default function PayrollPage() {
      OPEN EDIT MODAL
   ========================= */
 
-  const openEditModal = (record: Payroll) => {
-    setEditingId(record.payroll_id);
+  const openEditModal = (
+    record: Payroll
+  ) => {
+    setEditingId(
+      record.payroll_id
+    );
 
     setForm({
-      employee_id: String(
-        record.employee_id
-      ),
+      employee_id:
+        String(
+          record.employee_id
+        ),
 
-      basic_salary: String(
-        record.basic_salary || 0
-      ),
+      basic_salary:
+        String(
+          record.basic_salary ??
+            0
+        ),
 
-      semi_monthly_basic_salary: String(
-        Number(record.basic_salary || 0) / 2
-      ),
+      semi_monthly_basic_salary:
+        String(
+          record.period_basic_salary ??
+            Number(
+              record.basic_salary ??
+                0
+            ) / 2
+        ),
 
       pay_period:
-        record.pay_period || "",
+        record.pay_period ||
+        "",
 
-      overtime: String(
-        record.overtime || 0
-      ),
+      overtime:
+        String(
+          record.overtime ??
+            0
+        ),
 
-      present_days: "0",
-      absent_days: "0",
-      late_days: "0",
-      attendance_deduction: "0",
+      present_days:
+        String(
+          record.present_days ??
+            0
+        ),
 
-      gross_salary: String(
-        record.gross_salary || 0
-      ),
+      absent_days:
+        String(
+          record.absent_days ??
+            0
+        ),
 
-      sss: String(
-        record.sss || 0
-      ),
+      late_days:
+        String(
+          record.late_days ??
+            0
+        ),
 
-      philhealth: String(
-        record.philhealth || 0
-      ),
+      attendance_deduction:
+        String(
+          record.attendance_deduction ??
+            0
+        ),
 
-      pag_ibig: String(
-        record.pag_ibig || 0
-      ),
+      gross_salary:
+        String(
+          record.gross_salary ??
+            0
+        ),
 
-      deductions: String(
-        record.deductions || 0
-      ),
+      sss:
+        String(
+          record.sss ??
+            0
+        ),
 
-      net_salary: String(
-        record.net_salary || 0
-      ),
+      philhealth:
+        String(
+          record.philhealth ??
+            0
+        ),
 
-      thirteenth_month_pay: String(
-        record["13th_month_pay"] || 0
-      ),
+      pag_ibig:
+        String(
+          record.pag_ibig ??
+            0
+        ),
+
+      deductions:
+        String(
+          record.deductions ??
+            0
+        ),
+
+      net_salary:
+        String(
+          record.net_salary ??
+            0
+        ),
+
+      thirteenth_month_pay:
+        String(
+          record[
+            "13th_month_pay"
+          ] ?? 0
+        ),
 
       payroll_status:
         record.payroll_status ||
@@ -321,7 +774,9 @@ export default function PayrollPage() {
 
       payment_date:
         record.payment_date
-          ? record.payment_date.split("T")[0]
+          ? record.payment_date.split(
+              "T"
+            )[0]
           : "",
     });
 
@@ -336,6 +791,37 @@ export default function PayrollPage() {
       setEmployeeSearch(
         `${employee.first_name} ${employee.last_name}`
       );
+    }
+
+    const existingPeriod =
+      parseExistingPayPeriod(
+        record.pay_period ||
+          ""
+      );
+
+    if (existingPeriod) {
+      setPayPeriodStart(
+        existingPeriod.start
+      );
+
+      setPayPeriodEnd(
+        existingPeriod.end
+      );
+
+      setSelectingEndDate(
+        false
+      );
+
+      setCalendarMonth(
+        existingPeriod.start.substring(
+          0,
+          7
+        )
+      );
+    } else {
+      setPayPeriodStart("");
+      setPayPeriodEnd("");
+      setSelectingEndDate(false);
     }
 
     setShowEmployeeDropdown(false);
@@ -360,169 +846,162 @@ export default function PayrollPage() {
       HTMLInputElement | HTMLSelectElement
     >
   ) => {
-    const { name, value } = e.target;
+    const {
+      name,
+      value,
+    } = e.target;
 
     setForm((prev) => ({
       ...prev,
       [name]: value,
     }));
-
-    /*
-     * Pay period changes are handled
-     * immediately here.
-     *
-     * The useEffect above also keeps
-     * recalculating attendance every
-     * 3 seconds while the modal is open.
-     */
-    if (
-      name === "pay_period" &&
-      form.employee_id &&
-      value.trim() !== ""
-    ) {
-      calculatePayroll(
-        form.employee_id,
-        value,
-        form.overtime
-      );
-    }
   };
 
   /* =========================
      CALCULATE PAYROLL
   ========================= */
 
-  const calculatePayroll = async (
-    employeeId: string,
-    payPeriod: string,
-    overtime: string
-  ) => {
-    if (
-      !employeeId ||
-      !payPeriod.trim()
-    ) {
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `${API}/payroll/calculate?employee_id=${employeeId}&pay_period=${encodeURIComponent(
-          payPeriod
-        )}&overtime=${Number(overtime) || 0}&_=${Date.now()}`,
-        {
-          cache: "no-store",
-        }
-      );
-
-      if (!response.ok) {
-        const errorData =
-          await response.json();
-
-        throw new Error(
-          errorData.detail ||
-            "Failed to calculate payroll"
-        );
+  const calculatePayroll =
+    async (
+      employeeId: string,
+      payPeriod: string,
+      overtime: string,
+      deductions: string
+    ) => {
+      if (
+        !employeeId ||
+        !payPeriod.trim()
+      ) {
+        return;
       }
 
-      const data =
-        await response.json();
+      const requestId =
+        ++calculationRequestRef.current;
 
-      setForm((prev) => {
-        /*
-         * IMPORTANT:
-         * Keep the manually entered
-         * Other Deductions value.
-         */
-        const currentOtherDeductions =
-          Number(prev.deductions) || 0;
+      try {
+        const response =
+          await fetch(
+            `${API}/payroll/calculate?employee_id=${employeeId}&pay_period=${encodeURIComponent(
+              payPeriod
+            )}&overtime=${Number(
+              overtime
+            ) || 0}&deductions=${Number(
+              deductions
+            ) || 0}&_=${Date.now()}`,
+            {
+              cache:
+                "no-store",
+            }
+          );
 
-        /*
-         * The backend calculation already
-         * includes attendance deductions
-         * and statutory deductions.
-         *
-         * We only subtract Other Deductions
-         * here.
-         */
-        const calculatedNet =
-          Number(
-            data.net_salary || 0
-          ) -
-          currentOtherDeductions;
+        if (!response.ok) {
+          const errorData =
+            await response.json();
 
-        return {
+          throw new Error(
+            errorData.detail ||
+              "Failed to calculate payroll"
+          );
+        }
+
+        const data =
+          await response.json();
+
+        if (
+          requestId !==
+          calculationRequestRef.current
+        ) {
+          return;
+        }
+
+        setForm((prev) => ({
           ...prev,
 
-          basic_salary: String(
-            data.monthly_basic_salary ||
-              0
-          ),
+          basic_salary:
+            String(
+              data.basic_salary ??
+                0
+            ),
 
           semi_monthly_basic_salary:
             String(
-              data.semi_monthly_basic_salary ||
+              data.period_basic_salary ??
+                data.semi_monthly_salary ??
                 0
             ),
 
-          /*
-           * These values are now refreshed
-           * every 3 seconds.
-           */
-          present_days: String(
-            data.present_days || 0
-          ),
+          present_days:
+            String(
+              data.present_days ??
+                0
+            ),
 
-          absent_days: String(
-            data.total_absences || 0
-          ),
+          absent_days:
+            String(
+              data.absent_days ??
+                0
+            ),
 
-          late_days: String(
-            data.late_days || 0
-          ),
+          late_days:
+            String(
+              data.late_days ??
+                0
+            ),
 
           attendance_deduction:
             String(
-              data.attendance_deduction ||
+              data.attendance_deduction ??
                 0
             ),
 
-          gross_salary: String(
-            data.gross_salary || 0
-          ),
+          gross_salary:
+            String(
+              data.gross_salary ??
+                0
+            ),
 
-          sss: String(
-            data.sss || 0
-          ),
+          sss:
+            String(
+              data.sss ??
+                0
+            ),
 
-          philhealth: String(
-            data.philhealth || 0
-          ),
+          philhealth:
+            String(
+              data.philhealth ??
+                0
+            ),
 
-          pag_ibig: String(
-            data.pag_ibig || 0
-          ),
+          pag_ibig:
+            String(
+              data.pag_ibig ??
+                0
+            ),
 
           thirteenth_month_pay:
             String(
-              data.thirteenth_month_pay ||
+              data.thirteenth_month_pay ??
                 0
             ),
 
-          net_salary: String(
-            Math.max(
-              0,
-              calculatedNet
-            )
-          ),
-        };
-      });
-    } catch (error) {
-      console.error(
-        "Payroll calculation error:",
-        error
-      );
-    }
-  };
+          net_salary:
+            String(
+              Math.max(
+                0,
+                Number(
+                  data.net_salary ??
+                    0
+                )
+              )
+            ),
+        }));
+      } catch (error) {
+        console.error(
+          "Payroll calculation error:",
+          error
+        );
+      }
+    };
 
   /* =========================
      OVERTIME
@@ -531,7 +1010,8 @@ export default function PayrollPage() {
   const handleOvertimeChange = (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
-    const value = e.target.value;
+    const value =
+      e.target.value;
 
     setForm((prev) => ({
       ...prev,
@@ -540,12 +1020,14 @@ export default function PayrollPage() {
 
     if (
       form.employee_id &&
-      form.pay_period.trim() !== ""
+      form.pay_period.trim() !==
+        ""
     ) {
       calculatePayroll(
         form.employee_id,
         form.pay_period,
-        value
+        value,
+        form.deductions
       );
     }
   };
@@ -554,79 +1036,133 @@ export default function PayrollPage() {
      OTHER DEDUCTIONS
   ========================= */
 
-  const handleDeductionChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
+  const handleDeductionChange =
+    (
+      e: React.ChangeEvent<HTMLInputElement>
+    ) => {
+      const value =
+        e.target.value;
 
-    const gross =
-      Number(form.gross_salary) || 0;
+      const gross =
+        Number(
+          form.gross_salary
+        ) || 0;
 
-    const sss =
-      Number(form.sss) || 0;
+      const sss =
+        Number(
+          form.sss
+        ) || 0;
 
-    const philhealth =
-      Number(form.philhealth) || 0;
+      const philhealth =
+        Number(
+          form.philhealth
+        ) || 0;
 
-    const pagibig =
-      Number(form.pag_ibig) || 0;
+      const pagibig =
+        Number(
+          form.pag_ibig
+        ) || 0;
 
-    const deductions =
-      Number(value) || 0;
+      const deductions =
+        Number(
+          value
+        ) || 0;
 
-    const netSalary =
-      gross -
-      sss -
-      philhealth -
-      pagibig -
-      deductions;
+      const netSalary =
+        gross -
+        sss -
+        philhealth -
+        pagibig -
+        deductions;
 
-    setForm((prev) => ({
-      ...prev,
-      deductions: value,
-      net_salary: String(
-        Math.max(
-          0,
-          netSalary
-        )
-      ),
-    }));
-  };
+      setForm((prev) => ({
+        ...prev,
+        deductions:
+          value,
+        net_salary:
+          String(
+            Math.max(
+              0,
+              netSalary
+            )
+          ),
+      }));
+
+      if (
+        form.employee_id &&
+        form.pay_period.trim() !==
+          ""
+      ) {
+        calculatePayroll(
+          form.employee_id,
+          form.pay_period,
+          form.overtime,
+          value
+        );
+      }
+    };
 
   /* =========================
      EMPLOYEE SEARCH
   ========================= */
 
-  const handleEmployeeSearch = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
+  const handleEmployeeSearch =
+    (
+      e: React.ChangeEvent<HTMLInputElement>
+    ) => {
+      const value =
+        e.target.value;
 
-    setEmployeeSearch(value);
+      setEmployeeSearch(
+        value
+      );
 
-    setForm((prev) => ({
-      ...prev,
+      setForm((prev) => ({
+        ...prev,
 
-      employee_id: "",
+        employee_id:
+          "",
 
-      basic_salary: "0",
-      semi_monthly_basic_salary: "0",
+        basic_salary:
+          "0",
 
-      present_days: "0",
-      absent_days: "0",
-      late_days: "0",
-      attendance_deduction: "0",
+        semi_monthly_basic_salary:
+          "0",
 
-      gross_salary: "0",
-      sss: "0",
-      philhealth: "0",
-      pag_ibig: "0",
-      thirteenth_month_pay: "0",
-      net_salary: "0",
-    }));
+        present_days:
+          "0",
 
-    setShowEmployeeDropdown(true);
-  };
+        absent_days:
+          "0",
+
+        late_days:
+          "0",
+
+        attendance_deduction:
+          "0",
+
+        gross_salary:
+          "0",
+
+        sss: "0",
+
+        philhealth:
+          "0",
+
+        pag_ibig:
+          "0",
+
+        thirteenth_month_pay:
+          "0",
+
+        net_salary:
+          "0",
+      }));
+
+      setShowEmployeeDropdown(
+        true
+      );
+    };
 
   /* =========================
      SELECT EMPLOYEE
@@ -639,28 +1175,33 @@ export default function PayrollPage() {
       `${employee.first_name} ${employee.last_name}`;
 
     const employeeId =
-      String(employee.employee_id);
+      String(
+        employee.employee_id
+      );
 
-    setEmployeeSearch(employeeName);
+    setEmployeeSearch(
+      employeeName
+    );
 
     setForm((prev) => ({
       ...prev,
-      employee_id: employeeId,
+      employee_id:
+        employeeId,
     }));
 
-    setShowEmployeeDropdown(false);
+    setShowEmployeeDropdown(
+      false
+    );
 
-    /*
-     * Calculate immediately if a pay
-     * period has already been entered.
-     */
     if (
-      form.pay_period.trim() !== ""
+      form.pay_period.trim() !==
+      ""
     ) {
       calculatePayroll(
         employeeId,
         form.pay_period,
-        form.overtime
+        form.overtime,
+        form.deductions
       );
     }
   };
@@ -670,215 +1211,261 @@ export default function PayrollPage() {
   ========================= */
 
   const filteredEmployees =
-    employees.filter((employee) => {
-      const fullName =
-        `${employee.first_name} ${employee.last_name}`
-          .toLowerCase();
+    employees.filter(
+      (employee) => {
+        const fullName =
+          `${employee.first_name} ${employee.last_name}`
+            .toLowerCase();
 
-      return fullName.includes(
-        employeeSearch.toLowerCase()
-      );
-    });
+        return fullName.includes(
+          employeeSearch.toLowerCase()
+        );
+      }
+    );
 
   /* =========================
      SUBMIT PAYROLL
   ========================= */
 
-  const handleSubmit = async (
-    e: React.FormEvent
-  ) => {
-    e.preventDefault();
+  const handleSubmit =
+    async (
+      e: React.FormEvent
+    ) => {
+      e.preventDefault();
 
-    if (!form.employee_id) {
-      alert(
-        "Please select an employee."
-      );
-      return;
-    }
-
-    if (
-      !form.pay_period.trim()
-    ) {
-      alert(
-        "Please enter the pay period."
-      );
-      return;
-    }
-
-    const payload = {
-      employee_id:
-        Number(form.employee_id),
-
-      pay_period:
-        form.pay_period,
-
-      overtime:
-        Number(form.overtime) || 0,
-
-      gross_salary:
-        Number(form.gross_salary) || 0,
-
-      sss:
-        Number(form.sss) || 0,
-
-      philhealth:
-        Number(form.philhealth) || 0,
-
-      pag_ibig:
-        Number(form.pag_ibig) || 0,
-
-      deductions:
-        Number(form.deductions) || 0,
-
-      net_salary:
-        Number(form.net_salary) || 0,
-
-      thirteenth_month_pay:
-        Number(
-          form.thirteenth_month_pay
-        ) || 0,
-
-      payroll_status:
-        form.payroll_status,
-
-      payment_date:
-        form.payment_date || null,
-    };
-
-    try {
-      const url = editingId
-        ? `${API}/payroll/${editingId}`
-        : `${API}/payroll/`;
-
-      const method = editingId
-        ? "PUT"
-        : "POST";
-
-      const response =
-        await fetch(url, {
-          method,
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify(
-            payload
-          ),
-        });
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail ||
-            "Failed to save payroll"
+      if (
+        !form.employee_id
+      ) {
+        alert(
+          "Please select an employee."
         );
+        return;
       }
 
-      alert(
-        editingId
-          ? "Payroll updated successfully!"
-          : "Payroll added successfully!"
-      );
+      if (
+        !form.pay_period.trim()
+      ) {
+        alert(
+          "Please select the pay period."
+        );
+        return;
+      }
 
-      closeModal();
-      fetchPayroll();
-    } catch (error) {
-      console.error(
-        "Error saving payroll:",
+      const payload = {
+        employee_id:
+          Number(
+            form.employee_id
+          ),
+
+        pay_period:
+          form.pay_period,
+
+        overtime:
+          Number(
+            form.overtime
+          ) || 0,
+
+        gross_salary:
+          Number(
+            form.gross_salary
+          ) || 0,
+
+        sss:
+          Number(
+            form.sss
+          ) || 0,
+
+        philhealth:
+          Number(
+            form.philhealth
+          ) || 0,
+
+        pag_ibig:
+          Number(
+            form.pag_ibig
+          ) || 0,
+
+        deductions:
+          Number(
+            form.deductions
+          ) || 0,
+
+        net_salary:
+          Number(
+            form.net_salary
+          ) || 0,
+
+        thirteenth_month_pay:
+          Number(
+            form.thirteenth_month_pay
+          ) || 0,
+
+        payroll_status:
+          form.payroll_status,
+
+        payment_date:
+          form.payment_date ||
+          null,
+      };
+
+      try {
+        const url =
+          editingId
+            ? `${API}/payroll/${editingId}`
+            : `${API}/payroll/`;
+
+        const method =
+          editingId
+            ? "PUT"
+            : "POST";
+
+        const response =
+          await fetch(
+            url,
+            {
+              method,
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify(
+                payload
+              ),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            data.detail ||
+              "Failed to save payroll"
+          );
+        }
+
+        alert(
+          editingId
+            ? "Payroll updated successfully!"
+            : "Payroll added successfully!"
+        );
+
+        closeModal();
+        fetchPayroll();
+      } catch (
         error
-      );
+      ) {
+        console.error(
+          "Error saving payroll:",
+          error
+        );
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
-      );
-    }
-  };
+        alert(
+          error instanceof
+            Error
+            ? error.message
+            : "Something went wrong."
+        );
+      }
+    };
 
   /* =========================
      DELETE PAYROLL
   ========================= */
 
-  const handleDelete = async (
-    payrollId: number
-  ) => {
-    const confirmed =
-      confirm(
-        "Are you sure you want to delete this payroll record?"
-      );
-
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      const response =
-        await fetch(
-          `${API}/payroll/${payrollId}`,
-          {
-            method: "DELETE",
-          }
+  const handleDelete =
+    async (
+      payrollId: number
+    ) => {
+      const confirmed =
+        confirm(
+          "Are you sure you want to delete this payroll record?"
         );
 
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.detail ||
-            "Failed to delete payroll"
-        );
+      if (!confirmed) {
+        return;
       }
 
-      alert(
-        "Payroll deleted successfully!"
-      );
+      try {
+        const response =
+          await fetch(
+            `${API}/payroll/${payrollId}`,
+            {
+              method:
+                "DELETE",
+            }
+          );
 
-      fetchPayroll();
-    } catch (error) {
-      console.error(
-        "Delete error:",
+        const data =
+          await response.json();
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            data.detail ||
+              "Failed to delete payroll"
+          );
+        }
+
+        alert(
+          "Payroll deleted successfully!"
+        );
+
+        fetchPayroll();
+      } catch (
         error
-      );
+      ) {
+        console.error(
+          "Delete error:",
+          error
+        );
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong."
-      );
-    }
-  };
+        alert(
+          error instanceof
+            Error
+            ? error.message
+            : "Something went wrong."
+        );
+      }
+    };
 
   /* =========================
      FILTER PAYROLL
   ========================= */
 
   const filteredPayroll =
-    payroll.filter((record) => {
-      const searchValue =
-        search.toLowerCase();
+    payroll.filter(
+      (record) => {
+        const searchValue =
+          search.toLowerCase();
 
-      const matchesSearch =
-        record.employee_name
-          ?.toLowerCase()
-          .includes(searchValue) ||
-        record.pay_period
-          ?.toLowerCase()
-          .includes(searchValue);
+        const matchesSearch =
+          record.employee_name
+            ?.toLowerCase()
+            .includes(
+              searchValue
+            ) ||
+          record.pay_period
+            ?.toLowerCase()
+            .includes(
+              searchValue
+            );
 
-      const matchesStatus =
-        statusFilter === "All" ||
-        record.payroll_status ===
-          statusFilter;
+        const matchesStatus =
+          statusFilter ===
+            "All" ||
+          record.payroll_status ===
+            statusFilter;
 
-      return (
-        matchesSearch &&
-        matchesStatus
-      );
-    });
+        return (
+          matchesSearch &&
+          matchesStatus
+        );
+      }
+    );
 
   /* =========================
      STATISTICS
@@ -892,13 +1479,6 @@ export default function PayrollPage() {
       (record) =>
         record.payroll_status ===
         "Pending"
-    ).length;
-
-  const processedCount =
-    payroll.filter(
-      (record) =>
-        record.payroll_status ===
-        "Processed"
     ).length;
 
   const paidCount =
@@ -920,38 +1500,45 @@ export default function PayrollPage() {
     ).toLocaleString(
       "en-PH",
       {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits:
+          2,
+        maximumFractionDigits:
+          2,
       }
     )}`;
   };
 
   /* =========================
      PAYMENT DATE
-     
-     Avoid new Date() during
-     render.
   ========================= */
 
-  const formatPaymentDate = (
-    value: string | null
-  ) => {
-    if (!value) {
-      return "-";
-    }
+  const formatPaymentDate =
+    (
+      value: string | null
+    ) => {
+      if (!value) {
+        return "-";
+      }
 
-    const datePart =
-      value.split("T")[0];
+      const datePart =
+        value.split(
+          "T"
+        )[0];
 
-    const parts =
-      datePart.split("-");
+      const parts =
+        datePart.split(
+          "-"
+        );
 
-    if (parts.length !== 3) {
-      return value;
-    }
+      if (
+        parts.length !==
+        3
+      ) {
+        return value;
+      }
 
-    return `${parts[1]}/${parts[2]}/${parts[0]}`;
-  };
+      return `${parts[1]}/${parts[2]}/${parts[0]}`;
+    };
 
   return (
     <div className="payroll-page">
@@ -1027,24 +1614,6 @@ export default function PayrollPage() {
 
             <div>
               <p>
-                Processed
-              </p>
-
-              <h2>
-                {processedCount}
-              </h2>
-            </div>
-
-            <div className="stat-icon">
-              ✓
-            </div>
-
-          </div>
-
-          <div className="stat-card">
-
-            <div>
-              <p>
                 Paid
               </p>
 
@@ -1102,8 +1671,12 @@ export default function PayrollPage() {
               <input
                 type="text"
                 placeholder="Search employee or pay period..."
-                value={search}
-                onChange={(e) =>
+                value={
+                  search
+                }
+                onChange={(
+                  e
+                ) =>
                   setSearch(
                     e.target.value
                   )
@@ -1116,7 +1689,9 @@ export default function PayrollPage() {
               value={
                 statusFilter
               }
-              onChange={(e) =>
+              onChange={(
+                e
+              ) =>
                 setStatusFilter(
                   e.target.value
                 )
@@ -1129,10 +1704,6 @@ export default function PayrollPage() {
 
               <option value="Pending">
                 Pending
-              </option>
-
-              <option value="Processed">
-                Processed
               </option>
 
               <option value="Paid">
@@ -1204,7 +1775,9 @@ export default function PayrollPage() {
                   <tr>
 
                     <td
-                      colSpan={10}
+                      colSpan={
+                        10
+                      }
                       className="empty-state"
                     >
                       No payroll records
@@ -1216,7 +1789,9 @@ export default function PayrollPage() {
                 ) : (
 
                   filteredPayroll.map(
-                    (record) => (
+                    (
+                      record
+                    ) => (
 
                       <tr
                         key={
@@ -1543,8 +2118,10 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
@@ -1557,11 +2134,11 @@ export default function PayrollPage() {
 
                 </div>
 
-                {/* SEMI-MONTHLY BASIC */}
+                {/* PERIOD BASIC SALARY */}
                 <div className="form-group">
 
                   <label>
-                    Semi-Monthly Basic Salary
+                    Selected Period Basic Salary
                   </label>
 
                   <div className="calculated-field">
@@ -1573,41 +2150,258 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
                   </div>
 
                   <small className="calculation-note">
-                    Monthly salary ÷ 2
+                    Based on the selected
+                    pay period.
                   </small>
 
                 </div>
 
                 {/* PAY PERIOD */}
-                <div className="form-group">
+                <div className="form-group pay-period-form-group">
 
                   <label>
                     Pay Period
                   </label>
 
-                  <input
-                    type="text"
-                    name="pay_period"
-                    placeholder="Example: November 1-15, 2026"
-                    value={
-                      form.pay_period
-                    }
-                    onChange={
-                      handleChange
-                    }
-                    required
-                  />
+                  <div className="pay-period-picker">
+
+                    <button
+                      type="button"
+                      className="pay-period-display"
+                      onClick={
+                        openPayPeriodCalendar
+                      }
+                    >
+                      <span className="calendar-icon">
+                        📅
+                      </span>
+
+                      <span>
+                        {form.pay_period ||
+                          "Select pay period"}
+                      </span>
+                    </button>
+
+                    {showPayPeriodCalendar && (
+
+                      <div className="pay-period-calendar">
+
+                        <div className="calendar-header">
+
+                          <button
+                            type="button"
+                            className="calendar-nav-button"
+                            onClick={() =>
+                              changeCalendarMonth(
+                                -1
+                              )
+                            }
+                          >
+                            ‹
+                          </button>
+
+                          <strong>
+                            {calendarTitle()}
+                          </strong>
+
+                          <button
+                            type="button"
+                            className="calendar-nav-button"
+                            onClick={() =>
+                              changeCalendarMonth(
+                                1
+                              )
+                            }
+                          >
+                            ›
+                          </button>
+
+                        </div>
+
+                        <div className="calendar-selection-info">
+
+                          {!payPeriodStart && (
+                            <span>
+                              Select start date
+                            </span>
+                          )}
+
+                          {payPeriodStart &&
+                            !payPeriodEnd && (
+                              <span>
+                                Start:{" "}
+                                {formatSingleCalendarDate(
+                                  payPeriodStart
+                                )}
+                                {" — "}
+                                Select end date
+                              </span>
+                            )}
+
+                          {payPeriodStart &&
+                            payPeriodEnd && (
+                              <span>
+                                {formatPayPeriod(
+                                  payPeriodStart,
+                                  payPeriodEnd
+                                )}
+                              </span>
+                            )}
+
+                        </div>
+
+                        <div className="calendar-weekdays">
+
+                          <span>
+                            Sun
+                          </span>
+
+                          <span>
+                            Mon
+                          </span>
+
+                          <span>
+                            Tue
+                          </span>
+
+                          <span>
+                            Wed
+                          </span>
+
+                          <span>
+                            Thu
+                          </span>
+
+                          <span>
+                            Fri
+                          </span>
+
+                          <span>
+                            Sat
+                          </span>
+
+                        </div>
+
+                        <div className="calendar-days">
+
+                          {getCalendarDays().map(
+                            (
+                              date,
+                              index
+                            ) => {
+
+                              if (!date) {
+                                return (
+                                  <div
+                                    key={
+                                      `empty-${index}`
+                                    }
+                                    className="calendar-day empty"
+                                  />
+                                );
+                              }
+
+                              const inRange =
+                                isDateInSelectedRange(
+                                  date
+                                );
+
+                              const start =
+                                isSelectedStart(
+                                  date
+                                );
+
+                              const end =
+                                isSelectedEnd(
+                                  date
+                                );
+
+                              return (
+                                <button
+                                  type="button"
+                                  key={
+                                    date
+                                  }
+                                  className={`calendar-day ${
+                                    inRange
+                                      ? "in-range"
+                                      : ""
+                                  } ${
+                                    start
+                                      ? "range-start"
+                                      : ""
+                                  } ${
+                                    end
+                                      ? "range-end"
+                                      : ""
+                                  }`}
+                                  onClick={() =>
+                                    handlePayPeriodDateClick(
+                                      date
+                                    )
+                                  }
+                                >
+                                  {Number(
+                                    date.substring(
+                                      8,
+                                      10
+                                    )
+                                  )}
+                                </button>
+                              );
+                            }
+                          )}
+
+                        </div>
+
+                        <div className="calendar-actions">
+
+                          <button
+                            type="button"
+                            className="calendar-cancel-button"
+                            onClick={
+                              cancelPayPeriodSelection
+                            }
+                          >
+                            Cancel
+                          </button>
+
+                          <button
+                            type="button"
+                            className="calendar-apply-button"
+                            onClick={
+                              applyPayPeriod
+                            }
+                            disabled={
+                              !payPeriodStart ||
+                              !payPeriodEnd
+                            }
+                          >
+                            Apply
+                          </button>
+
+                        </div>
+
+                      </div>
+
+                    )}
+
+                  </div>
 
                   <small className="calculation-note">
-                    Attendance is checked
+                    Select a start date and
+                    end date. Attendance and
+                    salary are calculated only
                     within this period.
                   </small>
 
@@ -1716,7 +2510,9 @@ export default function PayrollPage() {
 
                   <small className="calculation-note">
                     Enter overtime
-                    amount.
+                    amount. Overtime is
+                    added to gross and
+                    net salary.
                   </small>
 
                 </div>
@@ -1737,18 +2533,18 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
                   </div>
 
                   <small className="calculation-note">
-                    Semi-monthly basic
-                    + overtime −
-                    attendance
-                    deduction
+                    Period basic + overtime
+                    − attendance deduction
                   </small>
 
                 </div>
@@ -1769,8 +2565,10 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
@@ -1799,8 +2597,10 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
@@ -1829,8 +2629,10 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
@@ -1886,16 +2688,19 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
                   </div>
 
                   <small className="calculation-note">
-                    Automatically
-                    calculated
+                    Gross salary − SSS −
+                    PhilHealth − Pag-IBIG
+                    − other deductions.
                   </small>
 
                 </div>
@@ -1916,15 +2721,17 @@ export default function PayrollPage() {
                     ).toLocaleString(
                       "en-PH",
                       {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
+                        minimumFractionDigits:
+                          2,
+                        maximumFractionDigits:
+                          2,
                       }
                     )}
 
                   </div>
 
                   <small className="calculation-note">
-                    Semi-monthly basic
+                    Selected period basic
                     salary ÷ 12
                   </small>
 
@@ -1949,10 +2756,6 @@ export default function PayrollPage() {
 
                     <option value="Pending">
                       Pending
-                    </option>
-
-                    <option value="Processed">
-                      Processed
                     </option>
 
                     <option value="Paid">

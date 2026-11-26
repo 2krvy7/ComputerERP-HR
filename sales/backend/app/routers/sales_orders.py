@@ -10,16 +10,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
-from app.dependencies.auth import require_admin, require_password_change_completed
+from app.core.roles import ADMIN_ROLE_ID, STAFF_ROLE_ID, SUPERADMIN_ROLE_ID
+from app.dependencies.auth import (
+    get_current_user,
+    require_admin,
+    require_password_change_completed,
+)
 from app.models.customer import Customer
-from app.models.delivery import Delivery
 from app.models.item_master import ItemMaster
 from app.models.sales_quotation import SalesQuotation
 from app.models.sales_quotation_detail import SalesQuotationDetail
 from app.models.sales_order import SalesOrder
 from app.models.sales_order_detail import SalesOrderDetail
 from app.models.stock import Stock
-from app.models.stock_ledger import StockLedger
+from app.models.user import User
 
 from app.schemas.sales_order import (
     SalesOrderCreate,
@@ -262,7 +266,17 @@ def get_orders(
 def create_order(
     order_data: SalesOrderCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.role_id != SUPERADMIN_ROLE_ID and (
+        current_user.dept_id != "SL"
+        or current_user.role_id not in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only Sales staff or admins can submit Sales order requests.",
+        )
+
     customer = db.get(
         Customer,
         order_data.customer_id,
@@ -377,51 +391,6 @@ def create_order(
                 ),
             )
 
-    # This is an availability check only.
-    # Stock is not reserved or deducted when an order is created.
-    stock_rows = db.execute(
-        select(
-            Stock.IM_ID,
-            func.sum(
-                Stock.quantity_on_hand
-            ).label("stock_available"),
-        )
-        .where(
-            Stock.IM_ID.in_(requested_quantities.keys())
-        )
-        .group_by(Stock.IM_ID)
-    ).all()
-
-    stock_by_item = {
-        item_id: int(stock_available or 0)
-        for item_id, stock_available in stock_rows
-    }
-
-    stock_errors = []
-
-    for item_id, requested_quantity in requested_quantities.items():
-        available_quantity = stock_by_item.get(
-            item_id,
-            0,
-        )
-
-        if requested_quantity > available_quantity:
-            item = items_by_id[item_id]
-
-            stock_errors.append(
-                f"{item.Item_Name}: requested {requested_quantity}, "
-                f"but only {available_quantity} available."
-            )
-
-    if stock_errors:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "Insufficient stock. "
-                + " ".join(stock_errors)
-            ),
-        )
-
     order_details = []
     order_total = Decimal("0")
 
@@ -466,6 +435,31 @@ def create_order(
             "line_total": line_total,
         })
 
+    tax_type = quotation.tax_type if quotation is not None else order_data.tax_type
+    tax_rate = Decimal(str(
+        quotation.tax_rate
+        if quotation is not None
+        else order_data.tax_rate or "0.00"
+    ))
+    installment_months = (
+        quotation.installment_months
+        if quotation is not None
+        else order_data.installment_months
+    )
+    tax_amount = (order_total * tax_rate / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    interest_rate = {
+        1: Decimal("0.00"),
+        3: Decimal("3.00"),
+        6: Decimal("5.00"),
+        12: Decimal("10.00"),
+    }[installment_months]
+    interest_amount = (
+        order_total * interest_rate / Decimal("100")
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    quotation_total = order_total + tax_amount + interest_amount
+
     try:
         if quotation is None:
             quotation = SalesQuotation(
@@ -474,7 +468,13 @@ def create_order(
                     order_data.order_date or date.today()
                 ),
                 status="Accepted",
-                total_amount=order_total,
+                total_amount=quotation_total,
+                tax_type=tax_type,
+                tax_rate=tax_rate,
+                tax_amount=tax_amount,
+                installment_months=installment_months,
+                interest_rate=interest_rate,
+                interest_amount=interest_amount,
             )
 
             db.add(quotation)
@@ -496,6 +496,10 @@ def create_order(
             ),
             status="Pending",
             total_amount=order_total,
+            tax_type=tax_type,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
+            installment_months=installment_months,
         )
 
         db.add(order)
@@ -569,6 +573,7 @@ def update_order_status(
     order_id: int,
     status_data: SalesOrderStatusUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         order = db.scalar(
@@ -589,69 +594,23 @@ def update_order_status(
         current_status = order.status
         new_status = status_data.status
 
-        if current_status == new_status:
-            return order
-
-        allowed_transitions = {
-            "Pending": {
-                "Approved",
-                "Cancelled",
-            },
-            "Approved": {
-                "Processing",
-                "Cancelled",
-            },
-            "Processing": {
-                "Completed",
-                "Cancelled",
-            },
-            "Completed": set(),
-            "Cancelled": {
-                "Approved",
-            },
-        }
-
-        if new_status not in allowed_transitions.get(
-            current_status,
-            set(),
-        ):
+        if current_status != "Pending" or new_status != "Accepted":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Invalid status transition: "
-                    f"{current_status} to {new_status}."
-                ),
+                detail="Only pending requests can be accepted by Inventory.",
             )
 
-        if new_status == "Cancelled":
-            deliveries = db.scalars(
-                select(Delivery).where(
-                    Delivery.order_id == order_id
-                )
-            ).all()
-
-            for delivery in deliveries:
-                reference_no = f"DEL-{delivery.delivery_id}"
-
-                released_stock = db.scalar(
-                    select(StockLedger.LogID).where(
-                        StockLedger.ReferenceNo == reference_no,
-                        StockLedger.TransactionType == "STOCK_OUT",
-                    ).limit(1)
-                )
-
-                if released_stock is not None:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            "This order cannot be cancelled because "
-                            "inventory has already released its items. "
-                            "Process a return or stock adjustment instead."
-                        ),
-                    )
-
-        # Approving an order no longer deducts stock.
-        # Stock deduction is handled by the Delivery release endpoint.
+        if (
+            current_user.dept_id != "IN"
+            or current_user.role_id not in (STAFF_ROLE_ID, ADMIN_ROLE_ID)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Only Inventory staff or admins can accept "
+                    "Sales order requests."
+                ),
+            )
 
         order.status = new_status
 

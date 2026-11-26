@@ -36,6 +36,7 @@ export default function JournalEntries() {
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
   const [currentPeriod, setCurrentPeriod] = useState<{
     month: number;
     year: number;
@@ -54,6 +55,10 @@ export default function JournalEntries() {
     { accountID: "", debit: "", credit: "" },
   ]);
   const [submitting, setSubmitting] = useState(false);
+
+ 
+
+
 
   const API_URL = (
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
@@ -102,11 +107,14 @@ export default function JournalEntries() {
   }, []);
 
   // Format numeric currency values
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat("en-US", {
+    const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(amount || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Number(val || 0));
+
 
   // Format ISO dates into readable short labels
   const formatDate = (dateStr: string) => {
@@ -117,6 +125,23 @@ export default function JournalEntries() {
       year: "numeric",
     });
   };
+
+  // Condenses long auto-generated descriptions into concise identifiers for the table
+const formatShortDescription = (rawDesc: string) => {
+  if (!rawDesc) return "-";
+  // Strip verbose "— Net Sales: ..., Output VAT: ..." tail on AR Collections
+      let short = rawDesc.split("—")[0].trim();
+
+  // Strip "(BDO Corporate Checking -> BPI Payroll)" transfer note
+  short = short.replace(/\s*\(BDO Corporate Checking\s*->\s*BPI Payroll\)/i, "");
+  // Shorten common verbose prefixes
+  short = short
+    .replace(/^Supplier payment for /i, "")
+    .replace(/^Customer collection for /i, "")
+    .replace(/^Approved Production Batch /i, "Production Batch ")
+    .replace(/^Operating Expense /i, "Expense ");
+  return short;
+};
 
   // Normalize PostgreSQL fields and compute debit/credit totals per entry
   const normalizedEntries = useMemo(() => {
@@ -165,20 +190,29 @@ export default function JournalEntries() {
     [normalizedEntries]
   );
 
-  // Filter journal entries by selected source dropdown and search text
+    // Filter journal entries by source & search text (newest first)
   const filteredEntries = useMemo(() => {
-    return normalizedEntries.filter((entry) => {
+    const q = search.toLowerCase();
+    const filtered = normalizedEntries.filter((entry) => {
       if (sourceFilter !== "ALL" && entry.sourceLabel !== sourceFilter) {
         return false;
       }
-      const q = search.toLowerCase();
       return (
         entry.entryCode.toLowerCase().includes(q) ||
         (entry.description || "").toLowerCase().includes(q) ||
         entry.sourceLabel.toLowerCase().includes(q)
       );
     });
+
+    return [...filtered].sort((a, b) => {
+      const timeA = a.journalDate ? new Date(a.journalDate).getTime() : 0;
+      const timeB = b.journalDate ? new Date(b.journalDate).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      return Number(b.normalizedId || 0) - Number(a.normalizedId || 0);
+    });
   }, [normalizedEntries, search, sourceFilter]);
+
+
 
 
     // Summary card counts
@@ -346,6 +380,7 @@ export default function JournalEntries() {
       </div>
 
       {/* Search Bar & Interactive Source Dropdown Filter */}
+             {/* Search Bar & Entry Source Dropdown */}
       <div className="toolbar">
         <input
           className="toolbar-search"
@@ -358,7 +393,7 @@ export default function JournalEntries() {
           className="source-select"
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
-          aria-label="Filter by source module"
+          aria-label="Filter by entry source"
         >
           <option value="ALL">All Sources</option>
           {availableSources.map((src) => (
@@ -368,6 +403,7 @@ export default function JournalEntries() {
           ))}
         </select>
       </div>
+
 
       {/* Entry Register Table (Left-aligned section header, centered columns) */}
       <div className="table-container">
@@ -405,9 +441,9 @@ export default function JournalEntries() {
                       <strong>{entry.entryCode}</strong>
                     </td>
                     <td>{formatDate(entry.journalDate)}</td>
-                    <td>{entry.description}</td>
+                    {/* ⬇️ REPLACE <td>{entry.description}</td> WITH THIS LINE (around line 405) ⬇️ */}
+                    <td>{formatShortDescription(entry.description)}</td>
                     <td>{formatCurrency(entry.totalDebit)}</td>
-                    <td>{formatCurrency(entry.totalCredit)}</td>
                     <td>
                       <span
                         className={`status ${entry.statusLabel.toLowerCase()}`}

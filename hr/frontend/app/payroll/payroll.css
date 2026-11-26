@@ -458,6 +458,255 @@ tbody tr:hover {
 }
 
 /* =========================
+   CALENDAR PAY PERIOD
+========================= */
+
+.pay-period-form-group {
+  position: relative;
+  z-index: 30;
+}
+
+.pay-period-picker {
+  position: relative;
+  width: 100%;
+}
+
+.pay-period-display {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #cfe0e3;
+  border-radius: 8px;
+  outline: none;
+  background: white;
+  color: #234b57;
+  font-size: 10px;
+  font-family: Arial, Helvetica, sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.pay-period-display:hover {
+  border-color: #aacdd2;
+}
+
+.pay-period-display:focus {
+  border-color: #39717d;
+  box-shadow: 0 0 0 2px rgba(57, 113, 125, 0.08);
+}
+
+.pay-period-display span:last-child {
+  color: #234b57;
+}
+
+.calendar-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+/* =========================
+   CALENDAR POPUP
+========================= */
+
+.pay-period-calendar {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 300px;
+  background: white;
+  border: 1px solid #cfe0e3;
+  border-radius: 10px;
+  padding: 13px;
+  box-shadow: 0 8px 24px rgba(35, 75, 87, 0.14);
+  z-index: 100;
+}
+
+/* =========================
+   CALENDAR HEADER
+========================= */
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.calendar-header strong {
+  color: #39717d;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.calendar-nav-button {
+  width: 27px;
+  height: 27px;
+  border: none;
+  border-radius: 6px;
+  background: #eaf5f6;
+  color: #39717d;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.calendar-nav-button:hover {
+  background: #dceef0;
+}
+
+/* =========================
+   CALENDAR SELECTION INFO
+========================= */
+
+.calendar-selection-info {
+  min-height: 27px;
+  margin-bottom: 9px;
+  padding: 7px 9px;
+  background: #f5f9fa;
+  border: 1px solid #e3eef0;
+  border-radius: 6px;
+  color: #78969c;
+  font-size: 8px;
+  line-height: 1.3;
+}
+
+.calendar-selection-info span {
+  color: #39717d;
+}
+
+/* =========================
+   WEEKDAYS
+========================= */
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.calendar-weekdays span {
+  text-align: center;
+  color: #78969c;
+  font-size: 8px;
+  font-weight: bold;
+  padding: 4px 0;
+}
+
+/* =========================
+   CALENDAR DAYS
+========================= */
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendar-day {
+  width: 100%;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #456a72;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.calendar-day:hover {
+  background: #eaf5f6;
+  color: #2f6570;
+}
+
+.calendar-day.empty {
+  cursor: default;
+}
+
+.calendar-day.empty:hover {
+  background: transparent;
+}
+
+/* =========================
+   SELECTED RANGE
+========================= */
+
+.calendar-day.in-range {
+  background: #e1f0f2;
+  color: #2f6570;
+}
+
+.calendar-day.range-start,
+.calendar-day.range-end {
+  background: #39717d;
+  color: white;
+  font-weight: bold;
+}
+
+.calendar-day.range-start:hover,
+.calendar-day.range-end:hover {
+  background: #2f6570;
+  color: white;
+}
+
+/* =========================
+   CALENDAR ACTIONS
+========================= */
+
+.calendar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid #edf3f4;
+}
+
+.calendar-cancel-button,
+.calendar-apply-button {
+  border: none;
+  height: 29px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 8px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.calendar-cancel-button {
+  background: #edf3f4;
+  color: #56747b;
+}
+
+.calendar-cancel-button:hover {
+  background: #e1eaec;
+}
+
+.calendar-apply-button {
+  background: #2f6570;
+  color: white;
+}
+
+.calendar-apply-button:hover {
+  background: #234f58;
+}
+
+.calendar-apply-button:disabled {
+  background: #cbdcdf;
+  color: #8aa3a8;
+  cursor: not-allowed;
+}
+
+/* =========================
    CALCULATED FIELDS
 ========================= */
 
@@ -686,6 +935,11 @@ tbody tr:hover {
   .form-grid {
     grid-template-columns: 1fr;
   }
+
+  .pay-period-calendar {
+    width: 100%;
+    max-width: 310px;
+  }
 }
 
 @media (max-width: 600px) {
@@ -728,5 +982,12 @@ tbody tr:hover {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .pay-period-calendar {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: 100%;
   }
 }

@@ -28,6 +28,7 @@ class QuotationDetailCreate(BaseModel):
 class SalesQuotationCreate(BaseModel):
     customer_id: int = Field(gt=0)
     quotation_date: date | None = None
+    installment_months: Literal[1, 3, 6, 12] = 1
     details: list[QuotationDetailCreate] = Field(min_length=1)
 
 
@@ -52,6 +53,12 @@ class SalesQuotationResponse(BaseModel):
     quotation_date: date
     status: QuotationStatus
     total_amount: Decimal
+    tax_type: str
+    tax_rate: Decimal
+    tax_amount: Decimal
+    installment_months: int
+    interest_rate: Decimal
+    interest_amount: Decimal
     details: list[QuotationDetailResponse]
 
 
