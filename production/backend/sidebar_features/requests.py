@@ -91,8 +91,8 @@ def get_production_requests():
                     ON pm."IM_ID" = im."IM_ID"
                 LEFT JOIN public."ProductionOrder" AS po
                     ON rr."RR_ID" = po."RR_ID"
-                WHERE rr."status" = 'Approved'
-                  AND im."ItemType" = 'Finished'
+                WHERE LOWER(rr."status") = 'approved'
+                  AND LOWER(im."ItemType") = 'finished'
                 ORDER BY rr."RR_ID" DESC;
                 """
             )
@@ -163,10 +163,10 @@ def get_batch_material_requirements(production_id: int):
             batch_quantity = request[1]
             request_status = request[2]
 
-            if request_status != "Approved":
+            if request_status != "Accepted":
                 raise HTTPException(
                     status_code=400,
-                    detail="Material requirements are available only for approved requests."
+                    detail="Material requirements are available only for accepted requests."
                 )
 
             if batch_quantity is None or batch_quantity <= 0:
@@ -244,8 +244,8 @@ def accept_production_request(rr_id: int):
                 INNER JOIN public."ITEM_MASTER" AS im
                     ON pm."IM_ID" = im."IM_ID"
                 WHERE rr."RR_ID" = %s
-                  AND rr."status" = 'Approved'
-                  AND im."ItemType" = 'Finished'
+                  AND LOWER(rr."status") = 'approved'
+                  AND LOWER(im."ItemType") = 'finished'
                 FOR UPDATE OF rr;
                 """,
                 (rr_id,)
@@ -321,7 +321,7 @@ def accept_production_request(rr_id: int):
                 INSERT INTO public."ProductionOrder"
                     ("RR_ID", "PM_ID", "WH_ID", "quantity",
                     "productCost", "status", "created_at")
-                VALUES (%s, %s, %s, %s, %s, 'Approved', NOW())
+                VALUES (%s, %s, %s, %s, %s, 'Accepted', NOW())
                 RETURNING "productionID";
                 """,
                 (
@@ -353,10 +353,10 @@ def accept_production_request(rr_id: int):
         database_connection.commit()
 
         return {
-            "message": "Production request approved successfully.",
+            "message": "Production request accepted successfully.",
             "RR_ID": rr_id,
             "productionID": production_id,
-            "status": "Approved"
+            "status": "Accepted"
         }
 
     except HTTPException:
