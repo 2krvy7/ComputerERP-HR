@@ -349,6 +349,26 @@ export const salesReturnAPI = {
     }),
 };
 
+
+export interface OnHandStock {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  Category: string | null;
+  unit_of_measure: string | null;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  available_stock: number;
+  reorder_level: number;
+  status: "In Stock" | "Low Stock" | "Out of Stock";
+}
+
+export const onHandStockAPI = {
+  getAll: () =>
+    request<OnHandStock[]>("/api/dashboard/on-hand-stocks"),
+};
+
+
 // SALES QUOTATIONS
 
 export const quotationAPI = {

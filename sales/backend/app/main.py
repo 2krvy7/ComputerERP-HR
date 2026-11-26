@@ -19,11 +19,16 @@ from app.models.sales_invoice import SalesInvoice
 from app.models.accounts_receivable import AccountsReceivable
 from app.models.payment_collection import PaymentCollection
 from app.models.sales_return import SalesReturn
+from app.models.finance_payment_sync import FinancePaymentSync
+from app.models.stock import Stock
 
 # Authentication models
 from app.models.user import User
 
 # Routers
+from app.routers.finance_integration import (
+    router as finance_integration_router,
+)
 from app.routers.customers import router as customers_router
 from app.routers.sales_quotations import router as quotations_router
 from app.routers.sales_orders import router as orders_router
@@ -32,6 +37,8 @@ from app.routers.sales_invoice import router as invoice_router
 from app.routers.accounts_receivable import router as accounts_receivable_router
 from app.routers.payment_collection import router as payment_collection_router
 from app.routers.sales_return import router as sales_return_router
+from app.routers.stock import router as stock_router
+
 
 # Authentication routers
 from app.routers.auth import router as auth_router
@@ -106,6 +113,8 @@ app.include_router(invoice_router)
 app.include_router(accounts_receivable_router)
 app.include_router(payment_collection_router)
 app.include_router(sales_return_router)
+app.include_router(finance_integration_router)
+app.include_router(stock_router)
 
 
 @app.get("/")
