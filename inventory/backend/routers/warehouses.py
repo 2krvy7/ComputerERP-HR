@@ -1,29 +1,40 @@
-from fastapi import APIRouter, HTTPException
+
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from psycopg import errors
 from psycopg.rows import dict_row
 from database import get_db_connection
+from security import require_inventory_user, require_inventory_admin
 
 router = APIRouter(prefix="/warehouses", tags=["Warehouses"])
+
 
 class WarehouseIn(BaseModel):
     warehouse_name: str = Field(min_length=1, max_length=255)
     location: str | None = None
 
+
 class WarehouseUpdate(BaseModel):
     warehouse_name: str | None = Field(default=None, min_length=1, max_length=255)
     location: str | None = None
 
+
 COLUMNS = {"warehouse_name": "Warehouse_Name", "location": "Location"}
 SELECT = 'SELECT "WH_ID", "Warehouse_Name", "Location" FROM public."WAREHOUSE"'
 
+
 @router.get("/")
-def list_warehouses(search: str | None = None):
+def list_warehouses(
+    search: str | None = None,
+    user: dict = Depends(require_inventory_user)
+):
     query = SELECT
     params: tuple = ()
-    if search:  # matches name or location, e.g. /warehouses/?search=main
+
+    if search:
         query += ' WHERE "Warehouse_Name" ILIKE %s OR "Location" ILIKE %s'
         params = (f"%{search}%", f"%{search}%")
+
     query += ' ORDER BY "WH_ID"'
 
     with get_db_connection() as conn:
@@ -31,51 +42,62 @@ def list_warehouses(search: str | None = None):
             cur.execute(query, params)
             return cur.fetchall()
 
+
 @router.get("/stock")
-def list_warehouse_stock():
+def list_warehouse_stock(
+    user: dict = Depends(require_inventory_user)
+):
     query = '''
-                SELECT
-                    s."STOCK_ID" AS stock_id,
-                    s."IM_ID" AS im_id,
-                    i."SKU" AS sku,
-                    i."Item_Name" AS item_name,
-                    i."ItemType" AS item_type,
-                    s."WH_ID" AS wh_id,
-                    w."Warehouse_Name" AS warehouse_name,
-                    s.quantity_on_hand,
-                    s.reorder_level,
-                    CASE
-                        WHEN s.quantity_on_hand <= s.reorder_level
-                        THEN 'Low Stock'
-                        ELSE 'Normal'
-                    END AS stock_status
-                FROM public."STOCK" AS s
-                INNER JOIN public."ITEM_MASTER" AS i
-                    ON s."IM_ID" = i."IM_ID"
-                INNER JOIN public."WAREHOUSE" AS w
-                    ON s."WH_ID" = w."WH_ID"
-                ORDER BY w."WH_ID", i."Item_Name"
-            '''
-    
+        SELECT
+            s."STOCK_ID" AS stock_id,
+            s."IM_ID" AS im_id,
+            i."SKU" AS sku,
+            i."Item_Name" AS item_name,
+            i."ItemType" AS item_type,
+            s."WH_ID" AS wh_id,
+            w."Warehouse_Name" AS warehouse_name,
+            s.quantity_on_hand,
+            s.reorder_level,
+            CASE
+                WHEN s.quantity_on_hand <= s.reorder_level
+                THEN 'Low Stock'
+                ELSE 'Normal'
+            END AS stock_status
+        FROM public."STOCK" AS s
+        INNER JOIN public."ITEM_MASTER" AS i
+            ON s."IM_ID" = i."IM_ID"
+        INNER JOIN public."WAREHOUSE" AS w
+            ON s."WH_ID" = w."WH_ID"
+        ORDER BY w."WH_ID", i."Item_Name"
+    '''
+
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(query)
             return cur.fetchall()
-    
-        
+
 
 @router.get("/{wh_id}")
-def get_warehouse(wh_id: int):
+def get_warehouse(
+    wh_id: int,
+    user: dict = Depends(require_inventory_user)
+):
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(SELECT + ' WHERE "WH_ID" = %s', (wh_id,))
             row = cur.fetchone()
+
     if not row:
         raise HTTPException(status_code=404, detail="Warehouse not found")
+
     return row
 
+
 @router.post("/", status_code=201)
-def create_warehouse(w: WarehouseIn):
+def create_warehouse(
+    w: WarehouseIn,
+    user: dict = Depends(require_inventory_admin)
+):
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -86,14 +108,20 @@ def create_warehouse(w: WarehouseIn):
             )
             return cur.fetchone()
 
+
 @router.patch("/{wh_id}")
-def update_warehouse(wh_id: int, w: WarehouseUpdate):
+def update_warehouse(
+    wh_id: int,
+    w: WarehouseUpdate,
+    user: dict = Depends(require_inventory_admin)
+):
     fields = w.model_dump(exclude_unset=True)
+
     if not fields or fields.get("warehouse_name", "x") is None:
         raise HTTPException(status_code=400, detail="Nothing valid to update")
 
-    # column names come from the fixed COLUMNS map, never from user input
     set_clause = ", ".join(f'"{COLUMNS[k]}" = %s' for k in fields)
+
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
@@ -103,18 +131,31 @@ def update_warehouse(wh_id: int, w: WarehouseUpdate):
                 (*fields.values(), wh_id),
             )
             row = cur.fetchone()
+
     if not row:
         raise HTTPException(status_code=404, detail="Warehouse not found")
+
     return row
 
+
 @router.delete("/{wh_id}", status_code=204)
-def delete_warehouse(wh_id: int):
+def delete_warehouse(
+    wh_id: int,
+    user: dict = Depends(require_inventory_admin)
+):
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute('DELETE FROM public."WAREHOUSE" WHERE "WH_ID" = %s', (wh_id,))
+                cur.execute(
+                    'DELETE FROM public."WAREHOUSE" WHERE "WH_ID" = %s',
+                    (wh_id,)
+                )
+
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Warehouse not found")
+
     except errors.ForeignKeyViolation:
-        # STOCK, RestockRequest, STOCK_LEDGER, PRODUCTION and delivery all point at warehouses
-        raise HTTPException(status_code=409, detail="This warehouse is in use and can't be deleted")
+        raise HTTPException(
+            status_code=409,
+            detail="This warehouse is in use and can't be deleted"
+        )

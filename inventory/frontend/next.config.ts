@@ -1,19 +1,18 @@
+
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
-  async rewrites() {
-    const salesApiUrl = (
-      process.env.NEXT_PUBLIC_SALES_API_URL || "https://computererp.onrender.com"
-    ).replace(/\/$/, "");
-
-    return [{ source: "/sales-api/:path*", destination: `${salesApiUrl}/:path*` }];
-  },
   experimental: {
     agentFeedback: true,
   },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
+    root: projectRoot,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],

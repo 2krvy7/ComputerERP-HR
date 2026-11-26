@@ -1,49 +1,41 @@
 /* =====================================================
-   SIDEBAR
+   1. SIDEBAR CONTAINER & COLLAPSE TRANSITIONS
 ===================================================== */
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
-
   width: 260px;
   height: 100vh;
-
-  background: #fff;
+  background: #ffffff;
   border-right: 1px solid var(--border-color);
   transition: 0.3s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 1000;
+}
 
-  overflow-y: auto;
- 
-
+.sidebar header {
+  position: relative;
 }
 
 .sidebar header .toggle {
-  position: Absolute;
-
+  position: absolute;
   top: 22px;
-  right: 0px; /* pushes outside sidebar */
-
+  right: 0;
   width: 32px;
   height: 32px;
-
   border-radius: 50%;
-
   background: #4f46e5;
-  color: white;
-
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-
   cursor: pointer;
-
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 1001;
 }
-
-
 
 .sidebar.closed {
   width: 90px;
@@ -55,52 +47,70 @@
 .sidebar.closed .sidebar-section,
 .sidebar.closed .sub-menu,
 .sidebar.closed .user-info,
-.sidebar.closed .help-link {
+.sidebar.closed .help-link,
+.sidebar.closed .logout-text,
+.sidebar.closed .arrow {
   display: none;
 }
 
 /* =====================================================
-   SIDEBAR LOGO
+   2. SIDEBAR BRAND LOGO (ZOOMED TO CROP TRANSPARENT PNG PADDING)
 ===================================================== */
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 18px 16px;
 }
 
-.logo-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-
-  background: var(--primary-color);
-  color: white;
-
+.logo-img-box {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-
-  font-weight: bold;
+  padding: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.28);
 }
 
-.logo-text h2 {
-  font-size: 28px;
-  color: var(--text-primary);
+.logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scale(1.65);
+  display: block;
 }
 
-.logo-text span {
-  font-size: 10px;
-  color: #9ca3af;
-}
+
+
 
 /* =====================================================
-   NAVIGATION MENU
+   3. NAVIGATION MENU & SCROLLBAR
 ===================================================== */
 .menu-links {
   list-style: none;
   padding: 0 10px;
+  margin: 0;
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.menu-links::-webkit-scrollbar {
+  width: 6px;
+}
+
+.menu-links::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+
+.menu-links::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .nav-link {
@@ -110,12 +120,9 @@
 .nav-link > a {
   display: flex;
   align-items: center;
-
   height: 42px;
-
   text-decoration: none;
   color: #4b5563;
-
   border-radius: 10px;
   transition: 0.2s;
 }
@@ -127,12 +134,12 @@
 .active-link > a {
   background: #eef2ff;
   color: var(--primary-color);
+  font-weight: 600;
 }
 
 .icon {
   min-width: 40px;
   font-size: 18px;
-
   display: flex;
   justify-content: center;
 }
@@ -141,16 +148,34 @@
   font-size: 14px;
 }
 
+/* =====================================================
+   4. PARENT MENU (EXPAND / COLLAPSE) & SUB MENU
+===================================================== */
+.menu-parent {
+  display: flex;
+  align-items: center;
+  height: 42px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #4b5563;
+  transition: 0.2s;
+}
 
+.menu-parent:hover {
+  background: #f4f6fb;
+}
 
-/* ==========================
-   SUB MENU
-========================== */
+.arrow {
+  margin-left: auto;
+  padding-right: 12px;
+  font-size: 18px;
+  transition: 0.3s;
+}
 
 .sub-menu {
   list-style: none;
-  margin: 2px 0 8px 0;
   padding: 0;
+  margin: 2px 0 8px;
 }
 
 .sub-menu li {
@@ -160,82 +185,117 @@
 .sub-menu li a {
   display: flex;
   align-items: center;
-
   height: 34px;
-
-  padding-left: 52px; /* indentation */
-
+  padding-left: 52px;
+  text-decoration: none;
+  color: #6b7280;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 400;
-
-  color: #6b7280;
-  text-decoration: none;
-
-  border-radius: 6px;
-
-  transition: background 0.2s;
+  transition: 0.2s;
 }
 
 .sub-menu li a:hover {
-  background: #f5f7fb;
+  background: #f4f6fb;
 }
 
-.sub-menu li.active  a {
-  background: #e9edf5;
-  color: #374151;
-  font-weight: 500;
+.sub-menu li a.active,
+.sub-menu li.active-link a {
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 600;
+  border-left: 3px solid #4f46e5;
 }
-
 
 /* =====================================================
-   SIDEBAR FOOTER
+   5. SIDEBAR FOOTER (LIVE AUTHGATE USER & LOGOUT BUTTON)
 ===================================================== */
 .sidebar-footer {
   margin-top: auto;
-  padding: 15px;
+  padding: 14px 15px;
   border-top: 1px solid #f1f5f9;
-}
-
-.help-link {
-  margin-bottom: 18px;
-  font-size: 13px;
-  color: #9ca3af;
+  background: #ffffff;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .user-box {
   display: flex;
   align-items: center;
   gap: 10px;
+  padding: 6px 4px;
 }
 
+/* Facebook-style default blank profile silhouette */
 .avatar {
-  width: 34px;
-  height: 34px;
-
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-
-  background: #eef2ff;
-  color: var(--primary-color);
-
+  background: #e2e8f0;
+  color: #94a3b8;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
+  overflow: hidden;
+  border: 1.5px solid #cbd5e1;
+  flex-shrink: 0;
+}
 
-  font-size: 12px;
-  font-weight: 600;
+.avatar-silhouette {
+  width: 30px;
+  height: 30px;
+  fill: #94a3b8;
 }
 
 .user-info {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .user-info strong {
   font-size: 13px;
+  font-weight: 700;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .user-info small {
   font-size: 11px;
-  color: #9ca3af;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Interactive Log Out Button */
+.logout-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.logout-btn:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.logout-btn i {
+  font-size: 17px;
 }

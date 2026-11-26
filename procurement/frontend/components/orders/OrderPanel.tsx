@@ -22,10 +22,14 @@ export type Order = {
   ItemCondition: string | null;
   QuantityReceived: number | null;
   Remarks: string | null;
-  invoiced: boolean;
-  InvoiceDate: string | null;
-  TaxAmount: number | null;
-  TotalDue: number | null;
+  invoiced: boolean;               // true once Finance has fully paid the order
+  InvoiceDate: string | null;      // no longer used (always empty)
+  TaxAmount: number | null;        // no longer used (always empty)
+  TotalDue: number | null;         // Finance's payable amount
+  apInvoiceID: number | null;
+  payment_status: string | null;
+  totalPaid: number | null;
+  remainingBalance: number | null;
 };
 
 export const money = (n: number | null) =>
@@ -178,15 +182,16 @@ export default function OrderPanel({ order, onClose }: { order: Order; onClose: 
             )}
           </Section>
 
-          <Section title="Invoice">
-            {order.invoiced ? (
+          <Section title="Payment">
+            {order.apInvoiceID !== null ? (
               <>
-                <Row label="Invoice date">{date(order.InvoiceDate)}</Row>
-                <Row label="Tax">{money(order.TaxAmount)}</Row>
-                <Row label="Total due">{money(order.TotalDue)}</Row>
+                <Row label="Amount">{money(order.TotalDue)}</Row>
+                <Row label="Paid">{money(order.totalPaid)}</Row>
+                <Row label="Balance">{money(order.remainingBalance)}</Row>
+                <Row label="Status">{order.payment_status ?? "—"}</Row>
               </>
             ) : (
-              <p style={{ margin: 0, color: "#888" }}>No invoice yet.</p>
+              <p style={{ margin: 0, color: "#888" }}>No payment record yet.</p>
             )}
           </Section>
         </div>

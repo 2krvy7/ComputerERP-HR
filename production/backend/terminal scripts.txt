@@ -1,3 +1,7 @@
+npm run dev
+Username: Admin-Aeon
+Password: adminaeon
+
 # Locates Production department
 cd production\backend
 
@@ -22,8 +26,10 @@ git pull
 git add production
 git commit -m "reserved string"
 git pull
-'if': git push -u origin production
-'else': git push
+git push 
+
+git pull origin production
+git push origin production
 
 ## running the terminal of backend
 cd production\backend
@@ -32,6 +38,7 @@ python -m fastapi dev main.py
 ## running the terminal of frontend
 cd production\frontend
 npm run dev
+npm run dev -- -p 3003
 
 # PRODUCTION SUBSYSTEM – API FETCH PROCEDURES
 

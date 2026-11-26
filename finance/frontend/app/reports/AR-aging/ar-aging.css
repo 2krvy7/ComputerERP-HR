@@ -1,0 +1,131 @@
+/* =====================================================
+   5. AGING SCHEDULE TABLE (CENTERED)
+===================================================== */
+.table-section {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.table-header {
+  padding: 18px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.table-header p {
+  color: #6b7280;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+thead {
+  background: #f8fafc;
+}
+
+th,
+td {
+  padding: 14px;
+  text-align: center;
+  border-top: 1px solid #f1f5f9;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+th {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
+}
+
+.total-row {
+  background: #eef2ff;
+  font-weight: 700;
+  color: #111827;
+}
+
+.table-footer {
+  padding: 14px 20px;
+  background: #f8fafc;
+  color: #6b7280;
+  font-size: 13px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.notes-section {
+  margin-top: 18px;
+  color: #6b7280;
+  font-size: 13.5px;
+}
+
+.notes-section p {
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+/* =====================================================
+   6. PRINT & RESPONSIVE RULES
+===================================================== */
+@media print {
+  .sidebar,
+  .header-actions,
+  .filters {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .ap-aging-page {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header,
+  .section-header,
+  .table-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .aging-legend {
+    gap: 16px;
+  }
+}

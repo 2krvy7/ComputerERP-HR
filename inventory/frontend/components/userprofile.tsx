@@ -15,8 +15,8 @@ export default function UserProfile({
       </div>
 
       <div className="min-w-0">
-        <p className="truncate text-xs font-bold">{name}</p>
-        <p className="text-[10px]">{role}</p>
+        <p className="truncate text-sm font-bold">{name}</p>
+        <p className="text-xs">{role}</p>
       </div>
     </div>
   );

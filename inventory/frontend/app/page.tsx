@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import Link from "next/link";
 import DashboardLayout from "../components/dashboardlayout";
+import { apiFetch } from "@/lib/api";
 
 type DashboardData = {
   summary: {
@@ -50,7 +51,7 @@ type DashboardData = {
     LogDate: string;
     Remarks: string | null;
   }[];
-    stock_distribution: {
+  stock_distribution: {
     item_type: string;
     total_quantity: number;
   }[];
@@ -60,8 +61,6 @@ type DashboardData = {
     total_quantity: number;
   }[];
 };
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Home() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -76,8 +75,8 @@ export default function Home() {
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          `${API_URL}/dashboard/summary`,
+        const response = await apiFetch(
+          "/dashboard/summary",
           { signal: controller.signal }
         );
 
@@ -108,10 +107,9 @@ export default function Home() {
   }, []);
 
   const summary = data?.summary;
-
   const stockDistribution = data?.stock_distribution ?? [];
-
   const stockMovement = data?.stock_movement ?? [];
+
   const movementChartData = stockMovement.reduce<
     { movement_date: string; [key: string]: string | number }[]
   >((result, movement) => {
@@ -131,9 +129,16 @@ export default function Home() {
     return result;
   }, []);
 
-const transactionTypes = Array.from(
-  new Set(stockMovement.map((item) => item.transaction_type))
-);
+  const transactionTypes = Array.from(
+    new Set(stockMovement.map((item) => item.transaction_type))
+  );
+
+  const chartColors = [
+    "#24363B",
+    "#4F8585",
+    "#8FB1B8",
+    "#A6A6A6",
+  ];
 
   const cards = [
     {
@@ -157,7 +162,7 @@ const transactionTypes = Array.from(
     {
       title: "Total Stock",
       value: summary?.total_stock ?? 0,
-      description: "Total quantity across warehouses",
+      description: "Quantity across warehouses",
       href: "/warehouses",
     },
     {
@@ -169,7 +174,7 @@ const transactionTypes = Array.from(
     {
       title: "Low Stock Items",
       value: summary?.low_stock_count ?? 0,
-      description: "Items at or below reorder level",
+      description: "At or below reorder level",
       href: "/items",
     },
   ];
@@ -186,10 +191,10 @@ const transactionTypes = Array.from(
   return (
     <DashboardLayout
       title="Dashboard"
-      description="Welcome to the Inventory and Warehouse Management System."
+      description="Overview of your inventory and warehouse activities."
     >
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <Link
             key={card.title}
@@ -214,13 +219,14 @@ const transactionTypes = Array.from(
         ))}
       </div>
 
-      {/* Loading and Error Messages */}
+      {/* Loading Message */}
       {loading && (
         <div className="mt-6 rounded-2xl border border-[#DCE7EA] bg-white p-5 text-sm text-[#587176]">
           Loading dashboard data...
         </div>
       )}
 
+      {/* Error Message */}
       {error && (
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-5">
           <p className="font-semibold text-red-700">
@@ -232,170 +238,126 @@ const transactionTypes = Array.from(
 
       {!loading && !error && data && (
         <>
-          {/* Inventory Overview */}
-          <div className="mt-6 rounded-2xl border border-[#DCE7EA] bg-white p-6">
-            <h2 className="text-lg font-bold text-[#1F3338]">
-              Inventory Overview
-            </h2>
+          {/* Stock Analytics */}
+          <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
 
-            <p className="mt-1 text-sm text-[#587176]">
-              Current summary of registered inventory.
-            </p>
+            {/* Stock Distribution */}
+            <div className="rounded-2xl border border-[#DCE7EA] bg-white p-6">
+              <h2 className="text-lg font-bold text-[#1F3338]">
+                Stock Distribution
+              </h2>
 
-            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
-              <div className="rounded-xl bg-[#F2F7F8] p-4">
-                <p className="text-sm text-[#587176]">Raw Materials</p>
-                <p className="mt-2 text-2xl font-bold text-[#1F3338]">
-                  {summary?.raw_materials ?? 0}
-                </p>
-              </div>
+              <p className="mt-1 text-sm text-[#587176]">
+                Current stock quantity by item type.
+              </p>
 
-              <div className="rounded-xl bg-[#F2F7F8] p-4">
-                <p className="text-sm text-[#587176]">Finished Goods</p>
-                <p className="mt-2 text-2xl font-bold text-[#1F3338]">
-                  {summary?.finished_goods ?? 0}
-                </p>
-              </div>
+              {stockDistribution.length > 0 ? (
+                <div className="mt-5 h-[280px] w-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={stockDistribution}
+                      layout="vertical"
+                      margin={{ top: 5, right: 20, left: 15, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        horizontal={false}
+                      />
+                      <XAxis
+                        type="number"
+                        allowDecimals={false}
+                        tick={{ fill: "#587176", fontSize: 12 }}
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="item_type"
+                        tick={{ fill: "#587176", fontSize: 12 }}
+                        width={85}
+                      />
+                      <Tooltip />
+                      <Bar
+                        dataKey="total_quantity"
+                        name="Stock Quantity"
+                        fill="#24363B"
+                        radius={[0, 5, 5, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="mt-5 flex h-[280px] items-center justify-center text-sm text-[#587176]">
+                  No stock distribution data available.
+                </div>
+              )}
+            </div>
 
-              <div className="rounded-xl bg-[#F2F7F8] p-4">
-                <p className="text-sm text-[#587176]">Total Stock Quantity</p>
-                <p className="mt-2 text-2xl font-bold text-[#1F3338]">
-                  {(summary?.total_stock ?? 0).toLocaleString()}
-                </p>
-              </div>
+            {/* Stock Movement */}
+            <div className="rounded-2xl border border-[#DCE7EA] bg-white p-6">
+              <h2 className="text-lg font-bold text-[#1F3338]">
+                Stock Movement
+              </h2>
+
+              <p className="mt-1 text-sm text-[#587176]">
+                Recorded stock transactions during the last seven days.
+              </p>
+
+              {movementChartData.length > 0 ? (
+                <div className="mt-5 h-[280px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={movementChartData}
+                      margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="movement_date"
+                        tick={{ fill: "#587176", fontSize: 11 }}
+                        tickFormatter={(value) =>
+                          new Date(value + "T00:00:00").toLocaleDateString(
+                            "en-PH",
+                            { month: "short", day: "numeric" }
+                          )
+                        }
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tick={{ fill: "#587176", fontSize: 12 }}
+                      />
+                      <Tooltip />
+                      <Legend />
+
+                      {transactionTypes.map((type, index) => (
+                        <Bar
+                          key={type}
+                          dataKey={type}
+                          name={type}
+                          fill={chartColors[index % chartColors.length]}
+                          radius={[4, 4, 0, 0]}
+                        />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="mt-5 flex h-[280px] items-center justify-center text-sm text-[#587176]">
+                  No stock movements recorded in the last seven days.
+                </div>
+              )}
             </div>
           </div>
 
-            {/* Dashboard Charts */}
-            <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-
-              {/* Stock Distribution */}
-              <div className="rounded-2xl border border-[#DCE7EA] bg-white p-6">
-                <h2 className="text-lg font-bold text-[#1F3338]">
-                  Stock Distribution
-                </h2>
-
-                <p className="mt-1 text-sm text-[#587176]">
-                  Current stock quantity by item type.
-                </p>
-
-                {stockDistribution.length > 0 ? (
-                  <div className="mt-6 h-[280px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={stockDistribution}
-                        layout="vertical"
-                        margin={{ top: 5, right: 20, left: 15, bottom: 5 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          horizontal={false}
-                        />
-                        <XAxis
-                          type="number"
-                          allowDecimals={false}
-                          tick={{ fill: "#587176", fontSize: 12 }}
-                        />
-                        <YAxis
-                          type="category"
-                          dataKey="item_type"
-                          tick={{ fill: "#587176", fontSize: 12 }}
-                          width={85}
-                        />
-                        <Tooltip />
-                        <Bar
-                          dataKey="total_quantity"
-                          name="Stock Quantity"
-                          fill="#24363B"
-                          radius={[0, 5, 5, 0]}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="mt-6 flex h-[280px] items-center justify-center text-sm text-[#587176]">
-                    No stock distribution data available.
-                  </div>
-                )}
-              </div>
-
-              {/* Stock Movement */}
-              <div className="rounded-2xl border border-[#DCE7EA] bg-white p-6">
-                <h2 className="text-lg font-bold text-[#1F3338]">
-                  Stock Movement
-                </h2>
-
-                <p className="mt-1 text-sm text-[#587176]">
-                  Recorded stock transactions during the last seven days.
-                </p>
-
-                {movementChartData.length > 0 ? (
-                  <div className="mt-6 h-[280px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={movementChartData}
-                        margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
-                      >
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          vertical={false}
-                        />
-                        <XAxis
-                          dataKey="movement_date"
-                          tick={{ fill: "#587176", fontSize: 11 }}
-                          tickFormatter={(value) =>
-                            new Date(value + "T00:00:00").toLocaleDateString(
-                              "en-PH",
-                              { month: "short", day: "numeric" }
-                            )
-                          }
-                        />
-                        <YAxis
-                          allowDecimals={false}
-                          tick={{ fill: "#587176", fontSize: 12 }}
-                        />
-                        <Tooltip />
-                        <Legend />
-
-                        {transactionTypes.map((type, index) => {
-                          const chartColors = [
-                            "#24363B",
-                            "#4F8585",
-                            "#8FB1B8",
-                            "#A6A6A6",
-                          ];
-
-                          return (
-                            <Bar
-                              key={type}
-                              dataKey={type}
-                              name={type}
-                              fill={chartColors[index % chartColors.length]}
-                              radius={[4, 4, 0, 0]}
-                            />
-                          );
-                        })}
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="mt-6 flex h-[280px] items-center justify-center text-sm text-[#587176]">
-                    No stock movements recorded in the last seven days.
-                  </div>
-                )}
-              </div>
-
-            </div>
-
           {/* Low Stock Items */}
           <div className="mt-6 overflow-hidden rounded-2xl border border-[#DCE7EA] bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE7EA] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE7EA] p-5 md:p-6">
               <div>
                 <h2 className="text-lg font-bold text-[#1F3338]">
                   Low Stock Items
                 </h2>
                 <p className="mt-1 text-sm text-[#587176]">
-                  Items that have reached or fallen below their reorder level.
+                  Items at or below their reorder level.
                 </p>
               </div>
 
@@ -455,9 +417,9 @@ const transactionTypes = Array.from(
             </div>
           </div>
 
-          {/* Recent Activities */}
+          {/* Recent Stock Activities */}
           <div className="mt-6 overflow-hidden rounded-2xl border border-[#DCE7EA] bg-white">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE7EA] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DCE7EA] p-5 md:p-6">
               <div>
                 <h2 className="text-lg font-bold text-[#1F3338]">
                   Recent Stock Activities
@@ -468,7 +430,7 @@ const transactionTypes = Array.from(
               </div>
 
               <Link
-                href="/stock-ledger"
+                href="/stock_ledger"
                 className="text-sm font-semibold text-[#24363B] hover:underline"
               >
                 View Ledger →

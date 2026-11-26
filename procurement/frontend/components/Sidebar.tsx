@@ -69,12 +69,14 @@ export default function Sidebar() {
           marginBottom: "1.15vw",
         }}
       >
-        <div
+        <img
+          src="/favicon.ico"
+          alt="Procurement logo"
           style={{
             width: "2.65vw",
             height: "2.65vw",
             borderRadius: "50%",
-            backgroundColor: COLORS.logo,
+            objectFit: "cover",
             flexShrink: 0,
           }}
         />

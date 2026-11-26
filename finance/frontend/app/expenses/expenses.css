@@ -1,0 +1,440 @@
+/* =====================================================
+   1. PAGE CONTAINER & ALIGNED FIXED HEADER
+   Matches Chart of Accounts, Journal Entries & General Ledger
+===================================================== */
+.expenses-page {
+  padding: 24px 28px;
+  background: #f5f7fb;
+  min-height: 100vh;
+  font-family: "Segoe UI", Inter, sans-serif;
+  color: #111827;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 48px;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* =====================================================
+   2. BUTTONS
+===================================================== */
+.btn-primary {
+  height: 40px;
+  padding: 0 18px;
+  border: none;
+  background: #4f46e5;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-primary:hover {
+  background: #4338ca;
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.btn-pay {
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  background: #16a34a;
+  color: #ffffff;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-pay:hover {
+  background: #15803d;
+}
+
+.btn-pay:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* =====================================================
+   3. SUMMARY KPI CARDS (PHP CURRENCY)
+===================================================== */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.summary-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+}
+
+.summary-card span {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-card h2 {
+  margin: 8px 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.summary-card small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* =====================================================
+   4. SEARCH & ACCOUNT FILTER BAR
+===================================================== */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.filter-search-input {
+  flex: 1;
+  min-width: 240px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+  color: #111827;
+  outline: none;
+}
+
+.filter-search-input:focus {
+  border-color: #4f46e5;
+}
+
+.filter-select {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #dbe2ea;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 13.5px;
+  color: #1f2937;
+  cursor: pointer;
+  outline: none;
+}
+
+/* =====================================================
+   5. EXPENSE REGISTER CARD & RIGHT-SIDE SELECT CONTROLS
+===================================================== */
+.table-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+.table-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid #edf2f7;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.table-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.table-header p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.register-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.category-check-select {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #93c5fd;
+  background-color: #eff6ff;
+  color: #1e40af;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.select-toggle-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.select-toggle-btn:hover {
+  background: #f8fafc;
+}
+
+.select-toggle-btn.active {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+/* =====================================================
+   6. CENTERED EXPENSE TABLE & STATUS BADGES
+===================================================== */
+.state-message {
+  padding: 18px 20px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.state-message.error {
+  color: #dc2626;
+}
+
+.empty-table-cell {
+  text-align: center;
+  padding: 20px;
+  color: #64748b;
+}
+
+.expenses-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.expenses-table thead {
+  background: #f8fafc;
+}
+
+.expenses-table th {
+  text-align: center;
+  padding: 13px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.expenses-table td {
+  text-align: center;
+  padding: 14px 14px;
+  border-top: 1px solid #eef2f7;
+  font-size: 14px;
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.expenses-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.expenses-table tbody tr.checked-row {
+  background-color: #f0fdf4;
+}
+
+.checkbox-col {
+  width: 44px;
+}
+
+.muted-label {
+  color: #6b7280;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.status {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status.posted {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+/* =====================================================
+   7. ADD DIRECT EXPENSE MODAL
+===================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.48);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1050;
+}
+
+.modal-box {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 12px;
+  width: 440px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+}
+
+.modal-box h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.modal-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+  margin-top: 2px;
+}
+
+.modal-input {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 14px;
+  background: #ffffff;
+}
+
+.modal-hint {
+  font-size: 12.5px;
+  color: #4b5563;
+  margin: 4px 0 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cancel-btn {
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (max-width: 1200px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table-card {
+    overflow-x: auto;
+  }
+}
