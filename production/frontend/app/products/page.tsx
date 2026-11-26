@@ -447,15 +447,6 @@ useEffect(() => {
                 ? "Loading products..."
                 : `${products.length} registered products`}
             </p>
-          </div>
-
-          <button
-            onClick={() => setShowAddProduct(true)}
-            className="bg-[#365f68] text-white px-4 py-2 rounded-lg hover:bg-[#294b53] transition"
-          >
-            + Add Product
-          </button>
-        </div>
 
         {/* PRODUCT ACCORDIONS */}
         <div className="space-y-3">
