@@ -163,10 +163,10 @@ def get_batch_material_requirements(production_id: int):
             batch_quantity = request[1]
             request_status = request[2]
 
-            if request_status != "Accepted":
+            if request_status != "Approved":
                 raise HTTPException(
                     status_code=400,
-                    detail="Material requirements are available only for accepted requests."
+                    detail="Material requirements are available only for approved requests."
                 )
 
             if batch_quantity is None or batch_quantity <= 0:
@@ -321,7 +321,7 @@ def accept_production_request(rr_id: int):
                 INSERT INTO public."ProductionOrder"
                     ("RR_ID", "PM_ID", "WH_ID", "quantity",
                     "productCost", "status", "created_at")
-                VALUES (%s, %s, %s, %s, %s, 'Accepted', NOW())
+                VALUES (%s, %s, %s, %s, %s, 'Approved', NOW())
                 RETURNING "productionID";
                 """,
                 (
@@ -353,10 +353,10 @@ def accept_production_request(rr_id: int):
         database_connection.commit()
 
         return {
-            "message": "Production request accepted successfully.",
+            "message": "Production request approved successfully.",
             "RR_ID": rr_id,
             "productionID": production_id,
-            "status": "Accepted"
+            "status": "Approved"
         }
 
     except HTTPException:
