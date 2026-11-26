@@ -1481,3 +1481,558 @@ def get_material_releases(
     finally:
         if conn is not None:
             conn.close()
+
+
+
+# ==========================================
+# SALES ORDERS
+# INVENTORY ADMIN + STAFF
+# MAIN WAREHOUSE: WH_ID 14
+# ==========================================
+
+MAIN_WAREHOUSE_ID = 14
+
+
+def get_sales_order_items(cur, order_id):
+    cur.execute("""
+        SELECT
+            sod."IM_ID",
+            im."Item_Name",
+            im."SKU",
+            im."ItemType",
+            SUM(sod.quantity) AS "QuantityRequested",
+            COALESCE(s.quantity_on_hand, 0) AS "AvailableStock"
+        FROM sales_order_detail sod
+        JOIN "ITEM_MASTER" im
+            ON sod."IM_ID" = im."IM_ID"
+        LEFT JOIN "STOCK" s
+            ON s."IM_ID" = sod."IM_ID"
+            AND s."WH_ID" = %s
+        WHERE sod.order_id = %s
+        GROUP BY
+            sod."IM_ID",
+            im."Item_Name",
+            im."SKU",
+            im."ItemType",
+            s.quantity_on_hand
+        ORDER BY sod."IM_ID"
+    """, (MAIN_WAREHOUSE_ID, order_id))
+
+    return cur.fetchall()
+
+
+# ==========================================
+# GET SALES ORDERS
+# ==========================================
+
+@router.get("/sales-orders")
+def get_sales_orders(
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT
+                    so.order_id,
+                    so.order_date,
+                    so.status,
+                    so.total_amount,
+                    c.customer_id,
+                    c.name AS "CustomerName",
+                    c.contact AS "CustomerContact"
+                FROM sales_order so
+                JOIN customers c
+                    ON so.customer_id = c.customer_id
+                ORDER BY
+                    so.order_date DESC,
+                    so.order_id DESC
+            """)
+
+            orders = cur.fetchall()
+
+            result = []
+
+            for order in orders:
+                items = get_sales_order_items(
+                    cur,
+                    order["order_id"]
+                )
+
+                all_finished = (
+                    len(items) > 0
+                    and all(
+                        item["ItemType"] == "Finished"
+                        for item in items
+                    )
+                )
+
+                all_available = (
+                    all_finished
+                    and all(
+                        item["AvailableStock"] >= item["QuantityRequested"]
+                        for item in items
+                    )
+                )
+
+                order["items"] = items
+                order["warehouse"] = "Warehouse A"
+                order["WH_ID"] = MAIN_WAREHOUSE_ID
+                order["all_available"] = all_available
+
+                result.append(order)
+
+            return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# ACCEPT SALES ORDER
+# PENDING -> ACCEPTED
+# ==========================================
+
+@router.post("/sales-orders/{order_id}/accept")
+def accept_sales_order(
+    order_id: int,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT order_id, status
+                FROM sales_order
+                WHERE order_id = %s
+                FOR UPDATE
+            """, (order_id,))
+
+            order = cur.fetchone()
+
+            if order is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Sales Order not found."
+                )
+
+            if order["status"] != "Pending":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Only Pending Sales Orders can be accepted."
+                )
+
+            cur.execute("""
+                UPDATE sales_order
+                SET status = 'Accepted'
+                WHERE order_id = %s
+            """, (order_id,))
+
+        conn.commit()
+
+        return {
+            "message": "Sales Order accepted successfully.",
+            "order_id": order_id,
+            "status": "Accepted"
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# CHECK STOCK AND PREPARE SALES ORDER
+# ACCEPTED / WAITING FOR STOCK
+# -> PREPARING OR WAITING FOR STOCK
+# ==========================================
+
+@router.post("/sales-orders/{order_id}/prepare")
+def prepare_sales_order(
+    order_id: int,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            cur.execute("""
+                SELECT order_id, status
+                FROM sales_order
+                WHERE order_id = %s
+                FOR UPDATE
+            """, (order_id,))
+
+            order = cur.fetchone()
+
+            if order is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Sales Order not found."
+                )
+
+            if order["status"] not in (
+                "Accepted",
+                "Waiting for Stock"
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "Only Accepted or Waiting for Stock "
+                        "orders can proceed to preparation."
+                    )
+                )
+
+            # Get the complete finished PC order details.
+            items = get_sales_order_items(cur, order_id)
+
+            if not items:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This Sales Order has no items."
+                )
+
+            if any(
+                item["ItemType"] != "Finished"
+                for item in items
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Sales Orders must contain finished "
+                        "products only."
+                    )
+                )
+
+            # Lock Main Warehouse stock records.
+            all_available = True
+            unavailable_items = []
+
+            for item in items:
+                cur.execute("""
+                    SELECT
+                        "STOCK_ID",
+                        quantity_on_hand
+                    FROM "STOCK"
+                    WHERE "IM_ID" = %s
+                      AND "WH_ID" = %s
+                    FOR UPDATE
+                """, (
+                    item["IM_ID"],
+                    MAIN_WAREHOUSE_ID
+                ))
+
+                stock = cur.fetchone()
+
+                available = (
+                    stock["quantity_on_hand"]
+                    if stock else 0
+                )
+
+                if available < item["QuantityRequested"]:
+                    all_available = False
+
+                    unavailable_items.append({
+                        "Item_Name": item["Item_Name"],
+                        "Requested": item["QuantityRequested"],
+                        "Available": available
+                    })
+
+            if all_available:
+                new_status = "Preparing"
+                message = (
+                    "All finished products are available. "
+                    "The order can now be prepared."
+                )
+            else:
+                new_status = "Waiting for Stock"
+                message = (
+                    "Main Warehouse stock is insufficient. "
+                    "The order is waiting for stock."
+                )
+
+            cur.execute("""
+                UPDATE sales_order
+                SET status = %s
+                WHERE order_id = %s
+            """, (new_status, order_id))
+
+        conn.commit()
+
+        return {
+            "message": message,
+            "order_id": order_id,
+            "status": new_status,
+            "warehouse": "Warehouse A",
+            "unavailable_items": unavailable_items
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ==========================================
+# RELEASE FINISHED PC TO SALES
+# PREPARING -> RELEASED TO SALES
+# DEDUCT STOCK ONLY UPON RELEASE
+# ==========================================
+
+@router.post("/sales-orders/{order_id}/release")
+def release_sales_order(
+    order_id: int,
+    user: dict = Depends(require_inventory_user)
+):
+    conn = None
+
+    try:
+        conn = get_db_connection()
+
+        with conn.cursor(row_factory=dict_row) as cur:
+
+            # 1. Lock the Sales Order.
+            cur.execute("""
+                SELECT order_id, status
+                FROM sales_order
+                WHERE order_id = %s
+                FOR UPDATE
+            """, (order_id,))
+
+            order = cur.fetchone()
+
+            if order is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Sales Order not found."
+                )
+
+            if order["status"] != "Preparing":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Only Preparing orders can be released."
+                )
+
+            # 2. Verify the Main Warehouse.
+            cur.execute("""
+                SELECT "WH_ID", "Warehouse_Name"
+                FROM "WAREHOUSE"
+                WHERE "WH_ID" = %s
+                FOR UPDATE
+            """, (MAIN_WAREHOUSE_ID,))
+
+            warehouse = cur.fetchone()
+
+            if warehouse is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Warehouse A was not found."
+                )
+
+            # 3. Get all ordered finished products.
+            items = get_sales_order_items(cur, order_id)
+
+            if not items:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This Sales Order has no items."
+                )
+
+            if any(
+                item["ItemType"] != "Finished"
+                for item in items
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Only finished products can be released."
+                )
+
+            # 4. Lock and validate ALL stock first.
+            # Nothing is deducted unless every item is available.
+            for item in items:
+                cur.execute("""
+                    SELECT
+                        "STOCK_ID",
+                        quantity_on_hand
+                    FROM "STOCK"
+                    WHERE "IM_ID" = %s
+                      AND "WH_ID" = %s
+                    FOR UPDATE
+                """, (
+                    item["IM_ID"],
+                    MAIN_WAREHOUSE_ID
+                ))
+
+                stock = cur.fetchone()
+
+                available = (
+                    stock["quantity_on_hand"]
+                    if stock else 0
+                )
+
+                if available < item["QuantityRequested"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"Insufficient stock for "
+                            f"{item['Item_Name']}. "
+                            f"Requested: {item['QuantityRequested']}, "
+                            f"Available: {available}."
+                        )
+                    )
+
+            # 5. Create the pickup/release record.
+            # This also lets the Sales backend identify
+            # that inventory has already released the order.
+            cur.execute("""
+                INSERT INTO delivery (
+                    order_id,
+                    "WH_ID",
+                    delivery_date,
+                    delivery_address,
+                    status
+                )
+                VALUES (
+                    %s,
+                    %s,
+                    CURRENT_DATE,
+                    'Store Pickup',
+                    'Released to Sales'
+                )
+                RETURNING delivery_id
+            """, (
+                order_id,
+                MAIN_WAREHOUSE_ID
+            ))
+
+            delivery = cur.fetchone()
+            reference_no = f"DEL-{delivery['delivery_id']}"
+
+            # 6. Deduct stock and record STOCK_OUT.
+            for item in items:
+                im_id = item["IM_ID"]
+                quantity = item["QuantityRequested"]
+
+                cur.execute("""
+                    UPDATE "STOCK"
+                    SET quantity_on_hand =
+                        quantity_on_hand - %s
+                    WHERE "IM_ID" = %s
+                      AND "WH_ID" = %s
+                """, (
+                    quantity,
+                    im_id,
+                    MAIN_WAREHOUSE_ID
+                ))
+
+                cur.execute("""
+                    INSERT INTO "STOCK_LEDGER" (
+                        "IM_ID",
+                        "WH_ID",
+                        "TransactionType",
+                        "Quantity",
+                        "ActualQuantity",
+                        "ReferenceNo",
+                        "LoggedBy",
+                        "LogDate",
+                        "Remarks"
+                    )
+                    VALUES (
+                        %s,
+                        %s,
+                        'STOCK_OUT',
+                        %s,
+                        %s,
+                        %s,
+                        %s,
+                        CURRENT_TIMESTAMP,
+                        %s
+                    )
+                """, (
+                    im_id,
+                    MAIN_WAREHOUSE_ID,
+                    quantity,
+                    quantity,
+                    reference_no,
+                    user["sub"],
+                    f"Finished product released to Sales for Order #{order_id}."
+                ))
+
+            # 7. Update Sales Order status.
+            cur.execute("""
+                UPDATE sales_order
+                SET status = 'Released to Sales'
+                WHERE order_id = %s
+            """, (order_id,))
+
+        conn.commit()
+
+        return {
+            "message": "Finished products released to Sales successfully.",
+            "order_id": order_id,
+            "delivery_id": delivery["delivery_id"],
+            "reference_no": reference_no,
+            "warehouse": warehouse["Warehouse_Name"],
+            "status": "Released to Sales"
+        }
+
+    except HTTPException:
+        if conn is not None:
+            conn.rollback()
+        raise
+
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+    finally:
+        if conn is not None:
+            conn.close()

@@ -37,22 +37,30 @@ from app.routers.sales_return import router as sales_return_router
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
 
+
 app = FastAPI(
     title="Sales Module ERP API",
     description="Backend API for Sales and Customer Management",
     version="1.0.0",
 )
 
+
 # CORS configuration
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://sales-kenethvivas22.vercel.app",
+    "https://sales-pink-iota.vercel.app",
+    "https://computer-erp-login.vercel.app",
+    "http://localhost:3000",
+]
+
+environment_origins = os.getenv("FRONTEND_ORIGINS", "")
+
 ALLOWED_ORIGINS = list(
     dict.fromkeys(
         origin.strip().rstrip("/")
         for origin in [
-            *os.getenv("FRONTEND_ORIGINS", "").split(","),
-            "https://sales-kenethvivas22.vercel.app",
-            "https://sales-pink-iota.vercel.app",
-            "https://computer-erp-login.vercel.app",
-            "http://localhost:3000",
+            *environment_origins.split(","),
+            *DEFAULT_ALLOWED_ORIGINS,
         ]
         if origin.strip()
     )
@@ -62,13 +70,32 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Accept",
+        "Authorization",
+        "Content-Type",
+        "Origin",
+        "X-Requested-With",
+    ],
+    expose_headers=[
+        "Content-Disposition",
+    ],
+    max_age=600,
 )
+
 
 # Authentication endpoints
 app.include_router(auth_router)
 app.include_router(users_router)
+
 
 # ERP endpoints
 app.include_router(customers_router)

@@ -18,6 +18,7 @@ import type {
   Warehouse,
 } from "../../types/delivery";
 import type { SalesOrder } from "../../types/order";
+import { isAdminRole } from "../../lib/roles";
 
 const statusStyles: Record<string, string> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-800",
@@ -53,7 +54,7 @@ const formatDate = (date: string | null) => {
 };
 
 const isAdmin = (user: AuthUser | null) =>
-  user?.role_id === 1;
+  isAdminRole(user?.role_id);
 
 const canCreatePickup = (user: AuthUser | null) =>
   isAdmin(user) || user?.dept_id === "SL";
@@ -66,19 +67,22 @@ function getAvailableTransitions(
 
   if (!user) return [];
 
-  if (isAdmin(user)) {
+  if (user.role_id === 1) {
     return transitions;
   }
 
-  if (user.dept_id === "IN") {
+  const isDepartmentAdmin = user.role_id === 3;
+
+  if (user.dept_id === "IN" && (user.role_id === 2 || isDepartmentAdmin)) {
     return transitions.filter(
       (nextStatus) =>
         nextStatus === "Preparing" ||
-        nextStatus === "Released"
+        nextStatus === "Released" ||
+        (isDepartmentAdmin && nextStatus === "Cancelled")
     );
   }
 
-  if (user.dept_id === "SL") {
+  if (user.dept_id === "SL" && (user.role_id === 2 || isDepartmentAdmin)) {
     return transitions.filter(
       (nextStatus) => nextStatus === "Delivered"
     );
@@ -108,6 +112,11 @@ export default function DeliveryPanel() {
   const [orderId, setOrderId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [pickupDate, setPickupDate] = useState("");
+
+  const [deliveryToConfirm, setDeliveryToConfirm] =
+    useState<Delivery | null>(null);
+  const [receivedBy, setReceivedBy] = useState("");
+  const [receivedByError, setReceivedByError] = useState("");
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -239,7 +248,7 @@ export default function DeliveryPanel() {
         startIndex,
         startIndex + pageSize
       ),
-    [filteredDeliveries, startIndex, pageSize]
+    [filteredDeliveries, startIndex]
   );
 
   const pendingCount = deliveries.filter(
@@ -261,6 +270,14 @@ export default function DeliveryPanel() {
     setShowForm(false);
   }
 
+  function closeReceivedByModal() {
+    if (saving) return;
+
+    setDeliveryToConfirm(null);
+    setReceivedBy("");
+    setReceivedByError("");
+  }
+
   async function handleCreateDelivery() {
     setError("");
 
@@ -273,9 +290,12 @@ export default function DeliveryPanel() {
       (order) => order.order_id === Number(orderId)
     );
 
-    if (!selectedOrder || selectedOrder.status !== "Approved") {
+    if (
+      !selectedOrder ||
+      !["Accepted", "Approved"].includes(selectedOrder.status)
+    ) {
       setError(
-        "Only approved sales orders can be added to customer pickup."
+        "Only accepted sales orders can be added to customer pickup."
       );
       return;
     }
@@ -316,6 +336,68 @@ export default function DeliveryPanel() {
     }
   }
 
+  async function saveDeliveryStatus(
+    delivery: Delivery,
+    newStatus: DeliveryStatus,
+    customerName?: string
+  ) {
+    if (updatingId !== null) return;
+
+    setError("");
+    setUpdatingId(delivery.delivery_id);
+
+    try {
+      const updated = await deliveryAPI.updateStatus(
+        delivery.delivery_id,
+        newStatus,
+        customerName
+      );
+
+      setDeliveries((current) =>
+        current.map((item) =>
+          item.delivery_id === updated.delivery_id
+            ? updated
+            : item
+        )
+      );
+
+      if (newStatus === "Delivered") {
+        setDeliveryToConfirm(null);
+        setReceivedBy("");
+        setReceivedByError("");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to update pickup status."
+      );
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function handleConfirmCollection() {
+    if (!deliveryToConfirm || saving) return;
+
+    const customerName = receivedBy.trim();
+
+    if (!customerName) {
+      setReceivedByError(
+        "Please enter the name of the customer who collected the items."
+      );
+      return;
+    }
+
+    setReceivedByError("");
+
+    await saveDeliveryStatus(
+      deliveryToConfirm,
+      "Delivered",
+      customerName
+    );
+  }
+
   async function handleStatusChange(
     delivery: Delivery,
     newStatus: DeliveryStatus
@@ -334,23 +416,12 @@ export default function DeliveryPanel() {
       return;
     }
 
-    let receivedBy: string | undefined;
-
     if (newStatus === "Delivered") {
-      const customerName = window.prompt(
-        "Enter the name of the customer who collected the items:"
-      );
-
-      if (customerName === null) return;
-
-      receivedBy = customerName.trim();
-
-      if (!receivedBy) {
-        setError(
-          "Enter the customer's name to confirm that the items were collected."
-        );
-        return;
-      }
+      setError("");
+      setReceivedBy("");
+      setReceivedByError("");
+      setDeliveryToConfirm(delivery);
+      return;
     }
 
     if (newStatus === "Cancelled") {
@@ -361,32 +432,7 @@ export default function DeliveryPanel() {
       if (!confirmed) return;
     }
 
-    setError("");
-    setUpdatingId(delivery.delivery_id);
-
-    try {
-      const updated = await deliveryAPI.updateStatus(
-        delivery.delivery_id,
-        newStatus,
-        receivedBy
-      );
-
-      setDeliveries((current) =>
-        current.map((item) =>
-          item.delivery_id === updated.delivery_id
-            ? updated
-            : item
-        )
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Unable to update pickup status."
-      );
-    } finally {
-      setUpdatingId(null);
-    }
+    await saveDeliveryStatus(delivery, newStatus);
   }
 
   function goToPage(page: number) {
@@ -395,18 +441,68 @@ export default function DeliveryPanel() {
     );
   }
 
+  function renderStatusControls(delivery: Delivery) {
+    const availableStatuses = getAvailableTransitions(
+      delivery.status,
+      currentUser
+    );
+
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        <span
+          className={`inline-flex w-fit max-w-full items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            statusStyles[delivery.status] ??
+            "border-slate-200 bg-slate-50 text-slate-700"
+          }`}
+        >
+          {displayStatus(delivery.status)}
+        </span>
+
+        {availableStatuses.length > 0 && (
+          <select
+            value=""
+            disabled={updatingId !== null}
+            onChange={(e) => {
+              if (e.target.value) {
+                void handleStatusChange(
+                  delivery,
+                  e.target.value as DeliveryStatus
+                );
+              }
+            }}
+            className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60 sm:w-[180px]"
+            aria-label={`Update pickup status for record ${delivery.delivery_id}`}
+          >
+            <option value="">Update status</option>
+            {availableStatuses.map((nextStatus) => (
+              <option key={nextStatus} value={nextStatus}>
+                {displayStatus(nextStatus)}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {updatingId === delivery.delivery_id && (
+          <p className="text-xs font-medium text-[#4F8585]">
+            Saving...
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="min-w-0 space-y-5 bg-gray text-slate-800">
+    <div className="min-w-0 w-full space-y-5 bg-white text-slate-800">
       {error && (
         <div
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          className="break-words rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:p-4"
         >
           {error}
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <SummaryCard
           title="Total Pickups"
           value={deliveries.length.toString()}
@@ -431,8 +527,8 @@ export default function DeliveryPanel() {
         />
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-[#D1D5DB] p-5 lg:flex-row lg:items-center lg:justify-between">
+      <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+        <div className="flex min-w-0 flex-col gap-4 border-b border-[#D1D5DB] p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <h2 className="font-bold text-slate-900">
               Customer Pickup Records
@@ -444,13 +540,13 @@ export default function DeliveryPanel() {
           </div>
 
           <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row lg:w-auto lg:flex-1 lg:justify-end">
-            <div className="relative min-w-0 flex-1 lg:max-w-md">
+            <div className="min-w-0 flex-1 lg:max-w-md">
               <input
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search pickup, order, customer, warehouse, or status..."
-                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20"
+                className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20"
               />
             </div>
 
@@ -461,7 +557,7 @@ export default function DeliveryPanel() {
                   setError("");
                   setShowForm(true);
                 }}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-[#4F8585] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3D6D6D]"
+                className="min-h-11 w-full shrink-0 whitespace-nowrap rounded-lg bg-[#4F8585] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3D6D6D] sm:w-auto"
               >
                 + Create Pickup
               </button>
@@ -469,166 +565,190 @@ export default function DeliveryPanel() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
-            <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
-              <tr>
-                <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
-                  Pickup No.
-                </th>
+        {loading ? (
+          <div className="px-4 py-12 text-center text-sm text-slate-600">
+            Loading pickup records...
+          </div>
+        ) : paginatedDeliveries.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-slate-600">
+            No pickup records found.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3 p-3 md:hidden">
+              {paginatedDeliveries.map((delivery) => {
+                const order = orderMap.get(delivery.order_id);
+                const customerName = order
+                  ? customerMap.get(order.customer_id) ??
+                    `Customer #${order.customer_id}`
+                  : "—";
 
-                <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
-                  Order No.
-                </th>
+                const warehouseName =
+                  warehouseMap.get(delivery.WH_ID) ?? "—";
 
-                <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
-                  Customer
-                </th>
-
-                <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
-                  Expected Pickup Date
-                </th>
-
-                <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
-                  Pickup Status
-                </th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-[#D1D5DB]">
-              {loading ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-5 py-10 text-center text-slate-600"
+                return (
+                  <article
+                    key={delivery.delivery_id}
+                    className="min-w-0 rounded-lg border border-[#D1D5DB] bg-white p-4 shadow-sm"
                   >
-                    Loading pickup records...
-                  </td>
-                </tr>
-              ) : paginatedDeliveries.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={5}
-                    className="px-5 py-10 text-center text-slate-600"
-                  >
-                    No pickup records found.
-                  </td>
-                </tr>
-              ) : (
-                paginatedDeliveries.map((delivery) => {
-                  const order = orderMap.get(delivery.order_id);
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Pickup No.
+                        </p>
+                        <p className="mt-1 break-words font-bold text-slate-900">
+                          PICK-{String(delivery.delivery_id).padStart(4, "0")}
+                        </p>
+                      </div>
 
-                  const availableStatuses =
-                    getAvailableTransitions(
-                      delivery.status,
-                      currentUser
+                      <div className="min-w-0 text-right">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                          Order No.
+                        </p>
+                        <p className="mt-1 break-words font-semibold text-slate-800">
+                          SO-{String(delivery.order_id).padStart(4, "0")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="my-3 border-t border-slate-200" />
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-500">
+                          Customer
+                        </p>
+                        <p className="mt-1 break-words text-sm font-medium text-slate-800">
+                          {customerName}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-500">
+                          Expected Pickup Date
+                        </p>
+                        <p className="mt-1 break-words text-sm text-slate-800">
+                          {formatDate(delivery.delivery_date)}
+                        </p>
+                      </div>
+
+                      <div className="min-w-0 sm:col-span-2">
+                        <p className="text-xs font-medium text-slate-500">
+                          Warehouse
+                        </p>
+                        <p className="mt-1 break-words text-sm text-slate-800">
+                          {warehouseName}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 border-t border-slate-200 pt-3">
+                      <p className="mb-2 text-xs font-medium text-slate-500">
+                        Pickup Status
+                      </p>
+                      {renderStatusControls(delivery)}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[850px] text-left text-sm">
+                <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
+                  <tr>
+                    <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
+                      Pickup No.
+                    </th>
+
+                    <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
+                      Order No.
+                    </th>
+
+                    <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
+                      Customer
+                    </th>
+
+                    <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
+                      Expected Pickup Date
+                    </th>
+
+                    <th className="whitespace-nowrap px-5 py-4 text-center font-semibold">
+                      Pickup Status
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-[#D1D5DB]">
+                  {paginatedDeliveries.map((delivery) => {
+                    const order = orderMap.get(delivery.order_id);
+
+                    return (
+                      <tr
+                        key={delivery.delivery_id}
+                        className="bg-[#E5E7EB] text-center transition-colors hover:bg-[#DDE1E5]"
+                      >
+                        <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
+                          PICK-{String(delivery.delivery_id).padStart(4, "0")}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                          SO-{String(delivery.order_id).padStart(4, "0")}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                          {order
+                            ? customerMap.get(order.customer_id) ??
+                              `Customer #${order.customer_id}`
+                            : "—"}
+                        </td>
+
+                        <td className="whitespace-nowrap px-5 py-4 text-slate-700">
+                          {formatDate(delivery.delivery_date)}
+                        </td>
+
+                        <td className="px-5 py-4">
+                          <div className="flex min-w-[230px] flex-col items-center justify-center gap-2">
+                            {renderStatusControls(delivery)}
+                          </div>
+                        </td>
+                      </tr>
                     );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
-                  return (
-                    <tr
-                      key={delivery.delivery_id}
-                      className="bg-[#E5E7EB] text-center transition-colors hover:bg-[#DDE1E5]"
-                    >
-                      <td className="whitespace-nowrap px-5 py-4 font-semibold text-slate-900">
-                        PICK-{String(delivery.delivery_id).padStart(4, "0")}
-                      </td>
-
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        SO-{String(delivery.order_id).padStart(4, "0")}
-                      </td>
-
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        {order
-                          ? customerMap.get(order.customer_id) ??
-                            `Customer #${order.customer_id}`
-                          : "—"}
-                      </td>
-
-                      <td className="whitespace-nowrap px-5 py-4 text-slate-700">
-                        {formatDate(delivery.delivery_date)}
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <div className="flex min-w-[230px] flex-col items-center justify-center gap-2">
-                          <span
-                            className={`inline-flex min-w-[150px] items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                              statusStyles[delivery.status] ??
-                              "border-slate-200 bg-slate-50 text-slate-700"
-                            }`}
-                          >
-                            {displayStatus(delivery.status)}
-                          </span>
-
-                          {availableStatuses.length > 0 && (
-                            <select
-                              value=""
-                              disabled={updatingId !== null}
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  void handleStatusChange(
-                                    delivery,
-                                    e.target.value as DeliveryStatus
-                                  );
-                                }
-                              }}
-                              className="w-[180px] rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60"
-                              aria-label={`Update pickup status for record ${delivery.delivery_id}`}
-                            >
-                              <option value="">Update status</option>
-                              {availableStatuses.map((nextStatus) => (
-                                <option
-                                  key={nextStatus}
-                                  value={nextStatus}
-                                >
-                                  {displayStatus(nextStatus)}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-
-                          {updatingId === delivery.delivery_id && (
-                            <p className="text-xs font-medium text-[#4F8585]">
-                              Saving...
-                            </p>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-gray px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-500">
+        <div className="flex min-w-0 flex-col gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:px-5 md:flex-row md:items-center md:justify-between">
+          <p className="text-center text-sm text-slate-600 md:text-left">
             Showing{" "}
-            <span className="font-semibold text-slate-700">
+            <span className="font-semibold text-slate-800">
               {filteredDeliveries.length === 0 ? 0 : startIndex + 1}
             </span>{" "}
             to{" "}
-            <span className="font-semibold text-slate-700">
+            <span className="font-semibold text-slate-800">
               {endIndex}
             </span>{" "}
             of{" "}
-            <span className="font-semibold text-slate-700">
+            <span className="font-semibold text-slate-800">
               {filteredDeliveries.length}
             </span>{" "}
             pickups
           </p>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-center gap-2">
             <button
               type="button"
               disabled={safeCurrentPage === 1}
               onClick={() => goToPage(safeCurrentPage - 1)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Previous
             </button>
 
-            <span className="px-2 text-sm font-medium text-slate-600">
+            <span className="whitespace-nowrap px-2 text-sm font-medium text-slate-600">
               Page {safeCurrentPage} of {totalPages}
             </span>
 
@@ -636,7 +756,7 @@ export default function DeliveryPanel() {
               type="button"
               disabled={safeCurrentPage === totalPages}
               onClick={() => goToPage(safeCurrentPage + 1)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>
@@ -644,12 +764,13 @@ export default function DeliveryPanel() {
         </div>
       </section>
 
+      {/* Create Pickup Modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-4">
-          <div className="my-auto w-full max-w-xl rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-xl">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-950/50 p-0 sm:items-center sm:p-4">
+          <div className="my-auto max-h-[95dvh] w-full overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-xl sm:max-h-[90dvh] sm:max-w-xl sm:rounded-xl sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-4 sm:mb-6">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
                   Create Customer Pickup
                 </h2>
 
@@ -662,7 +783,7 @@ export default function DeliveryPanel() {
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className="rounded-lg px-2 py-1 text-slate-500 transition hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-50"
+                className="shrink-0 rounded-lg px-2 py-1 text-slate-500 transition hover:bg-[#D1D5DB] hover:text-slate-900 disabled:opacity-50"
                 aria-label="Close form"
               >
                 ✕
@@ -672,18 +793,20 @@ export default function DeliveryPanel() {
             <div className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Approved Sales Order
+                  Accepted Sales Order
                 </label>
 
                 <select
                   value={orderId}
                   onChange={(e) => setOrderId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585]"
+                  className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20"
                 >
                   <option value="">Select sales order</option>
 
                   {orders
-                    .filter((order) => order.status === "Approved")
+                    .filter((order) =>
+                      ["Accepted", "Approved"].includes(order.status)
+                    )
                     .filter(
                       (order) =>
                         !deliveries.some(
@@ -704,7 +827,7 @@ export default function DeliveryPanel() {
                 </select>
 
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Only approved orders without an existing pickup record are listed.
+                  Only accepted orders without an existing pickup record are listed. Inventory must accept the order request first.
                 </p>
               </div>
 
@@ -716,7 +839,7 @@ export default function DeliveryPanel() {
                 <select
                   value={warehouseId}
                   onChange={(e) => setWarehouseId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585]"
+                  className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20"
                 >
                   <option value="">Select warehouse</option>
 
@@ -743,7 +866,7 @@ export default function DeliveryPanel() {
                   type="date"
                   value={pickupDate}
                   onChange={(e) => setPickupDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585]"
+                  className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20"
                 />
               </div>
 
@@ -756,12 +879,12 @@ export default function DeliveryPanel() {
                 </p>
               </div>
 
-              <div className="flex flex-col-reverse justify-end gap-3 border-t border-[#D1D5DB] pt-5 sm:flex-row">
+              <div className="flex flex-col-reverse gap-3 border-t border-[#D1D5DB] pt-5 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={resetForm}
                   disabled={saving}
-                  className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-[#DDE1E5] disabled:opacity-50"
+                  className="min-h-11 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-medium text-slate-700 transition hover:bg-[#DDE1E5] disabled:opacity-50 sm:w-auto"
                 >
                   Cancel
                 </button>
@@ -770,11 +893,126 @@ export default function DeliveryPanel() {
                   type="button"
                   onClick={() => void handleCreateDelivery()}
                   disabled={saving}
-                  className="rounded-lg bg-[#4F8585] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3D6D6D] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="min-h-11 rounded-lg bg-[#4F8585] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3D6D6D] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {saving ? "Creating..." : "Create Pickup"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Customer Collection Modal */}
+      {deliveryToConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-slate-950/60 p-0 sm:items-center sm:p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="collection-modal-title"
+            className="my-auto w-full max-h-[95dvh] overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-xl sm:p-6"
+          >
+            <div className="mb-5">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-green-700">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="h-6 w-6"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="m5 12 4 4L19 6"
+                  />
+                </svg>
+              </div>
+
+              <h2
+                id="collection-modal-title"
+                className="text-lg font-bold text-slate-900"
+              >
+                Confirm Customer Collection
+              </h2>
+
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Enter the name of the customer who collected the items. This will mark the pickup as Delivered.
+              </p>
+            </div>
+
+            <div className="mb-5 rounded-lg border border-[#D1D5DB] bg-[#E5E7EB] p-3">
+              <p className="text-xs font-medium text-slate-500">
+                Pickup Reference
+              </p>
+              <p className="mt-1 font-semibold text-slate-900">
+                PICK-{String(deliveryToConfirm.delivery_id).padStart(4, "0")}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Order: SO-{String(deliveryToConfirm.order_id).padStart(4, "0")}
+              </p>
+            </div>
+
+            <div>
+              <label
+                htmlFor="received-by"
+                className="mb-2 block text-sm font-semibold text-slate-700"
+              >
+                Customer / Authorized Collector Name
+              </label>
+
+              <input
+                id="received-by"
+                type="text"
+                autoFocus
+                value={receivedBy}
+                onChange={(e) => {
+                  setReceivedBy(e.target.value);
+                  setReceivedByError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleConfirmCollection();
+                  }
+                }}
+                placeholder="Enter full name"
+                maxLength={150}
+                disabled={saving}
+                className={`min-h-12 w-full rounded-lg border bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:ring-2 ${
+                  receivedByError
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-100"
+                    : "border-slate-300 focus:border-[#4F8585] focus:ring-[#4F8585]/20"
+                }`}
+              />
+
+              {receivedByError && (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  {receivedByError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeReceivedByModal}
+                disabled={saving}
+                className="min-h-11 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleConfirmCollection()}
+                disabled={saving}
+                className="min-h-11 rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Confirming..." : "Confirm Collection"}
+              </button>
             </div>
           </div>
         </div>
@@ -793,12 +1031,12 @@ function SummaryCard({
   valueStyle?: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-600">
+    <div className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
+      <p className="text-xs font-semibold text-slate-600 sm:text-sm">
         {title}
       </p>
 
-      <p className={`mt-2 text-2xl font-bold ${valueStyle}`}>
+      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueStyle}`}>
         {value}
       </p>
     </div>

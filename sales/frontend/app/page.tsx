@@ -35,21 +35,6 @@ const numberValue = (value: string | number | null | undefined) => {
   return Number.isFinite(result) ? result : 0;
 };
 
-const formatDate = (value: string | null | undefined) => {
-  if (!value) return "—";
-
-  const datePart = value.split("T")[0];
-  const date = new Date(`${datePart}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-};
-
 const getMonthKey = (value: string | null | undefined) => {
   if (!value) return "";
   return value.split("T")[0].slice(0, 7);
@@ -80,7 +65,7 @@ const getLastSixMonths = (currentDate: Date) => {
 };
 
 const cardClass =
-  "rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm";
+  "min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5";
 
 export default function DashboardPage() {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
@@ -165,15 +150,13 @@ export default function DashboardPage() {
       (order) => order.status !== "Cancelled"
     );
 
-    const orderStatuses = [
-      "Pending",
-      "Approved",
-      "Processing",
-      "Completed",
-      "Cancelled",
-    ].map((status) => ({
+    const orderStatuses = ["Pending", "Accepted"].map((status) => ({
       status,
-      count: orders.filter((order) => order.status === status).length,
+      count: orders.filter((order) =>
+        status === "Accepted"
+          ? ["Accepted", "Approved"].includes(order.status)
+          : order.status === status
+      ).length,
     }));
 
     const overdueAccounts = receivables.filter(
@@ -367,31 +350,29 @@ export default function DashboardPage() {
   const chartAxisLabels = [0, 0.25, 0.5, 0.75, 1];
 
   return (
-    <div className="min-h-full space-y-6 bg-green-50 p-4 text-slate-900 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900">
-            {PAGE_TITLE}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Overview of sales performance and financial activities.
-          </p>
-        </div>
+    <div className="min-h-full w-full min-w-0 space-y-5 bg-white p-3 text-slate-900 sm:space-y-6 sm:p-5 lg:p-6">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">
+          {PAGE_TITLE}
+        </h1>
+        <p className="mt-1 text-xs text-slate-600 sm:text-sm">
+          Overview of sales performance and financial activities.
+        </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:p-4">
           <p className="font-semibold">Unable to load dashboard data</p>
-          <p className="mt-1">{error}</p>
+          <p className="mt-1 break-words">{error}</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-600">
+          <p className="text-xs font-medium text-slate-600 sm:text-sm">
             Total Sales
           </p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">
+          <p className="mt-2 break-words text-xl font-bold text-slate-900 sm:text-2xl">
             {loading ? "—" : money(analytics.totalSales)}
           </p>
           <p className="mt-1 text-xs text-slate-600">
@@ -400,10 +381,10 @@ export default function DashboardPage() {
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-600">
+          <p className="text-xs font-medium text-slate-600 sm:text-sm">
             Total Orders
           </p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">
+          <p className="mt-2 text-xl font-bold text-slate-900 sm:text-2xl">
             {loading ? "—" : analytics.totalOrders.toLocaleString()}
           </p>
           <p className="mt-1 text-xs text-slate-600">
@@ -412,10 +393,10 @@ export default function DashboardPage() {
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-600">
+          <p className="text-xs font-medium text-slate-600 sm:text-sm">
             Outstanding Balance
           </p>
-          <p className="mt-2 text-2xl font-bold text-amber-600">
+          <p className="mt-2 break-words text-xl font-bold text-amber-600 sm:text-2xl">
             {loading ? "—" : money(analytics.outstandingBalance)}
           </p>
           <p className="mt-1 text-xs text-slate-600">
@@ -424,10 +405,10 @@ export default function DashboardPage() {
         </div>
 
         <div className={cardClass}>
-          <p className="text-sm font-medium text-slate-600">
+          <p className="text-xs font-medium text-slate-600 sm:text-sm">
             Total Collections
           </p>
-          <p className="mt-2 text-2xl font-bold text-emerald-600">
+          <p className="mt-2 break-words text-xl font-bold text-emerald-600 sm:text-2xl">
             {loading ? "—" : money(analytics.totalCollections)}
           </p>
           <p className="mt-1 text-xs text-slate-600">
@@ -436,13 +417,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        <section className="w-full rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm">
+      <div className="grid min-w-0 grid-cols-1 items-start gap-4 2xl:grid-cols-2">
+        <section className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-3 shadow-sm sm:p-4">
           <div className="mb-3">
-            <h2 className="text-lg font-bold text-slate-900">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">
               Sales Performance
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-xs text-slate-600 sm:text-sm">
               Monthly sales and collections for the last six months.
             </p>
           </div>
@@ -471,109 +452,111 @@ export default function DashboardPage() {
                 </span>
               </div>
 
-              <div className="mx-auto w-full max-w-[560px]">
-                <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                  className="mx-auto h-auto w-full"
-                  role="img"
-                  aria-label="Line graph showing monthly sales and collections for the last six months"
-                >
-                  {chartAxisLabels.map((ratio) => {
-                    const value = maxMonthlyValue * ratio;
-                    const y = chartY(value);
+              <div className="w-full min-w-0 overflow-x-auto">
+                <div className="mx-auto min-w-[340px] max-w-[560px]">
+                  <svg
+                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                    className="h-auto w-full"
+                    role="img"
+                    aria-label="Line graph showing monthly sales and collections for the last six months"
+                  >
+                    {chartAxisLabels.map((ratio) => {
+                      const value = maxMonthlyValue * ratio;
+                      const y = chartY(value);
 
-                    return (
-                      <g key={ratio}>
-                        <line
-                          x1={chartPadding.left}
-                          y1={y}
-                          x2={chartWidth - chartPadding.right}
-                          y2={y}
-                          stroke="#cbd5e1"
-                          strokeDasharray="4 4"
-                        />
+                      return (
+                        <g key={ratio}>
+                          <line
+                            x1={chartPadding.left}
+                            y1={y}
+                            x2={chartWidth - chartPadding.right}
+                            y2={y}
+                            stroke="#cbd5e1"
+                            strokeDasharray="4 4"
+                          />
+
+                          <text
+                            x={chartPadding.left - 10}
+                            y={y + 4}
+                            textAnchor="end"
+                            fontSize="11"
+                            fill="#475569"
+                          >
+                            {value >= 1000
+                              ? `₱${(value / 1000).toFixed(0)}k`
+                              : `₱${value.toFixed(0)}`}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    <polyline
+                      points={salesLine}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+
+                    <polyline
+                      points={collectionsLine}
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+
+                    {monthlyAnalytics.map((month, index) => (
+                      <g key={month.key}>
+                        <circle
+                          cx={chartX(index)}
+                          cy={chartY(month.sales)}
+                          r="4"
+                          fill="#2563eb"
+                          stroke="white"
+                          strokeWidth="1.5"
+                        >
+                          <title>
+                            {month.label} Sales: {money(month.sales)}
+                          </title>
+                        </circle>
+
+                        <circle
+                          cx={chartX(index)}
+                          cy={chartY(month.collections)}
+                          r="4"
+                          fill="#10b981"
+                          stroke="white"
+                          strokeWidth="1.5"
+                        >
+                          <title>
+                            {month.label} Collections: {money(month.collections)}
+                          </title>
+                        </circle>
 
                         <text
-                          x={chartPadding.left - 10}
-                          y={y + 4}
-                          textAnchor="end"
+                          x={chartX(index)}
+                          y={chartHeight - 12}
+                          textAnchor="middle"
                           fontSize="11"
                           fill="#475569"
                         >
-                          {value >= 1000
-                            ? `₱${(value / 1000).toFixed(0)}k`
-                            : `₱${value.toFixed(0)}`}
+                          {month.label}
                         </text>
                       </g>
-                    );
-                  })}
-
-                  <polyline
-                    points={salesLine}
-                    fill="none"
-                    stroke="#2563eb"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  <polyline
-                    points={collectionsLine}
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {monthlyAnalytics.map((month, index) => (
-                    <g key={month.key}>
-                      <circle
-                        cx={chartX(index)}
-                        cy={chartY(month.sales)}
-                        r="4"
-                        fill="#2563eb"
-                        stroke="white"
-                        strokeWidth="1.5"
-                      >
-                        <title>
-                          {month.label} Sales: {money(month.sales)}
-                        </title>
-                      </circle>
-
-                      <circle
-                        cx={chartX(index)}
-                        cy={chartY(month.collections)}
-                        r="4"
-                        fill="#10b981"
-                        stroke="white"
-                        strokeWidth="1.5"
-                      >
-                        <title>
-                          {month.label} Collections: {money(month.collections)}
-                        </title>
-                      </circle>
-
-                      <text
-                        x={chartX(index)}
-                        y={chartHeight - 12}
-                        textAnchor="middle"
-                        fontSize="11"
-                        fill="#475569"
-                      >
-                        {month.label}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
+                    ))}
+                  </svg>
+                </div>
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-3 border-t border-[#D1D5DB] pt-3 sm:grid-cols-2">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-600">
                     Sales in displayed period
                   </p>
-                  <p className="mt-1 font-semibold text-blue-700">
+                  <p className="mt-1 break-words font-semibold text-blue-700">
                     {money(
                       monthlyAnalytics.reduce(
                         (sum, month) => sum + month.sales,
@@ -583,11 +566,11 @@ export default function DashboardPage() {
                   </p>
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs text-slate-600">
                     Collections in displayed period
                   </p>
-                  <p className="mt-1 font-semibold text-emerald-700">
+                  <p className="mt-1 break-words font-semibold text-emerald-700">
                     {money(
                       monthlyAnalytics.reduce(
                         (sum, month) => sum + month.collections,
@@ -602,11 +585,11 @@ export default function DashboardPage() {
         </section>
 
         <section className={cardClass}>
-          <div className="mb-5">
-            <h2 className="text-lg font-bold text-slate-900">
+          <div className="mb-4 sm:mb-5">
+            <h2 className="text-base font-bold text-slate-900 sm:text-lg">
               Top Selling Products
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-xs text-slate-600 sm:text-sm">
               Products ranked by net quantity sold, after recorded returns.
             </p>
           </div>
@@ -620,16 +603,16 @@ export default function DashboardPage() {
               No product sales records available yet.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-left text-sm">
+            <div className="-mx-1 overflow-x-auto">
+              <table className="w-full min-w-[480px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
-                    <th className="px-4 py-3 text-left">Rank</th>
-                    <th className="px-4 py-3 text-left">Product</th>
-                    <th className="px-4 py-3 text-center">
+                  <tr className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-[10px] uppercase tracking-wide text-slate-700 sm:text-xs">
+                    <th className="px-3 py-3 text-left sm:px-4">Rank</th>
+                    <th className="px-3 py-3 text-left sm:px-4">Product</th>
+                    <th className="px-3 py-3 text-center sm:px-4">
                       Quantity Sold
                     </th>
-                    <th className="px-4 py-3 text-center">
+                    <th className="px-3 py-3 text-center sm:px-4">
                       Net Sales
                     </th>
                   </tr>
@@ -641,19 +624,19 @@ export default function DashboardPage() {
                       key={product.IM_ID}
                       className="border-b border-[#D1D5DB] last:border-0 hover:bg-[#DDE1E5]"
                     >
-                      <td className="px-4 py-4 font-semibold text-slate-600">
+                      <td className="px-3 py-3 font-semibold text-slate-600 sm:px-4 sm:py-4">
                         #{index + 1}
                       </td>
 
-                      <td className="px-4 py-4 font-semibold text-slate-800">
+                      <td className="max-w-[180px] break-words px-3 py-3 font-semibold text-slate-800 sm:px-4 sm:py-4">
                         {product.name}
                       </td>
 
-                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                      <td className="px-3 py-3 text-center font-semibold text-slate-800 sm:px-4 sm:py-4">
                         {product.quantity.toLocaleString()}
                       </td>
 
-                      <td className="px-4 py-4 text-center font-semibold text-slate-800">
+                      <td className="whitespace-nowrap px-3 py-3 text-center font-semibold text-slate-800 sm:px-4 sm:py-4">
                         {money(product.sales)}
                       </td>
                     </tr>

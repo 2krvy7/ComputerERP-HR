@@ -43,9 +43,23 @@ type ProductionBatch = {
   QuantityProduced: number;
   StartDate: string | null;
   Deadline: string | null;
+  CompletionDate: string | null;
   status: "Pending" | "In Progress" | "Completed";
 };
 
+const getLocalDateKey = (value: string | null) => {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -78,6 +92,12 @@ export default function ProductsPage() {
 
   const [expandedProducts, setExpandedProducts] = useState<number[]>([]);
   const [expandedBOM, setExpandedBOM] = useState<number | null>(null);
+
+  const [requiredDateFilter, setRequiredDateFilter] = useState("");
+  const [completionDateFilter, setCompletionDateFilter] = useState("");
+  const [completedPage, setCompletedPage] = useState(1);
+
+  const COMPLETED_BATCHES_PER_PAGE = 5;
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -180,11 +200,11 @@ const handleUpdateStatus = async (
     setUpdatingStatus(productionId);
 
     const response = await fetch(
-  `${API_URL}/production-orders/${productionId}/status?new_status=${encodeURIComponent(newStatus)}`,
-  {
-    method: "PATCH",
-  }
-);
+      `${API_URL}/production-orders/${productionId}/status?new_status=${encodeURIComponent(newStatus)}`,
+      {
+        method: "PATCH",
+      }
+    );
 
     if (!response.ok) {
       throw new Error("Failed to update production status.");
@@ -200,13 +220,13 @@ const handleUpdateStatus = async (
               status: updatedBatch.status,
               StartDate: updatedBatch.StartDate,
               Deadline: updatedBatch.Deadline,
+              CompletionDate: updatedBatch.CompletionDate,
             }
           : batch
       )
     );
 
     setOpenStatusMenu(null);
-
   } catch (err) {
     alert(
       err instanceof Error ? err.message : "Something went wrong."
@@ -258,6 +278,7 @@ const handleUpdateQuantity = async () => {
           ? {
               ...batch,
               QuantityProduced: updatedBatch.QuantityProduced,
+              CompletionDate: updatedBatch.CompletionDate,
               status: updatedBatch.status,
             }
           : batch
@@ -266,7 +287,6 @@ const handleUpdateQuantity = async () => {
 
     setEditingQuantity(null);
     setNewQuantity("");
-
   } catch (err) {
     alert(
       err instanceof Error ? err.message : "Something went wrong."
@@ -354,6 +374,38 @@ const handleUpdateQuantity = async () => {
       setSavingProduct(false);
     }
   };
+
+  const filteredCompletedBatches = productionBatches.filter((batch) => {
+  if (batch.status !== "Completed") return false;
+
+  const matchesRequiredDate =
+    !requiredDateFilter ||
+    getLocalDateKey(batch.Deadline) === requiredDateFilter;
+
+  const matchesCompletionDate =
+    !completionDateFilter ||
+    getLocalDateKey(batch.CompletionDate) === completionDateFilter;
+
+  return matchesRequiredDate && matchesCompletionDate;
+});
+
+const completedTotalPages = Math.max(
+  1,
+  Math.ceil(
+    filteredCompletedBatches.length / COMPLETED_BATCHES_PER_PAGE
+  )
+);
+
+const paginatedCompletedBatches = filteredCompletedBatches.slice(
+  (completedPage - 1) * COMPLETED_BATCHES_PER_PAGE,
+  completedPage * COMPLETED_BATCHES_PER_PAGE
+);
+
+useEffect(() => {
+  if (completedPage > completedTotalPages) {
+    setCompletedPage(completedTotalPages);
+  }
+}, [completedPage, completedTotalPages]);
 
   return (
     <div className="p-6 space-y-6">
@@ -616,9 +668,19 @@ const handleUpdateQuantity = async () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {(["Pending", "In Progress", "Completed"] as const).map((status) => {
-            const batches = productionBatches.filter(
+            const allBatches = productionBatches.filter(
               (batch) => batch.status === status
             );
+
+            const batches =
+              status === "Completed"
+                ? paginatedCompletedBatches
+                : allBatches;
+
+            const batchCount =
+              status === "Completed"
+                ? filteredCompletedBatches.length
+                : allBatches.length;
 
             return (
               <div key={status} className="bg-gray-50 rounded-xl p-4 space-y-3">
@@ -630,9 +692,59 @@ const handleUpdateQuantity = async () => {
                   </h3>
 
                   <span className="text-xs bg-white border border-gray-200 rounded-full px-2 py-1 text-gray-600">
-                    {batches.length}
+                    {batchCount}
                   </span>
                 </div>
+
+                {/* COMPLETED DATE FILTERS */}
+                {status === "Completed" && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Required Date
+                      </label>
+
+                      <input
+                        type="date"
+                        value={requiredDateFilter}
+                        onChange={(e) => {
+                          setRequiredDateFilter(e.target.value);
+                          setCompletedPage(1);
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Completion Date
+                      </label>
+
+                      <input
+                        type="date"
+                        value={completionDateFilter}
+                        onChange={(e) => {
+                          setCompletionDateFilter(e.target.value);
+                          setCompletedPage(1);
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setRequiredDateFilter("");
+                        setCompletionDateFilter("");
+                        setCompletedPage(1);
+                      }}
+                      className="text-xs font-medium text-[#365f68] hover:underline"
+                    >
+                      Clear Filters
+                    </button>
+
+                  </div>
+                )}
 
                 {/* BATCH CARDS */}
                 {productionLoading ? (
@@ -760,20 +872,66 @@ const handleUpdateQuantity = async () => {
                               ? new Date(batch.StartDate).toLocaleDateString()
                               : "—"}
                           </p>
+
                           <p>
-                            Deadline: {batch.Deadline
+                            Required Date: {batch.Deadline
                               ? new Date(batch.Deadline).toLocaleDateString()
                               : "—"}
                           </p>
+
+                          {batch.status === "Completed" && (
+                            <p>
+                              Completion Date: {batch.CompletionDate
+                                ? new Date(batch.CompletionDate).toLocaleDateString()
+                                : "Not recorded"}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
                   ))
                 ) : (
                   <p className="text-sm text-gray-400 text-center py-6">
-                    No batches in this status.
+                    {status === "Completed" &&
+                    (requiredDateFilter || completionDateFilter)
+                      ? "No completed batches match the selected dates."
+                      : "No batches in this status."}
                   </p>
                 )}
+
+                {/* COMPLETED PAGINATION */}
+                {status === "Completed" &&
+                  filteredCompletedBatches.length > 0 && (
+                    <div className="flex items-center justify-between border-t border-gray-200 pt-3">
+
+                      <button
+                        onClick={() =>
+                          setCompletedPage((prev) => Math.max(1, prev - 1))
+                        }
+                        disabled={completedPage === 1}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white"
+                      >
+                        Previous
+                      </button>
+
+                      <span className="text-xs text-gray-500">
+                        Page {completedPage} of {completedTotalPages}
+                      </span>
+
+                      <button
+                        onClick={() =>
+                          setCompletedPage((prev) =>
+                            Math.min(completedTotalPages, prev + 1)
+                          )
+                        }
+                        disabled={completedPage >= completedTotalPages}
+                        className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white"
+                      >
+                        Next
+                      </button>
+
+                    </div>
+                  )}
 
               </div>
             );

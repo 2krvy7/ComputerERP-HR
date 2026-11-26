@@ -171,6 +171,7 @@ def get_production_kanban():
                         p."QuantityProduced",
                         p."StartDate",
                         p."Deadline",
+                        p."CompletionDate",
                         p.status
                     FROM public."PRODUCTION" AS p
                     INNER JOIN public."PRODUCT_MASTER" AS pm
@@ -194,7 +195,8 @@ def get_production_kanban():
                 "QuantityProduced": row[6],
                 "StartDate": row[7],
                 "Deadline": row[8],
-                "status": row[9]
+                "CompletionDate": row[9],
+                "status": row[10]
             }
             for row in rows
         ]
@@ -205,7 +207,6 @@ def get_production_kanban():
             status_code=500,
             detail="Failed to retrieve production batches."
         )
-
 
 @app.patch("/production-orders/{production_id}/status")
 def update_production_status(production_id: int, new_status: str):
@@ -218,6 +219,12 @@ def update_production_status(production_id: int, new_status: str):
                     UPDATE public."PRODUCTION"
                     SET
                         status = %s,
+                        "CompletionDate" = CASE
+                            WHEN status = 'In Progress'
+                            AND %s = 'Completed'
+                            THEN CURRENT_TIMESTAMP
+                            ELSE "CompletionDate"
+                        END,
                         "StartDate" = CASE
                             WHEN status = 'Pending'
                             AND %s = 'In Progress'
@@ -235,18 +242,23 @@ def update_production_status(production_id: int, new_status: str):
                         (status = 'Pending' AND %s = 'In Progress')
                         OR
                         (status = 'In Progress' AND %s = 'Completed')
+                        OR
+                        (status = 'Completed' AND %s = 'Released')
                     )
                     RETURNING
                         "Production_ID",
                         status,
                         "StartDate",
-                        "Deadline";
+                        "Deadline",
+                        "CompletionDate";
                     """,
                     (
                         new_status,
                         new_status,
                         new_status,
+                        new_status,
                         production_id,
+                        new_status,
                         new_status,
                         new_status
                     )
@@ -265,7 +277,8 @@ def update_production_status(production_id: int, new_status: str):
             "Production_ID": updated_batch[0],
             "status": updated_batch[1],
             "StartDate": updated_batch[2],
-            "Deadline": updated_batch[3]
+            "Deadline": updated_batch[3],
+            "CompletionDate": updated_batch[4]
         }
 
     except HTTPException:
@@ -275,6 +288,7 @@ def update_production_status(production_id: int, new_status: str):
             status_code=500,
             detail=f"Failed to update production status: {str(error)}"
         )
+
 
 @app.patch("/production-orders/{production_id}/quantity")
 def update_production_quantity(
@@ -293,7 +307,17 @@ def update_production_quantity(
                         status = CASE
                             WHEN %s = "QuantityRequired"
                             THEN 'Completed'
+                            WHEN status = 'Completed'
+                            THEN 'In Progress'
                             ELSE status
+                        END,
+                        "CompletionDate" = CASE
+                            WHEN %s = "QuantityRequired"
+                            THEN COALESCE(
+                                "CompletionDate",
+                                CURRENT_TIMESTAMP
+                            )
+                            ELSE NULL
                         END
                     WHERE "Production_ID" = %s
                     AND %s <= "QuantityRequired"
@@ -301,9 +325,11 @@ def update_production_quantity(
                         "Production_ID",
                         "QuantityRequired",
                         "QuantityProduced",
+                        "CompletionDate",
                         status;
                     """,
                     (
+                        new_quantity,
                         new_quantity,
                         new_quantity,
                         production_id,
@@ -324,7 +350,8 @@ def update_production_quantity(
             "Production_ID": updated_batch[0],
             "QuantityRequired": updated_batch[1],
             "QuantityProduced": updated_batch[2],
-            "status": updated_batch[3]
+            "CompletionDate": updated_batch[3],
+            "status": updated_batch[4]
         }
 
     except HTTPException:
