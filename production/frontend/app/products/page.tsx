@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 type Product = {
   PM_ID: number;
@@ -12,15 +13,6 @@ type Product = {
   Manual: string | null;
   Availability: string;
   Status: string;
-};
-
-type InventoryItem = {
-  IM_ID: number;
-  SKU: string;
-  Item_Name: string;
-  Description: string | null;
-  Category: string | null;
-  Brand: string | null;
 };
 
 type BOMItem = {
@@ -79,16 +71,6 @@ export default function ProductsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [showAddProduct, setShowAddProduct] = useState(false);
-
-  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-  const [inventoryLoading, setInventoryLoading] = useState(false);
-
-  const [selectedIMId, setSelectedIMId] = useState("");
-  const [manual, setManual] = useState("");
-
-  const [savingProduct, setSavingProduct] = useState(false);
-  const [modalError, setModalError] = useState("");
 
   const [expandedProducts, setExpandedProducts] = useState<number[]>([]);
   const [expandedBOM, setExpandedBOM] = useState<number | null>(null);
@@ -152,260 +134,184 @@ export default function ProductsPage() {
     fetchProductionBatches();
   }, []);
 
-
-    useEffect(() => {
-    if (!showAddProduct) return;
-
-    const fetchInventoryItems = async () => {
-      try {
-        setInventoryLoading(true);
-        setModalError("");
-
-        const response = await fetch(
-          `${API_URL}/products/inventory-items`
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to retrieve finished products.");
-        }
-
-        const data: InventoryItem[] = await response.json();
-        setInventoryItems(data);
-
-      } catch (err) {
-        setModalError(
-          err instanceof Error ? err.message : "Something went wrong."
-        );
-      } finally {
-        setInventoryLoading(false);
-      }
-    };
-
-    fetchInventoryItems();
-  }, [showAddProduct]);
-
   const toggleProduct = (pmId: number) => {
-  setExpandedProducts((prev) =>
-    prev.includes(pmId)
-      ? prev.filter((id) => id !== pmId)
-      : [...prev, pmId]
-  );
-};
-  
-const handleUpdateStatus = async (
-  productionId: number,
-  newStatus: "In Progress" | "Completed"
-) => {
-  try {
-    setUpdatingStatus(productionId);
-
-    const response = await fetch(
-      `${API_URL}/production-orders/${productionId}/status?new_status=${encodeURIComponent(newStatus)}`,
-      {
-        method: "PATCH",
-      }
+    setExpandedProducts((prev) =>
+      prev.includes(pmId)
+        ? prev.filter((id) => id !== pmId)
+        : [...prev, pmId]
     );
+  };
 
-    if (!response.ok) {
-      throw new Error("Failed to update production status.");
-    }
-
-    const updatedBatch = await response.json();
-
-    setProductionBatches((prev) =>
-      prev.map((batch) =>
-        batch.Production_ID === productionId
-          ? {
-              ...batch,
-              status: updatedBatch.status,
-              StartDate: updatedBatch.StartDate,
-              Deadline: updatedBatch.Deadline,
-              CompletionDate: updatedBatch.CompletionDate,
-            }
-          : batch
-      )
-    );
-
-    setOpenStatusMenu(null);
-  } catch (err) {
-    alert(
-      err instanceof Error ? err.message : "Something went wrong."
-    );
-  } finally {
-    setUpdatingStatus(null);
-  }
-};
-
-const handleUpdateQuantity = async () => {
-  if (!editingQuantity || newQuantity === "") return;
-
-  const quantity = Number(newQuantity);
-
-  if (
-    !Number.isInteger(quantity) ||
-    quantity < 0 ||
-    quantity > editingQuantity.QuantityRequired
-  ) {
-    alert("Enter a valid quantity within the required amount.");
-    return;
-  }
-
-  try {
-    setSavingQuantity(true);
-
-    const response = await fetch(
-      `${API_URL}/production-orders/${editingQuantity.Production_ID}/quantity`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          new_quantity: quantity,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to update production quantity.");
-    }
-
-    const updatedBatch = await response.json();
-
-    setProductionBatches((prev) =>
-      prev.map((batch) =>
-        batch.Production_ID === editingQuantity.Production_ID
-          ? {
-              ...batch,
-              QuantityProduced: updatedBatch.QuantityProduced,
-              CompletionDate: updatedBatch.CompletionDate,
-              status: updatedBatch.status,
-            }
-          : batch
-      )
-    );
-
-    setEditingQuantity(null);
-    setNewQuantity("");
-  } catch (err) {
-    alert(
-      err instanceof Error ? err.message : "Something went wrong."
-    );
-  } finally {
-    setSavingQuantity(false);
-  }
-};
-
-  const toggleBOM = async (pmId: number) => {
-  // Close the BOM accordion if it is already open.
-  if (expandedBOM === pmId) {
-    setExpandedBOM(null);
-    return;
-  }
-
-  // Open the selected BOM accordion.
-  setExpandedBOM(pmId);
-
-  // Don't fetch again if this product's BOM is already loaded.
-  if (bomItems[pmId]) return;
-
-  try {
-    setBomLoading(pmId);
-
-    const response = await fetch(`${API_URL}/products/${pmId}/bom`);
-
-    if (!response.ok) {
-      throw new Error("Failed to retrieve BOM details.");
-    }
-
-    const data: BOMItem[] = await response.json();
-
-    setBomItems((prev) => ({
-      ...prev,
-      [pmId]: data,
-    }));
-  } catch (err) {
-    console.error("BOM fetch error:", err);
-  } finally {
-    setBomLoading(null);
-  }
-};
-
-    const handleSaveProduct = async () => {
-    if (!selectedIMId) return;
-
+  const handleUpdateStatus = async (
+    productionId: number,
+    newStatus: "In Progress" | "Completed"
+  ) => {
     try {
-      setSavingProduct(true);
-      setModalError("");
+      setUpdatingStatus(productionId);
 
-      const response = await fetch(`${API_URL}/products/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          IM_ID: Number(selectedIMId),
-          Manual: manual.trim() || null,
-        }),
-      });
+      const response = await fetch(
+        `${API_URL}/production-orders/${productionId}/status?new_status=${encodeURIComponent(newStatus)}`,
+        {
+          method: "PATCH",
+        }
+      );
 
       if (!response.ok) {
-        throw new Error("Failed to register product.");
+        throw new Error("Failed to update production status.");
       }
 
-      const productsResponse = await fetch(`${API_URL}/products/`);
+      const updatedBatch = await response.json();
 
-      if (!productsResponse.ok) {
-        throw new Error("Product saved, but the list could not refresh.");
-      }
+      setProductionBatches((prev) =>
+        prev.map((batch) =>
+          batch.Production_ID === productionId
+            ? {
+                ...batch,
+                status: updatedBatch.status,
+                StartDate: updatedBatch.StartDate,
+                Deadline: updatedBatch.Deadline,
+                CompletionDate: updatedBatch.CompletionDate,
+              }
+            : batch
+        )
+      );
 
-      const data: Product[] = await productsResponse.json();
-      setProducts(data);
-
-      setShowAddProduct(false);
-      setSelectedIMId("");
-      setManual("");
-
+      setOpenStatusMenu(null);
     } catch (err) {
-      setModalError(
+      alert(
         err instanceof Error ? err.message : "Something went wrong."
       );
     } finally {
-      setSavingProduct(false);
+      setUpdatingStatus(null);
+    }
+  };
+
+  const handleUpdateQuantity = async () => {
+    if (!editingQuantity || newQuantity === "") return;
+
+    const quantity = Number(newQuantity);
+
+    if (
+      !Number.isInteger(quantity) ||
+      quantity < 0 ||
+      quantity > editingQuantity.QuantityRequired
+    ) {
+      alert("Enter a valid quantity within the required amount.");
+      return;
+    }
+
+    try {
+      setSavingQuantity(true);
+
+      const response = await fetch(
+        `${API_URL}/production-orders/${editingQuantity.Production_ID}/quantity`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            new_quantity: quantity,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to update production quantity.");
+      }
+
+      const updatedBatch = await response.json();
+
+      setProductionBatches((prev) =>
+        prev.map((batch) =>
+          batch.Production_ID === editingQuantity.Production_ID
+            ? {
+                ...batch,
+                QuantityProduced: updatedBatch.QuantityProduced,
+                CompletionDate: updatedBatch.CompletionDate,
+                status: updatedBatch.status,
+              }
+            : batch
+        )
+      );
+
+      setEditingQuantity(null);
+      setNewQuantity("");
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "Something went wrong."
+      );
+    } finally {
+      setSavingQuantity(false);
+    }
+  };
+
+  const toggleBOM = async (pmId: number) => {
+    // Close the BOM accordion if it is already open.
+    if (expandedBOM === pmId) {
+      setExpandedBOM(null);
+      return;
+    }
+
+    // Open the selected BOM accordion.
+    setExpandedBOM(pmId);
+
+    // Don't fetch again if this product's BOM is already loaded.
+    if (bomItems[pmId]) return;
+
+    try {
+      setBomLoading(pmId);
+
+      const response = await fetch(`${API_URL}/products/${pmId}/bom`);
+
+      if (!response.ok) {
+        throw new Error("Failed to retrieve BOM details.");
+      }
+
+      const data: BOMItem[] = await response.json();
+
+      setBomItems((prev) => ({
+        ...prev,
+        [pmId]: data,
+      }));
+    } catch (err) {
+      console.error("BOM fetch error:", err);
+    } finally {
+      setBomLoading(null);
     }
   };
 
   const filteredCompletedBatches = productionBatches.filter((batch) => {
-  if (batch.status !== "Completed") return false;
+    if (batch.status !== "Completed") return false;
 
-  const matchesRequiredDate =
-    !requiredDateFilter ||
-    getLocalDateKey(batch.Deadline) === requiredDateFilter;
+    const matchesRequiredDate =
+      !requiredDateFilter ||
+      getLocalDateKey(batch.Deadline) === requiredDateFilter;
 
-  const matchesCompletionDate =
-    !completionDateFilter ||
-    getLocalDateKey(batch.CompletionDate) === completionDateFilter;
+    const matchesCompletionDate =
+      !completionDateFilter ||
+      getLocalDateKey(batch.CompletionDate) === completionDateFilter;
 
-  return matchesRequiredDate && matchesCompletionDate;
-});
+    return matchesRequiredDate && matchesCompletionDate;
+  });
 
-const completedTotalPages = Math.max(
-  1,
-  Math.ceil(
-    filteredCompletedBatches.length / COMPLETED_BATCHES_PER_PAGE
-  )
-);
+  const completedTotalPages = Math.max(
+    1,
+    Math.ceil(
+      filteredCompletedBatches.length / COMPLETED_BATCHES_PER_PAGE
+    )
+  );
 
-const paginatedCompletedBatches = filteredCompletedBatches.slice(
-  (completedPage - 1) * COMPLETED_BATCHES_PER_PAGE,
-  completedPage * COMPLETED_BATCHES_PER_PAGE
-);
+  const paginatedCompletedBatches = filteredCompletedBatches.slice(
+    (completedPage - 1) * COMPLETED_BATCHES_PER_PAGE,
+    completedPage * COMPLETED_BATCHES_PER_PAGE
+  );
 
-useEffect(() => {
-  if (completedPage > completedTotalPages) {
-    setCompletedPage(completedTotalPages);
-  }
-}, [completedPage, completedTotalPages]);
+  useEffect(() => {
+    if (completedPage > completedTotalPages) {
+      setCompletedPage(completedTotalPages);
+    }
+  }, [completedPage, completedTotalPages]);
 
   return (
     <div className="p-6 space-y-6">
@@ -431,22 +337,22 @@ useEffect(() => {
         </div>
       )}
 
-      
+
       {/* PRODUCT MASTER LIST BOX */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-4">
 
         {/* BOX HEADER */}
-        <div className="flex flex-wrap justify-between items-center gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-700">
-              Product Master List
-            </h2>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-700">
+            Product Master List
+          </h2>
 
-            <p className="text-sm text-gray-500">
-              {loading
-                ? "Loading products..."
-                : `${products.length} registered products`}
-            </p>
+          <p className="text-sm text-gray-500">
+            {loading
+              ? "Loading products..."
+              : `${products.length} registered products`}
+          </p>
+        </div>
 
         {/* PRODUCT ACCORDIONS */}
         <div className="space-y-3">
@@ -641,7 +547,7 @@ useEffect(() => {
         </div>
       </div>
 
-      
+
       {/* MANUFACTURING PROGRESS KANBAN */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 space-y-5">
 
@@ -1022,89 +928,6 @@ useEffect(() => {
                 {savingQuantity ? "Saving..." : "Save Quantity"}
               </button>
 
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ADD PRODUCT MODAL */}
-      {showAddProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white w-full max-w-lg rounded-xl shadow-xl p-6">
-
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-xl font-semibold text-gray-800">
-                Add New Product
-              </h2>
-
-              <button
-                onClick={() => setShowAddProduct(false)}
-                className="text-gray-400 hover:text-gray-700 text-2xl"
-              >
-                ×
-              </button>
-            </div>
-
-            <p className="text-sm text-gray-500 mb-6">
-              Register a finished product using an existing Inventory Item Master record.
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Inventory Item
-                </label>
-
-                <select
-                  value={selectedIMId}
-                  onChange={(e) => setSelectedIMId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">
-                    {inventoryLoading
-                      ? "Loading finished products..."
-                      : "Select a finished product..."}
-                  </option>
-
-                  {inventoryItems.map((item) => (
-                    <option key={item.IM_ID} value={item.IM_ID}>
-                      {item.Item_Name} ({item.SKU})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Manual
-                </label>
-
-                <textarea
-                  rows={3}
-                  placeholder="Enter product details..."
-                  value={manual}
-                  onChange={(e) => setManual(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => setShowAddProduct(false)}
-                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={handleSaveProduct}
-                disabled={!selectedIMId || savingProduct}
-                className="px-4 py-2 rounded-lg bg-[#365f68] text-white disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {savingProduct ? "Saving..." : "Save Product"}
-              </button>
             </div>
 
           </div>
