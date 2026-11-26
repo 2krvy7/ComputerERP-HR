@@ -12,7 +12,6 @@ import {
 import type {
   SalesInvoice,
   SalesInvoiceCreate,
-  InvoiceTaxType,
 } from "../../types/invoice";
 
 import type {
@@ -188,10 +187,7 @@ export default function InvoicePanel() {
   const [orderId, setOrderId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [today, setToday] = useState("");
-  const [installmentMonths, setInstallmentMonths] = useState("1");
 
-  const [taxType, setTaxType] = useState<InvoiceTaxType>("VAT");
-  const [customTaxRate, setCustomTaxRate] = useState("0");
 
   useEffect(() => {
     const currentDate = getLocalDate();
@@ -200,32 +196,19 @@ export default function InvoicePanel() {
     setInvoiceDate(currentDate);
   }, []);
 
-  const selectedMonths = Number(installmentMonths);
+  const selectedOrder = orders.find((item) => item.order_id === Number(orderId));
+  const selectedMonths = selectedOrder?.installment_months ?? 1;
   const interestRate = INTEREST_RATES[selectedMonths] ?? 0;
-
-  const taxRate =
-    taxType === "VAT"
-      ? 12
-      : taxType === "Non-VAT" || taxType === "Tax-Exempt"
-        ? 0
-        : Number(customTaxRate);
-
-  const selectedOrderAmount = () => {
-    const order = orders.find(
-      (item) => item.order_id === Number(orderId)
-    );
-
-    return order ? Number(order.total_amount) || 0 : 0;
-  };
-
-  const orderAmount = selectedOrderAmount();
+  const orderAmount = Number(selectedOrder?.total_amount ?? 0) || 0;
+  const taxType = selectedOrder?.tax_type ?? "VAT";
+  const taxRate = Number(selectedOrder?.tax_rate ?? 12);
 
   const interestAmount = Number(
     ((orderAmount * interestRate) / 100).toFixed(2)
   );
 
   const taxAmount = Number(
-    ((orderAmount * taxRate) / 100).toFixed(2)
+    selectedOrder?.tax_amount ?? ((orderAmount * taxRate) / 100).toFixed(2)
   );
 
   const finalInvoiceAmount =
@@ -295,7 +278,7 @@ export default function InvoicePanel() {
       orders.filter(
         (order) =>
           !invoicedOrderIds.has(order.order_id) &&
-          order.status !== "Cancelled"
+          ["Accepted", "Approved", "Processing", "Completed"].includes(order.status)
       ),
     [orders, invoicedOrderIds]
   );
@@ -336,9 +319,6 @@ export default function InvoicePanel() {
 
     setOrderId("");
     setInvoiceDate(today);
-    setInstallmentMonths("1");
-    setTaxType("VAT");
-    setCustomTaxRate("0");
     setShowForm(false);
     setError("");
   }
@@ -353,18 +333,6 @@ export default function InvoicePanel() {
 
     if (!invoiceDate) {
       setError("Please select an invoice date.");
-      return;
-    }
-
-    if (
-      taxType === "Custom" &&
-      (
-        !Number.isFinite(taxRate) ||
-        taxRate < 0 ||
-        taxRate > 100
-      )
-    ) {
-      setError("Custom tax rate must be between 0% and 100%.");
       return;
     }
 
@@ -383,8 +351,6 @@ export default function InvoicePanel() {
       invoice_date: invoiceDate,
       due_date: calculatedDueDate,
       installment_months: selectedMonths as 1 | 3 | 6 | 12,
-      tax_type: taxType,
-      tax_rate: taxRate,
     };
 
     setSaving(true);
@@ -394,9 +360,6 @@ export default function InvoicePanel() {
 
       setOrderId("");
       setInvoiceDate(today);
-      setInstallmentMonths("1");
-      setTaxType("VAT");
-      setCustomTaxRate("0");
       setShowForm(false);
 
       await loadData();
@@ -1065,18 +1028,9 @@ export default function InvoicePanel() {
                   Payment Installment
                 </label>
 
-                <select
-                  value={installmentMonths}
-                  onChange={(event) =>
-                    setInstallmentMonths(event.target.value)
-                  }
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="1">1 Month — 0% Interest</option>
-                  <option value="3">3 Months — 3% Interest</option>
-                  <option value="6">6 Months — 5% Interest</option>
-                  <option value="12">1 Year — 10% Interest</option>
-                </select>
+                <p className="w-full rounded-lg border border-[#D1D5DB] bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800">
+                  {selectedMonths === 12 ? "1 Year" : `${selectedMonths} Month${selectedMonths === 1 ? "" : "s"}`} — {interestRate}% Interest
+                </p>
 
                 <p className="mt-2 text-xs text-slate-600">
                   Calculated Due Date:{" "}
@@ -1086,51 +1040,18 @@ export default function InvoicePanel() {
                     )}
                   </span>
                 </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Installment terms are taken from the selected sales order.
+                </p>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-slate-700">
-                  Tax Type
-                </label>
-
-                <select
-                  value={taxType}
-                  onChange={(event) =>
-                    setTaxType(event.target.value as InvoiceTaxType)
-                  }
-                  className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                >
-                  <option value="VAT">VAT — 12%</option>
-                  <option value="Non-VAT">Non-VAT — 0%</option>
-                  <option value="Tax-Exempt">Tax-Exempt — 0%</option>
-                  <option value="Custom">Custom Tax Rate</option>
-                </select>
-              </div>
-
-              {taxType === "Custom" && (
-                <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">
-                    Custom Tax Rate (%)
-                  </label>
-
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={customTaxRate}
-                    onChange={(event) =>
-                      setCustomTaxRate(event.target.value)
-                    }
-                    className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    placeholder="Enter tax rate"
-                  />
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Enter a rate from 0% to 100%.
-                  </p>
+              <div className="rounded-lg border border-[#D1D5DB] bg-slate-50 p-3 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-600">Order tax</span>
+                  <strong className="text-slate-800">{taxType} ({taxRate.toFixed(2)}%)</strong>
                 </div>
-              )}
+                <p className="mt-1 text-xs text-slate-500">Tax is taken from the selected sales order.</p>
+              </div>
 
               {orderId && (
                 <div className="rounded-xl border border-[#D1D5DB] bg-white p-4">
@@ -1227,15 +1148,7 @@ export default function InvoicePanel() {
                   saving ||
                   availableOrders.length === 0 ||
                   !orderId ||
-                  !invoiceDate ||
-                  (
-                    taxType === "Custom" &&
-                    (
-                      !Number.isFinite(taxRate) ||
-                      taxRate < 0 ||
-                      taxRate > 100
-                    )
-                  )
+                  !invoiceDate
                 }
                 className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
               >

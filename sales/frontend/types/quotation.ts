@@ -23,6 +23,12 @@ export interface SalesQuotation {
   quotation_date: string;
   status: QuotationStatus;
   total_amount: number;
+  tax_type: "VAT";
+  tax_rate: number;
+  tax_amount: number;
+  installment_months: 1 | 3 | 6 | 12;
+  interest_rate: number;
+  interest_amount: number;
   details: QuotationDetail[];
 }
 
@@ -35,5 +41,13 @@ export interface QuotationDetailCreate {
 export interface SalesQuotationCreate {
   customer_id: number;
   quotation_date?: string | null;
+  installment_months: 1 | 3 | 6 | 12;
   details: QuotationDetailCreate[];
+}
+
+export interface QuotationCatalogItem {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  Price: number | string | null;
 }

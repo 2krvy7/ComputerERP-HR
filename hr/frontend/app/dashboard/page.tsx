@@ -59,6 +59,8 @@ type Payroll = {
   pay_period: string;
 };
 
+type PayrollPeriodFilter = "week" | "month" | "year";
+
 export default function Dashboard() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -69,116 +71,259 @@ export default function Dashboard() {
   const [payroll, setPayroll] = useState<Payroll[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Prevent multiple fetch requests from running at the same time
+  const [isFetching, setIsFetching] = useState(false);
+
   // Date is stored in state so it is not calculated during prerender
   const [currentDate, setCurrentDate] = useState("");
   const [today, setToday] = useState("");
+
+  // Payroll Summary filter
+  const [payrollPeriodFilter, setPayrollPeriodFilter] =
+    useState<PayrollPeriodFilter>("month");
 
   useEffect(() => {
     // =========================
     // CURRENT DATE
     // =========================
 
-    const updateDate = () => {
-      const now = new Date();
+    const now = new Date();
 
-      setCurrentDate(
-        now.toLocaleDateString("en-PH", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          timeZone: "Asia/Manila",
-        })
-      );
+    setCurrentDate(
+      now.toLocaleDateString("en-PH", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        timeZone: "Asia/Manila",
+      })
+    );
 
-      setToday(
-        new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Manila",
-        }).format(now)
-      );
-    };
-
-    updateDate();
+    setToday(
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Manila",
+      }).format(now)
+    );
 
     // =========================
     // INITIAL DATA LOAD
     // =========================
 
+    // Fetch data once when the Dashboard page loads.
+    // Data will be fetched again when the browser/page is refreshed.
     fetchDashboardData(true);
-
-    // =========================
-    // REFRESH EVERY 3 SECONDS
-    // =========================
-
-    const interval = setInterval(() => {
-      updateDate();
-
-      // Silent refresh.
-      // This does NOT set loading to true,
-      // so the cards will not blink.
-      fetchDashboardData(false);
-    }, 3000);
-
-    return () => clearInterval(interval);
   }, []);
 
+  // =========================
+  // FETCH DASHBOARD DATA
+  // =========================
+
   const fetchDashboardData = async (showLoading = false) => {
+    // Prevent another fetch from starting while
+    // the previous dashboard request is still running.
+    if (isFetching) {
+      return;
+    }
+
     try {
-      // Only show loading on the first page load
+      setIsFetching(true);
+
       if (showLoading) {
         setLoading(true);
       }
 
-      const [
-        employeesRes,
-        positionsRes,
-        applicantsRes,
-        recruitmentRes,
-        attendanceRes,
-        leaveRes,
-        payrollRes,
-      ] = await Promise.all([
-        fetch(`${API}/employees/`),
-        fetch(`${API}/positions/`),
-        fetch(`${API}/applicants/`),
-        fetch(`${API}/recruitment/`),
+      // =========================
+      // FETCH ALL API DATA
+      // =========================
 
-        // Force fresh attendance data
-        fetch(`${API}/attendance/?_=${Date.now()}`),
+      const results = await Promise.allSettled([
+        fetch(`${API}/employees/`, {
+          cache: "no-store",
+        }),
 
-        fetch(`${API}/leave/`),
-        fetch(`${API}/payroll/`),
+        fetch(`${API}/positions/`, {
+          cache: "no-store",
+        }),
+
+        fetch(`${API}/applicants/`, {
+          cache: "no-store",
+        }),
+
+        fetch(`${API}/recruitment/`, {
+          cache: "no-store",
+        }),
+
+        fetch(`${API}/attendance/?_=${Date.now()}`, {
+          cache: "no-store",
+        }),
+
+        fetch(`${API}/leave/`, {
+          cache: "no-store",
+        }),
+
+        fetch(`${API}/payroll/?_=${Date.now()}`, {
+          cache: "no-store",
+        }),
       ]);
 
-      const [
-        employeesData,
-        positionsData,
-        applicantsData,
-        recruitmentData,
-        attendanceData,
-        leaveData,
-        payrollData,
-      ] = await Promise.all([
-        employeesRes.json(),
-        positionsRes.json(),
-        applicantsRes.json(),
-        recruitmentRes.json(),
-        attendanceRes.json(),
-        leaveRes.json(),
-        payrollRes.json(),
-      ]);
+      // =========================
+      // EMPLOYEES
+      // =========================
 
-      setEmployees(employeesData);
-      setPositions(positionsData);
-      setApplicants(applicantsData);
-      setRecruitments(recruitmentData);
-      setAttendance(attendanceData);
-      setLeaves(leaveData);
-      setPayroll(payrollData);
+      if (results[0].status === "fulfilled") {
+        if (results[0].value.ok) {
+          const data = await results[0].value.json();
+          setEmployees(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Employees API error:",
+            results[0].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Employees fetch failed:",
+          results[0].reason
+        );
+      }
+
+      // =========================
+      // POSITIONS
+      // =========================
+
+      if (results[1].status === "fulfilled") {
+        if (results[1].value.ok) {
+          const data = await results[1].value.json();
+          setPositions(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Positions API error:",
+            results[1].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Positions fetch failed:",
+          results[1].reason
+        );
+      }
+
+      // =========================
+      // APPLICANTS
+      // =========================
+
+      if (results[2].status === "fulfilled") {
+        if (results[2].value.ok) {
+          const data = await results[2].value.json();
+          setApplicants(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Applicants API error:",
+            results[2].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Applicants fetch failed:",
+          results[2].reason
+        );
+      }
+
+      // =========================
+      // RECRUITMENT
+      // =========================
+
+      if (results[3].status === "fulfilled") {
+        if (results[3].value.ok) {
+          const data = await results[3].value.json();
+          setRecruitments(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Recruitment API error:",
+            results[3].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Recruitment fetch failed:",
+          results[3].reason
+        );
+      }
+
+      // =========================
+      // ATTENDANCE
+      // =========================
+
+      if (results[4].status === "fulfilled") {
+        if (results[4].value.ok) {
+          const data = await results[4].value.json();
+          setAttendance(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Attendance API error:",
+            results[4].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Attendance fetch failed:",
+          results[4].reason
+        );
+      }
+
+      // =========================
+      // LEAVE
+      // =========================
+
+      if (results[5].status === "fulfilled") {
+        if (results[5].value.ok) {
+          const data = await results[5].value.json();
+          setLeaves(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Leave API error:",
+            results[5].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Leave fetch failed:",
+          results[5].reason
+        );
+      }
+
+      // =========================
+      // PAYROLL
+      // =========================
+
+      if (results[6].status === "fulfilled") {
+        if (results[6].value.ok) {
+          const data = await results[6].value.json();
+
+          console.log(
+            "Dashboard payroll data:",
+            data
+          );
+
+          setPayroll(Array.isArray(data) ? data : []);
+        } else {
+          console.error(
+            "Payroll API error:",
+            results[6].value.status
+          );
+        }
+      } else {
+        console.error(
+          "Payroll fetch failed:",
+          results[6].reason
+        );
+      }
+
     } catch (error) {
       console.error("Error loading dashboard:", error);
     } finally {
-      // Only turn loading off if this was the initial load
+      setIsFetching(false);
+
       if (showLoading) {
         setLoading(false);
       }
@@ -203,7 +348,10 @@ export default function Dashboard() {
   // EMPLOYEE SUMMARY
   // =========================
 
-  const totalEmployees = employees.length;
+  const totalEmployees = employees.filter(
+    (employee) =>
+      employee.employment_status?.toLowerCase() !== "archived"
+  ).length;
 
   const activeEmployees = employees.filter(
     (employee) =>
@@ -258,6 +406,10 @@ export default function Dashboard() {
   // =========================
 
   const recentEmployees = [...employees]
+    .filter(
+      (employee) =>
+        employee.employment_status?.toLowerCase() !== "archived"
+    )
     .sort((a, b) => b.employee_id - a.employee_id)
     .slice(0, 4);
 
@@ -265,15 +417,328 @@ export default function Dashboard() {
   // PAYROLL
   // =========================
 
-  const totalPayroll = payroll.reduce(
+  /*
+   * Get the ending date of a payroll period.
+   *
+   * Examples:
+   * November 1-15, 2026  -> November 15, 2026
+   * November 16-30, 2026 -> November 30, 2026
+   * November 17-19, 2026 -> November 19, 2026
+   */
+  const getPayPeriodEndDate = (payPeriod: string) => {
+    if (!payPeriod) return 0;
+
+    const match = payPeriod.match(
+      /^([A-Za-z]+)\s+\d{1,2}-(\d{1,2}),\s*(\d{4})$/
+    );
+
+    if (!match) return 0;
+
+    const monthName = match[1];
+    const endDay = Number(match[2]);
+    const year = Number(match[3]);
+
+    const monthIndex = new Date(
+      `${monthName} 1, ${year}`
+    ).getMonth();
+
+    if (isNaN(monthIndex)) return 0;
+
+    return new Date(
+      year,
+      monthIndex,
+      endDay
+    ).getTime();
+  };
+
+  /*
+   * Get the start date of a payroll period.
+   */
+  const getPayPeriodStartDate = (payPeriod: string) => {
+    if (!payPeriod) return 0;
+
+    const match = payPeriod.match(
+      /^([A-Za-z]+)\s+(\d{1,2})-(\d{1,2}),\s*(\d{4})$/
+    );
+
+    if (!match) return 0;
+
+    const monthName = match[1];
+    const startDay = Number(match[2]);
+    const year = Number(match[4]);
+
+    const monthIndex = new Date(
+      `${monthName} 1, ${year}`
+    ).getMonth();
+
+    if (isNaN(monthIndex)) return 0;
+
+    return new Date(
+      year,
+      monthIndex,
+      startDay
+    ).getTime();
+  };
+
+  /*
+   * Find the latest payroll period available
+   * in the database.
+   */
+  const latestPayroll = [...payroll].sort((a, b) => {
+    const dateDifference =
+      getPayPeriodEndDate(b.pay_period) -
+      getPayPeriodEndDate(a.pay_period);
+
+    if (dateDifference !== 0) {
+      return dateDifference;
+    }
+
+    return b.payroll_id - a.payroll_id;
+  });
+
+  const latestPayPeriod =
+    latestPayroll.length > 0
+      ? latestPayroll[0].pay_period
+      : "";
+
+  /*
+   * Get the latest payroll period records.
+   *
+   * This is used as the default Month view.
+   */
+  const latestPeriodPayroll = payroll.filter(
+    (item) =>
+      item.pay_period === latestPayPeriod
+  );
+
+  /*
+   * Get the latest payroll period's end date.
+   */
+  const latestPeriodEnd =
+    latestPayPeriod
+      ? getPayPeriodEndDate(latestPayPeriod)
+      : 0;
+
+  /*
+   * Get the latest payroll period's start date.
+   */
+  const latestPeriodStart =
+    latestPayPeriod
+      ? getPayPeriodStartDate(latestPayPeriod)
+      : 0;
+
+  /*
+   * Determine which payroll records should be
+   * displayed depending on the selected button.
+   *
+   * Week:
+   * Shows payroll records whose payroll period
+   * overlaps the latest payroll period's week.
+   *
+   * Month:
+   * Shows payroll records from the same month
+   * as the latest payroll period.
+   *
+   * Year:
+   * Shows payroll records from the same year
+   * as the latest payroll period.
+   */
+  const filteredPayroll = payroll.filter((item) => {
+    const startDate = getPayPeriodStartDate(
+      item.pay_period
+    );
+
+    const endDate = getPayPeriodEndDate(
+      item.pay_period
+    );
+
+    if (!startDate || !endDate || !latestPeriodEnd) {
+      return false;
+    }
+
+    // =========================
+    // WEEK
+    // =========================
+
+    if (payrollPeriodFilter === "week") {
+      const latestDate = new Date(
+        latestPeriodEnd
+      );
+
+      const day = latestDate.getDay();
+
+      const weekStart = new Date(
+        latestDate
+      );
+
+      weekStart.setDate(
+        latestDate.getDate() -
+          (day === 0 ? 6 : day - 1)
+      );
+
+      weekStart.setHours(0, 0, 0, 0);
+
+      const weekEnd = new Date(
+        weekStart
+      );
+
+      weekEnd.setDate(
+        weekStart.getDate() + 6
+      );
+
+      weekEnd.setHours(
+        23,
+        59,
+        59,
+        999
+      );
+
+      return (
+        endDate >= weekStart.getTime() &&
+        startDate <= weekEnd.getTime()
+      );
+    }
+
+    // =========================
+    // MONTH
+    // =========================
+
+    if (payrollPeriodFilter === "month") {
+      const latestDate = new Date(
+        latestPeriodEnd
+      );
+
+      const latestYear =
+        latestDate.getFullYear();
+
+      const latestMonth =
+        latestDate.getMonth();
+
+      const monthStart = new Date(
+        latestYear,
+        latestMonth,
+        1
+      ).getTime();
+
+      const monthEnd = new Date(
+        latestYear,
+        latestMonth + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      ).getTime();
+
+      return (
+        endDate >= monthStart &&
+        startDate <= monthEnd
+      );
+    }
+
+    // =========================
+    // YEAR
+    // =========================
+
+    if (payrollPeriodFilter === "year") {
+      const latestDate = new Date(
+        latestPeriodEnd
+      );
+
+      const latestYear =
+        latestDate.getFullYear();
+
+      const yearStart = new Date(
+        latestYear,
+        0,
+        1
+      ).getTime();
+
+      const yearEnd = new Date(
+        latestYear,
+        11,
+        31,
+        23,
+        59,
+        59,
+        999
+      ).getTime();
+
+      return (
+        endDate >= yearStart &&
+        startDate <= yearEnd
+      );
+    }
+
+    return false;
+  });
+
+  /*
+   * If Month is selected and there are no records
+   * matching the month filter, fall back to the
+   * latest payroll period.
+   *
+   * This prevents the Dashboard from showing
+   * ₱0.00 when payroll records actually exist.
+   */
+  const displayedPayroll =
+    filteredPayroll.length > 0
+      ? filteredPayroll
+      : payrollPeriodFilter === "month"
+      ? latestPeriodPayroll
+      : [];
+
+  /*
+   * TOTAL PAYROLL
+   *
+   * The Dashboard now uses NET SALARY instead
+   * of GROSS SALARY.
+   *
+   * This means the amount shown here is the
+   * actual payroll after SSS, PhilHealth,
+   * Pag-IBIG, attendance deductions, and
+   * other deductions.
+   */
+  const totalPayroll = displayedPayroll.reduce(
     (total, item) =>
-      total + Number(item.gross_salary || 0),
+      total +
+      Number(item.net_salary || 0),
     0
   );
 
-  const recentPayroll = [...payroll]
-    .sort((a, b) => b.payroll_id - a.payroll_id)
+  /*
+   * The chart uses the same payroll records
+   * and NET SALARY values as Total Payroll.
+   */
+  const recentPayroll = [...displayedPayroll]
+    .sort((a, b) => {
+      const dateDifference =
+        getPayPeriodEndDate(b.pay_period) -
+        getPayPeriodEndDate(a.pay_period);
+
+      if (dateDifference !== 0) {
+        return dateDifference;
+      }
+
+      return b.payroll_id - a.payroll_id;
+    })
     .slice(0, 4);
+
+  /*
+   * Label shown underneath Total Payroll.
+   */
+  const payrollSummaryLabel =
+    payrollPeriodFilter === "week"
+      ? "Weekly payroll overview"
+      : payrollPeriodFilter === "month"
+      ? latestPayPeriod
+        ? `Payroll period: ${latestPayPeriod}`
+        : "Monthly payroll overview"
+      : latestPayPeriod
+      ? `Payroll year: ${new Date(
+          latestPeriodEnd
+        ).getFullYear()}`
+      : "Yearly payroll overview";
 
   // =========================
   // RECENT LEAVE REQUESTS
@@ -560,15 +1025,45 @@ export default function Dashboard() {
 
               <div className="period-buttons">
 
-                <button className="selected">
+                <button
+                  type="button"
+                  className={
+                    payrollPeriodFilter === "week"
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() =>
+                    setPayrollPeriodFilter("week")
+                  }
+                >
                   Week
                 </button>
 
-                <button>
+                <button
+                  type="button"
+                  className={
+                    payrollPeriodFilter === "month"
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() =>
+                    setPayrollPeriodFilter("month")
+                  }
+                >
                   Month
                 </button>
 
-                <button>
+                <button
+                  type="button"
+                  className={
+                    payrollPeriodFilter === "year"
+                      ? "selected"
+                      : ""
+                  }
+                  onClick={() =>
+                    setPayrollPeriodFilter("year")
+                  }
+                >
                   Year
                 </button>
 
@@ -583,14 +1078,18 @@ export default function Dashboard() {
               </span>
 
               <strong>
-                ₱{totalPayroll.toLocaleString("en-PH", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
+                ₱
+                {totalPayroll.toLocaleString(
+                  "en-PH",
+                  {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  }
+                )}
               </strong>
 
               <small>
-                Current payroll records
+                {payrollSummaryLabel}
               </small>
 
             </div>
@@ -607,19 +1106,24 @@ export default function Dashboard() {
 
                 recentPayroll.map((item, index) => {
 
-                  const maxPayroll = Math.max(
-                    ...recentPayroll.map(
-                      (record) =>
-                        Number(
-                          record.gross_salary || 0
-                        )
-                    ),
-                    1
-                  );
+                  /*
+                   * Use NET SALARY for the chart
+                   * instead of GROSS SALARY.
+                   */
+                  const maxPayroll =
+                    Math.max(
+                      ...recentPayroll.map(
+                        (record) =>
+                          Number(
+                            record.net_salary || 0
+                          )
+                      ),
+                      1
+                    );
 
                   const height =
                     (Number(
-                      item.gross_salary || 0
+                      item.net_salary || 0
                     ) /
                       maxPayroll) *
                     100;
@@ -639,7 +1143,7 @@ export default function Dashboard() {
                         ₱
                         {(
                           Number(
-                            item.gross_salary || 0
+                            item.net_salary || 0
                           ) / 1000
                         ).toFixed(0)}
                         K
@@ -655,8 +1159,11 @@ export default function Dashboard() {
             <div className="chart-labels">
 
               {recentPayroll.map((item) => (
-                <span key={item.payroll_id}>
-                  {item.pay_period}
+                <span
+                  key={item.payroll_id}
+                >
+                  {item.employee_name ||
+                    `Employee ${item.employee_id}`}
                 </span>
               ))}
 

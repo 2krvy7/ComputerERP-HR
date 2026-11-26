@@ -30,7 +30,7 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable}`}
     >
-      <body className="min-h-screen w-full">
+      <body className="min-h-dvh w-full">
         <AuthProvider>
           <AppShell>{children}</AppShell>
         </AuthProvider>

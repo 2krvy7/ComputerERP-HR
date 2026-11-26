@@ -71,7 +71,8 @@ function formatCurrency(value: number): string {
 function formatDate(value: string): string {
   if (!value) return "—";
 
-  const date = new Date(value);
+  const datePart = value.split("T")[0];
+  const date = new Date(`${datePart}T00:00:00`);
 
   if (Number.isNaN(date.getTime())) return "—";
 
@@ -91,7 +92,6 @@ function getInvoiceStatus(
   );
 
   if (!receivable) return "No AR Record";
-
   if (toNumber(receivable.balance) <= 0) return "Paid";
 
   if (toNumber(receivable.amount_paid) > 0) {
@@ -100,6 +100,9 @@ function getInvoiceStatus(
 
   return receivable.status || "Unpaid";
 }
+
+const summaryCardClass =
+  "min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5";
 
 export default function CustomersPage() {
   const [activeTab, setActiveTab] = useState<CustomerTab>("customers");
@@ -395,16 +398,16 @@ export default function CustomersPage() {
         );
 
   const tabClass = (tab: CustomerTab) =>
-    `rounded-lg px-5 py-3 text-sm font-semibold transition ${
+    `flex-1 rounded-lg px-3 py-3 text-center text-xs font-semibold transition sm:flex-none sm:px-5 sm:text-sm ${
       activeTab === tab
         ? "bg-green-700 text-white shadow-sm"
         : "text-slate-600 hover:bg-[#D1D5DB] hover:text-blue-700"
     }`;
 
   return (
-    <main className="min-h-screen bg-[#F3F4F6] p-6 text-slate-900 md:p-10">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-wrap gap-2 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-2 shadow-sm">
+    <main className="min-h-full w-full min-w-0 bg-white p-3 text-slate-900 sm:p-5 lg:p-6">
+      <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
+        <div className="flex w-full gap-1 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-1.5 shadow-sm sm:w-fit sm:gap-2 sm:p-2">
           <button
             type="button"
             onClick={() => setActiveTab("customers")}
@@ -423,17 +426,17 @@ export default function CustomersPage() {
         </div>
 
         {activeTab === "customers" && (
-          <section className="space-y-6">
+          <section className="min-w-0 space-y-4 sm:space-y-6">
             {error && (
               <div
                 role="alert"
-                className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                className="break-words rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:p-4"
               >
                 {error}
               </div>
             )}
 
-            <section className="grid gap-4 sm:grid-cols-3">
+            <section className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
               <SummaryCard
                 title="Total Customers"
                 value={customers.length}
@@ -452,31 +455,32 @@ export default function CustomersPage() {
               />
             </section>
 
-            <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-              <div className="flex flex-col justify-between gap-4 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center">
+            <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-[#D1D5DB] p-3 sm:gap-4 sm:p-5">
                 <div>
                   <h2 className="font-semibold text-slate-900">
                     Customer List
                   </h2>
 
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-1 text-xs text-slate-600 sm:text-sm">
                     Search, edit, view transaction history, or update customer status.
                   </p>
                 </div>
 
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search customers..."
-                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:max-w-xs"
-                />
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search customers..."
+                    aria-label="Search customers"
+                    className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 sm:max-w-sm sm:py-2.5 sm:text-sm"
+                  />
 
-                <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={openAddForm}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:w-auto sm:py-2.5"
                   >
                     <span className="text-lg leading-none">+</span>
                     Add Customer
@@ -496,21 +500,21 @@ export default function CustomersPage() {
         )}
 
         {activeTab === "balance" && (
-          <section>
+          <section className="min-w-0">
             <CustomerBalancePage />
           </section>
         )}
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-auto w-full max-w-lg rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-xl">
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-900">
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-3 sm:items-center sm:p-4">
+          <div className="my-auto max-h-[calc(100dvh-24px)] w-full max-w-lg overflow-y-auto rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-xl sm:max-h-[90dvh] sm:p-6">
+            <div className="mb-5 sm:mb-6">
+              <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
                 {editingCustomer ? "Edit Customer" : "Add New Customer"}
               </h2>
 
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-xs text-slate-600 sm:text-sm">
                 Enter the customer information below.
               </p>
             </div>
@@ -530,15 +534,15 @@ export default function CustomersPage() {
       )}
 
       {statusCustomer && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/50 p-3 sm:p-4">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="status-modal-title"
-            className="w-full max-w-md rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-6 shadow-2xl"
+            className="my-auto w-full max-w-md rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-2xl sm:p-6"
           >
             <div
-              className={`mb-4 flex h-12 w-12 items-center justify-center rounded-full ${
+              className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full sm:h-12 sm:w-12 ${
                 statusCustomer.status
                   ? "bg-red-100 text-red-600"
                   : "bg-green-100 text-green-600"
@@ -551,7 +555,7 @@ export default function CustomersPage() {
 
             <h2
               id="status-modal-title"
-              className="text-xl font-bold text-slate-900"
+              className="text-lg font-bold text-slate-900 sm:text-xl"
             >
               {statusCustomer.status
                 ? "Deactivate Customer Account?"
@@ -564,12 +568,12 @@ export default function CustomersPage() {
               customer account?
             </p>
 
-            <div className="mt-4 rounded-lg border border-[#D1D5DB] bg-[#F3F4F6] p-4">
+            <div className="mt-4 rounded-lg border border-[#D1D5DB] bg-[#F3F4F6] p-3 sm:p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Customer Information
               </p>
 
-              <p className="mt-2 font-semibold text-slate-900">
+              <p className="mt-2 break-words font-semibold text-slate-900">
                 {statusCustomer.name}
               </p>
 
@@ -606,12 +610,12 @@ export default function CustomersPage() {
               </p>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:mt-6 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
                 disabled={updatingStatus}
                 onClick={() => setStatusCustomer(null)}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto sm:py-2.5"
               >
                 Cancel
               </button>
@@ -620,7 +624,7 @@ export default function CustomersPage() {
                 type="button"
                 disabled={updatingStatus}
                 onClick={handleConfirmStatusChange}
-                className={`rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`w-full rounded-lg px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5 ${
                   statusCustomer.status
                     ? "bg-red-600 hover:bg-red-700"
                     : "bg-green-600 hover:bg-green-700"
@@ -638,23 +642,23 @@ export default function CustomersPage() {
       )}
 
       {historyCustomer && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center sm:p-4">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="history-modal-title"
-            className="my-auto max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-[#D1D5DB] bg-[#F3F4F6] shadow-2xl"
+            className="my-auto flex max-h-[calc(100dvh-16px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#F3F4F6] shadow-2xl sm:max-h-[92dvh]"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-[#D1D5DB] bg-[#E5E7EB] p-5">
-              <div>
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#D1D5DB] bg-[#E5E7EB] p-3 sm:items-center sm:p-5">
+              <div className="min-w-0">
                 <h2
                   id="history-modal-title"
-                  className="text-xl font-bold text-slate-900"
+                  className="text-base font-bold text-slate-900 sm:text-xl"
                 >
                   Customer Transaction History
                 </h2>
 
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 break-words text-xs text-slate-600 sm:text-sm">
                   {historyCustomer.name} · Customer ID: #{historyCustomer.customer_id}
                 </p>
               </div>
@@ -662,23 +666,24 @@ export default function CustomersPage() {
               <button
                 type="button"
                 onClick={closeHistory}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                aria-label="Close transaction history"
+                className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 sm:text-sm"
               >
                 Close
               </button>
             </div>
 
-            <div className="space-y-5 p-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:space-y-5 sm:p-5">
               {historyError && (
                 <div
                   role="alert"
-                  className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                  className="break-words rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 sm:p-4"
                 >
                   {historyError}
                 </div>
               )}
 
-              <section className="grid gap-4 sm:grid-cols-3">
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                 <SummaryCard
                   title="Total Sales Orders"
                   value={historyOrderCount}
@@ -702,13 +707,13 @@ export default function CustomersPage() {
                 />
               </section>
 
-              <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB]">
-                <div className="flex flex-col justify-between gap-3 border-b border-[#D1D5DB] p-5 sm:flex-row sm:items-center">
+              <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB]">
+                <div className="flex flex-col gap-3 border-b border-[#D1D5DB] p-3 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                   <div>
                     <h3 className="font-semibold text-slate-900">
                       Transaction Records
                     </h3>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-1 text-xs text-slate-600 sm:text-sm">
                       All transactions recorded for this customer.
                     </p>
                   </div>
@@ -720,7 +725,7 @@ export default function CustomersPage() {
                         event.target.value as "All" | TransactionType
                       )
                     }
-                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 outline-none focus:border-blue-600"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base text-slate-700 outline-none focus:border-blue-600 sm:w-auto sm:min-w-[190px] sm:py-2 sm:text-sm"
                   >
                     {TRANSACTION_TYPES.map((type) => (
                       <option key={type} value={type}>
@@ -731,11 +736,11 @@ export default function CustomersPage() {
                 </div>
 
                 {historyLoading ? (
-                  <div className="p-12 text-center text-sm text-slate-500">
+                  <div className="p-10 text-center text-sm text-slate-500 sm:p-12">
                     Loading transaction history...
                   </div>
                 ) : filteredTransactions.length === 0 ? (
-                  <div className="p-12 text-center">
+                  <div className="p-8 text-center sm:p-12">
                     <p className="font-medium text-slate-700">
                       No transactions found.
                     </p>
@@ -745,14 +750,24 @@ export default function CustomersPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[750px] text-left text-sm">
+                    <table className="w-full min-w-[700px] text-left text-sm">
                       <thead className="bg-[#D1D5DB] text-slate-600">
                         <tr>
-                          <th className="px-5 py-4 font-semibold">Date</th>
-                          <th className="px-5 py-4 font-semibold">Type</th>
-                          <th className="px-5 py-4 font-semibold">Reference</th>
-                          <th className="px-5 py-4 text-right font-semibold">Amount</th>
-                          <th className="px-5 py-4 font-semibold">Status / Details</th>
+                          <th className="px-4 py-3 font-semibold sm:px-5 sm:py-4">
+                            Date
+                          </th>
+                          <th className="px-4 py-3 font-semibold sm:px-5 sm:py-4">
+                            Type
+                          </th>
+                          <th className="px-4 py-3 font-semibold sm:px-5 sm:py-4">
+                            Reference
+                          </th>
+                          <th className="px-4 py-3 text-right font-semibold sm:px-5 sm:py-4">
+                            Amount
+                          </th>
+                          <th className="px-4 py-3 font-semibold sm:px-5 sm:py-4">
+                            Status / Details
+                          </th>
                         </tr>
                       </thead>
 
@@ -762,25 +777,25 @@ export default function CustomersPage() {
                             key={transaction.id}
                             className="hover:bg-[#DDE1E5]"
                           >
-                            <td className="px-5 py-4 text-slate-600">
+                            <td className="whitespace-nowrap px-4 py-3 text-slate-600 sm:px-5 sm:py-4">
                               {formatDate(transaction.date)}
                             </td>
 
-                            <td className="px-5 py-4">
-                              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
+                            <td className="px-4 py-3 sm:px-5 sm:py-4">
+                              <span className="inline-flex rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">
                                 {transaction.type}
                               </span>
                             </td>
 
-                            <td className="px-5 py-4 font-semibold text-slate-800">
+                            <td className="px-4 py-3 font-semibold text-slate-800 sm:px-5 sm:py-4">
                               {transaction.reference}
                             </td>
 
-                            <td className="px-5 py-4 text-right font-semibold text-slate-800">
+                            <td className="whitespace-nowrap px-4 py-3 text-right font-semibold text-slate-800 sm:px-5 sm:py-4">
                               {formatCurrency(transaction.amount)}
                             </td>
 
-                            <td className="px-5 py-4 text-slate-600">
+                            <td className="max-w-[220px] break-words px-4 py-3 text-slate-600 sm:px-5 sm:py-4">
                               {transaction.status}
                             </td>
                           </tr>
@@ -791,7 +806,7 @@ export default function CustomersPage() {
                 )}
 
                 {!historyLoading && (
-                  <div className="border-t border-[#D1D5DB] px-5 py-3 text-sm text-slate-500">
+                  <div className="border-t border-[#D1D5DB] px-3 py-3 text-xs text-slate-500 sm:px-5 sm:text-sm">
                     Showing {filteredTransactions.length} of{" "}
                     {historyTransactions.length} transactions
                   </div>
@@ -817,11 +832,13 @@ function SummaryCard({
   isCurrency?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-5 shadow-sm">
-      <p className="text-sm font-medium text-slate-600">{title}</p>
+    <div className={summaryCardClass}>
+      <p className="text-xs font-medium text-slate-600 sm:text-sm">
+        {title}
+      </p>
 
-      <p className={`mt-2 text-2xl font-bold ${valueClass}`}>
-        {isCurrency ? formatCurrency(value) : value}
+      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueClass}`}>
+        {isCurrency ? formatCurrency(value) : value.toLocaleString("en-PH")}
       </p>
     </div>
   );

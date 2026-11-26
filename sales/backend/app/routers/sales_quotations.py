@@ -1,6 +1,6 @@
 
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -24,6 +24,13 @@ router = APIRouter(
     tags=["Sales Quotations"],
     dependencies=[Depends(require_password_change_completed)],
 )
+
+INSTALLMENT_INTEREST_RATES = {
+    1: Decimal("0.00"),
+    3: Decimal("3.00"),
+    6: Decimal("5.00"),
+    12: Decimal("10.00"),
+}
 
 
 # Retrieve products that can be added to a quotation.
@@ -134,12 +141,30 @@ def create_quotation(
             }
         )
 
+    tax_rate = Decimal("12.00")
+    tax_amount = (quotation_total * tax_rate / Decimal("100")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+    interest_rate = INSTALLMENT_INTEREST_RATES[
+        quotation_data.installment_months
+    ]
+    interest_amount = (
+        quotation_total * interest_rate / Decimal("100")
+    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    final_total = quotation_total + tax_amount + interest_amount
+
     # Create the quotation header.
     quotation = SalesQuotation(
         customer_id=quotation_data.customer_id,
         quotation_date=quotation_data.quotation_date or date.today(),
         status="Draft",
-        total_amount=quotation_total,
+        total_amount=final_total,
+        tax_type="VAT",
+        tax_rate=tax_rate,
+        tax_amount=tax_amount,
+        installment_months=quotation_data.installment_months,
+        interest_rate=interest_rate,
+        interest_amount=interest_amount,
     )
 
     try:
@@ -213,6 +238,18 @@ def update_quotation_status(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Quotation not found.",
+        )
+
+    if quotation.status == status_data.status:
+        return quotation
+
+    if quotation.status != "Draft" or status_data.status not in (
+        "Accepted",
+        "Rejected",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A Draft quotation can only be accepted or rejected.",
         )
 
     quotation.status = status_data.status

@@ -1,6 +1,8 @@
 
 export type SalesOrderStatus =
   | "Pending"
+  | "Accepted"
+  // Historical statuses returned for existing orders.
   | "Approved"
   | "Processing"
   | "Completed"
@@ -23,6 +25,10 @@ export interface SalesOrder {
   order_date: string;
   status: SalesOrderStatus;
   total_amount: string | number;
+  tax_type: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
+  tax_rate: string | number;
+  tax_amount: string | number;
+  installment_months: number;
   details: SalesOrderDetail[];
 }
 
@@ -36,6 +42,9 @@ export interface SalesOrderCreate {
   customer_id: number;
   quotation_id?: number | null;
   order_date?: string;
+  tax_type?: "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom";
+  tax_rate?: number;
+  installment_months?: 1 | 3 | 6 | 12;
   details: SalesOrderDetailCreate[];
 }
 

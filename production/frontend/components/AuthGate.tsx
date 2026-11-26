@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 const LOCAL = "http://127.0.0.1:8000";
-const API = process.env.NEXT_PUBLIC_API_URL ?? LOCAL;
+const API = (process.env.NEXT_PUBLIC_API_URL ?? LOCAL).replace(/\/+$/, "");
 const LOGIN_URL = "https://computer-erp-login.vercel.app";
 const DEPT = "PD";
 const KEY = "erp_token";
@@ -45,10 +45,11 @@ let patched = false;
 if (typeof window !== "undefined" && !patched) {
   patched = true;
   const original = window.fetch;
-    window.fetch = (input, init = {}) => {
+  window.fetch = (input, init = {}) => {
     let url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith(LOCAL)) {
-      url = API + url.slice(LOCAL.length);
+      // one single slash between the API address and the path (a double slash makes Vercel redirect and CORS fails)
+      url = API + "/" + url.slice(LOCAL.length).replace(/^\/+/, "");
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${localStorage.getItem("erp_token")}`);
       return original(url, { ...init, headers });
@@ -83,7 +84,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#668d98", fontFamily: "Inter, system-ui, sans-serif" }}>
         <div style={{ backgroundColor: "#ffffff", color: "#24363b", borderRadius: "1.2vw", padding: "2vw", textAlign: "center" }}>
           <h2 style={{ margin: "0 0 0.6vw", color: "#365f68", fontSize: "1.3vw" }}>No access</h2>
-          <p style={{ margin: "0 0 1.2vw", fontSize: "0.95vw" }}>Your account doesn&apos;t belong to the Procurement department.</p>
+          <p style={{ margin: "0 0 1.2vw", fontSize: "0.95vw" }}>Your account doesn&apos;t belong to the Production department.</p>
           <button onClick={logout} style={{ border: "none", cursor: "pointer", padding: "0.6vw 1.6vw", borderRadius: "99vw", fontSize: "0.9vw", fontWeight: 600, backgroundColor: "#365f68", color: "#ffffff" }}>
             Back to login
           </button>
