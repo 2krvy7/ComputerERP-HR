@@ -26,9 +26,6 @@ from app.models.stock import Stock
 from app.models.user import User
 
 # Routers
-from app.routers.finance_integration import (
-    router as finance_integration_router,
-)
 from app.routers.customers import router as customers_router
 from app.routers.sales_quotations import router as quotations_router
 from app.routers.sales_orders import router as orders_router
@@ -113,7 +110,6 @@ app.include_router(invoice_router)
 app.include_router(accounts_receivable_router)
 app.include_router(payment_collection_router)
 app.include_router(sales_return_router)
-app.include_router(finance_integration_router)
 app.include_router(stock_router)
 
 
