@@ -376,7 +376,7 @@ export default function QuotationPanel() {
   ).length;
 
   return (
-    <div className="min-w-0 space-y-5 bg-white text-slate-800">
+    <div className="min-w-0 space-y-5 bg-gray text-slate-800">
       {/* Summary Cards */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard

@@ -415,7 +415,7 @@ export default function CollectionsPage() {
                 type="button"
                 onClick={openModal}
                 disabled={loading || !hasOutstandingAccounts}
-                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <span className="text-lg leading-none">+</span>
                 Add New Payment

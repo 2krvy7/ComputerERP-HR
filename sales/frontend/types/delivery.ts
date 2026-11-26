@@ -1,10 +1,8 @@
 
 export type DeliveryStatus =
-  | "Pending"
-  | "Preparing"
-  | "Released"
-  | "Delivered"
-  | "Cancelled";
+  | "pending-sales"
+  | "released-inventory"
+  | "delivered-sales";
 
 export interface Delivery {
   delivery_id: number;
