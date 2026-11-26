@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+
 import {
   authAPI,
   customerAPI,
@@ -18,26 +19,65 @@ import type {
   Warehouse,
 } from "../../types/delivery";
 import type { SalesOrder } from "../../types/order";
+
 import { isAdminRole } from "../../lib/roles";
 
-const statusStyles: Record<string, string> = {
-  Pending: "border-amber-200 bg-amber-50 text-amber-800",
-  Preparing: "border-blue-200 bg-blue-50 text-blue-800",
-  Released: "border-teal-200 bg-teal-50 text-teal-800",
-  Delivered: "border-green-200 bg-green-50 text-green-800",
-  Cancelled: "border-red-200 bg-red-50 text-red-800",
+const PENDING_SALES: DeliveryStatus = "pending-sales";
+const RELEASED_INVENTORY: DeliveryStatus = "released-inventory";
+const DELIVERED_SALES: DeliveryStatus = "delivered-sales";
+
+const statusStyles: Record<DeliveryStatus, string> = {
+  "pending-sales":
+    "border-amber-200 bg-amber-50 text-amber-800",
+  "released-inventory":
+    "border-teal-200 bg-teal-50 text-teal-800",
+  "delivered-sales":
+    "border-green-200 bg-green-50 text-green-800",
 };
 
-const allowedTransitions: Record<string, DeliveryStatus[]> = {
-  Pending: ["Preparing", "Cancelled"],
-  Preparing: ["Released", "Cancelled"],
-  Released: ["Delivered", "Cancelled"],
-  Delivered: [],
-  Cancelled: [],
+const statusLabels: Record<DeliveryStatus, string> = {
+  "pending-sales": "Pending Sales",
+  "released-inventory": "Released by Inventory",
+  "delivered-sales": "Delivered to Sales",
 };
 
-const displayStatus = (status: DeliveryStatus): string =>
-  status === "Released" ? "Released by Inventory" : status;
+const allowedTransitions: Record<
+  DeliveryStatus,
+  DeliveryStatus[]
+> = {
+  "pending-sales": [RELEASED_INVENTORY],
+  "released-inventory": [DELIVERED_SALES],
+  "delivered-sales": [],
+};
+
+function normalizeDeliveryStatus(
+  status: DeliveryStatus | string
+): DeliveryStatus {
+  const normalized = String(status).trim().toLowerCase();
+
+  if (
+    normalized === "released" ||
+    normalized === "shipped" ||
+    normalized === "released by inventory" ||
+    normalized === "released to sales" ||
+    normalized === "released-inventory"
+  ) {
+    return RELEASED_INVENTORY;
+  }
+
+  if (
+    normalized === "delivered" ||
+    normalized === "delivered-sales"
+  ) {
+    return DELIVERED_SALES;
+  }
+
+  return PENDING_SALES;
+}
+
+function displayStatus(status: DeliveryStatus | string): string {
+  return statusLabels[normalizeDeliveryStatus(status)];
+}
 
 const formatDate = (date: string | null) => {
   if (!date) return "—";
@@ -63,7 +103,8 @@ function getAvailableTransitions(
   status: DeliveryStatus,
   user: AuthUser | null
 ): DeliveryStatus[] {
-  const transitions = allowedTransitions[status] ?? [];
+  const normalizedStatus = normalizeDeliveryStatus(status);
+  const transitions = allowedTransitions[normalizedStatus] ?? [];
 
   if (!user) return [];
 
@@ -72,19 +113,24 @@ function getAvailableTransitions(
   }
 
   const isDepartmentAdmin = user.role_id === 3;
+  const isStaffOrDepartmentAdmin =
+    user.role_id === 2 || isDepartmentAdmin;
 
-  if (user.dept_id === "IN" && (user.role_id === 2 || isDepartmentAdmin)) {
+  if (
+    user.dept_id === "IN" &&
+    isStaffOrDepartmentAdmin
+  ) {
     return transitions.filter(
-      (nextStatus) =>
-        nextStatus === "Preparing" ||
-        nextStatus === "Released" ||
-        (isDepartmentAdmin && nextStatus === "Cancelled")
+      (nextStatus) => nextStatus === RELEASED_INVENTORY
     );
   }
 
-  if (user.dept_id === "SL" && (user.role_id === 2 || isDepartmentAdmin)) {
+  if (
+    user.dept_id === "SL" &&
+    isStaffOrDepartmentAdmin
+  ) {
     return transitions.filter(
-      (nextStatus) => nextStatus === "Delivered"
+      (nextStatus) => nextStatus === DELIVERED_SALES
     );
   }
 
@@ -115,6 +161,7 @@ export default function DeliveryPanel() {
 
   const [deliveryToConfirm, setDeliveryToConfirm] =
     useState<Delivery | null>(null);
+
   const [receivedBy, setReceivedBy] = useState("");
   const [receivedByError, setReceivedByError] = useState("");
 
@@ -184,7 +231,13 @@ export default function DeliveryPanel() {
   );
 
   const orderMap = useMemo(
-    () => new Map(orders.map((order) => [order.order_id, order])),
+    () =>
+      new Map(
+        orders.map((order) => [
+          order.order_id,
+          order,
+        ])
+      ),
     [orders]
   );
 
@@ -252,16 +305,31 @@ export default function DeliveryPanel() {
   );
 
   const pendingCount = deliveries.filter(
-    (delivery) => delivery.status === "Pending"
+    (delivery) =>
+      normalizeDeliveryStatus(delivery.status) === PENDING_SALES
   ).length;
 
-  const readyForPickupCount = deliveries.filter(
-    (delivery) => delivery.status === "Released"
+  const releasedCount = deliveries.filter(
+    (delivery) =>
+      normalizeDeliveryStatus(delivery.status) === RELEASED_INVENTORY
   ).length;
 
   const deliveredCount = deliveries.filter(
-    (delivery) => delivery.status === "Delivered"
+    (delivery) =>
+      normalizeDeliveryStatus(delivery.status) === DELIVERED_SALES
   ).length;
+
+  const availableOrders = useMemo(
+    () =>
+      orders.filter(
+        (order) =>
+          order.status === "Preparing" &&
+          !deliveries.some(
+            (delivery) => delivery.order_id === order.order_id
+          )
+      ),
+    [orders, deliveries]
+  );
 
   function resetForm() {
     setOrderId("");
@@ -271,7 +339,7 @@ export default function DeliveryPanel() {
   }
 
   function closeReceivedByModal() {
-    if (saving) return;
+    if (updatingId !== null) return;
 
     setDeliveryToConfirm(null);
     setReceivedBy("");
@@ -290,12 +358,9 @@ export default function DeliveryPanel() {
       (order) => order.order_id === Number(orderId)
     );
 
-    if (
-      !selectedOrder ||
-      !["Accepted", "Approved"].includes(selectedOrder.status)
-    ) {
+    if (!selectedOrder || selectedOrder.status !== "Preparing") {
       setError(
-        "Only accepted sales orders can be added to customer pickup."
+        "Only Sales Orders with Preparing status can be added to customer pickup."
       );
       return;
     }
@@ -322,8 +387,10 @@ export default function DeliveryPanel() {
 
     try {
       await deliveryAPI.create(data);
+
       resetForm();
       setCurrentPage(1);
+
       await loadData();
     } catch (err) {
       setError(
@@ -347,25 +414,19 @@ export default function DeliveryPanel() {
     setUpdatingId(delivery.delivery_id);
 
     try {
-      const updated = await deliveryAPI.updateStatus(
+      await deliveryAPI.updateStatus(
         delivery.delivery_id,
         newStatus,
         customerName
       );
 
-      setDeliveries((current) =>
-        current.map((item) =>
-          item.delivery_id === updated.delivery_id
-            ? updated
-            : item
-        )
-      );
-
-      if (newStatus === "Delivered") {
+      if (newStatus === DELIVERED_SALES) {
         setDeliveryToConfirm(null);
         setReceivedBy("");
         setReceivedByError("");
       }
+
+      await loadData();
     } catch (err) {
       setError(
         err instanceof Error
@@ -378,7 +439,7 @@ export default function DeliveryPanel() {
   }
 
   async function handleConfirmCollection() {
-    if (!deliveryToConfirm || saving) return;
+    if (!deliveryToConfirm || updatingId !== null) return;
 
     const customerName = receivedBy.trim();
 
@@ -393,7 +454,7 @@ export default function DeliveryPanel() {
 
     await saveDeliveryStatus(
       deliveryToConfirm,
-      "Delivered",
+      DELIVERED_SALES,
       customerName
     );
   }
@@ -416,20 +477,12 @@ export default function DeliveryPanel() {
       return;
     }
 
-    if (newStatus === "Delivered") {
+    if (newStatus === DELIVERED_SALES) {
       setError("");
       setReceivedBy("");
       setReceivedByError("");
       setDeliveryToConfirm(delivery);
       return;
-    }
-
-    if (newStatus === "Cancelled") {
-      const confirmed = window.confirm(
-        "Are you sure you want to cancel this customer pickup? Any stock already released will not be automatically restored."
-      );
-
-      if (!confirmed) return;
     }
 
     await saveDeliveryStatus(delivery, newStatus);
@@ -442,8 +495,10 @@ export default function DeliveryPanel() {
   }
 
   function renderStatusControls(delivery: Delivery) {
+    const normalizedStatus = normalizeDeliveryStatus(delivery.status);
+
     const availableStatuses = getAvailableTransitions(
-      delivery.status,
+      normalizedStatus,
       currentUser
     );
 
@@ -451,11 +506,10 @@ export default function DeliveryPanel() {
       <div className="flex min-w-0 flex-col gap-2">
         <span
           className={`inline-flex w-fit max-w-full items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
-            statusStyles[delivery.status] ??
-            "border-slate-200 bg-slate-50 text-slate-700"
+            statusStyles[normalizedStatus]
           }`}
         >
-          {displayStatus(delivery.status)}
+          {displayStatus(normalizedStatus)}
         </span>
 
         {availableStatuses.length > 0 && (
@@ -470,10 +524,11 @@ export default function DeliveryPanel() {
                 );
               }
             }}
-            className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60 sm:w-[180px]"
+            className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60 sm:w-[190px]"
             aria-label={`Update pickup status for record ${delivery.delivery_id}`}
           >
             <option value="">Update status</option>
+
             {availableStatuses.map((nextStatus) => (
               <option key={nextStatus} value={nextStatus}>
                 {displayStatus(nextStatus)}
@@ -492,7 +547,7 @@ export default function DeliveryPanel() {
   }
 
   return (
-    <div className="min-w-0 w-full space-y-5 bg-white text-slate-800">
+    <div className="min-w-0 w-full space-y-5 bg-gray text-slate-800">
       {error && (
         <div
           role="alert"
@@ -509,19 +564,19 @@ export default function DeliveryPanel() {
         />
 
         <SummaryCard
-          title="Pending"
+          title="Pending Sales"
           value={pendingCount.toString()}
           valueStyle="text-amber-700"
         />
 
         <SummaryCard
-          title="Ready for Pickup"
-          value={readyForPickupCount.toString()}
+          title="Released by Inventory"
+          value={releasedCount.toString()}
           valueStyle="text-teal-700"
         />
 
         <SummaryCard
-          title="Collected"
+          title="Delivered to Sales"
           value={deliveredCount.toString()}
           valueStyle="text-green-700"
         />
@@ -535,7 +590,7 @@ export default function DeliveryPanel() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              Inventory prepares and releases items. Sales confirms customer collection.
+              Inventory releases the items. Sales confirms customer collection.
             </p>
           </div>
 
@@ -578,6 +633,7 @@ export default function DeliveryPanel() {
             <div className="space-y-3 p-3 md:hidden">
               {paginatedDeliveries.map((delivery) => {
                 const order = orderMap.get(delivery.order_id);
+
                 const customerName = order
                   ? customerMap.get(order.customer_id) ??
                     `Customer #${order.customer_id}`
@@ -596,6 +652,7 @@ export default function DeliveryPanel() {
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                           Pickup No.
                         </p>
+
                         <p className="mt-1 break-words font-bold text-slate-900">
                           PICK-{String(delivery.delivery_id).padStart(4, "0")}
                         </p>
@@ -605,6 +662,7 @@ export default function DeliveryPanel() {
                         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                           Order No.
                         </p>
+
                         <p className="mt-1 break-words font-semibold text-slate-800">
                           SO-{String(delivery.order_id).padStart(4, "0")}
                         </p>
@@ -618,6 +676,7 @@ export default function DeliveryPanel() {
                         <p className="text-xs font-medium text-slate-500">
                           Customer
                         </p>
+
                         <p className="mt-1 break-words text-sm font-medium text-slate-800">
                           {customerName}
                         </p>
@@ -627,6 +686,7 @@ export default function DeliveryPanel() {
                         <p className="text-xs font-medium text-slate-500">
                           Expected Pickup Date
                         </p>
+
                         <p className="mt-1 break-words text-sm text-slate-800">
                           {formatDate(delivery.delivery_date)}
                         </p>
@@ -636,6 +696,7 @@ export default function DeliveryPanel() {
                         <p className="text-xs font-medium text-slate-500">
                           Warehouse
                         </p>
+
                         <p className="mt-1 break-words text-sm text-slate-800">
                           {warehouseName}
                         </p>
@@ -646,6 +707,7 @@ export default function DeliveryPanel() {
                       <p className="mb-2 text-xs font-medium text-slate-500">
                         Pickup Status
                       </p>
+
                       {renderStatusControls(delivery)}
                     </div>
                   </article>
@@ -764,7 +826,6 @@ export default function DeliveryPanel() {
         </div>
       </section>
 
-      {/* Create Pickup Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-950/50 p-0 sm:items-center sm:p-4">
           <div className="my-auto max-h-[95dvh] w-full overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-xl sm:max-h-[90dvh] sm:max-w-xl sm:rounded-xl sm:p-6">
@@ -775,7 +836,7 @@ export default function DeliveryPanel() {
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600">
-                  Assign an approved sales order to a warehouse for preparation.
+                  Assign a preparing sales order to a Finished Goods warehouse.
                 </p>
               </div>
 
@@ -793,7 +854,7 @@ export default function DeliveryPanel() {
             <div className="space-y-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  Accepted Sales Order
+                  Preparing Sales Order
                 </label>
 
                 <select
@@ -803,32 +864,27 @@ export default function DeliveryPanel() {
                 >
                   <option value="">Select sales order</option>
 
-                  {orders
-                    .filter((order) =>
-                      ["Accepted", "Approved"].includes(order.status)
-                    )
-                    .filter(
-                      (order) =>
-                        !deliveries.some(
-                          (delivery) =>
-                            delivery.order_id === order.order_id
-                        )
-                    )
-                    .map((order) => (
-                      <option
-                        key={order.order_id}
-                        value={order.order_id}
-                      >
-                        SO-{String(order.order_id).padStart(4, "0")} —{" "}
-                        {customerMap.get(order.customer_id) ??
-                          `Customer #${order.customer_id}`}
-                      </option>
-                    ))}
+                  {availableOrders.map((order) => (
+                    <option
+                      key={order.order_id}
+                      value={order.order_id}
+                    >
+                      SO-{String(order.order_id).padStart(4, "0")} —{" "}
+                      {customerMap.get(order.customer_id) ??
+                        `Customer #${order.customer_id}`}
+                    </option>
+                  ))}
                 </select>
 
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Only accepted orders without an existing pickup record are listed. Inventory must accept the order request first.
+                  Only orders marked Preparing by Inventory and without an existing pickup record are listed.
                 </p>
+
+                {availableOrders.length === 0 && (
+                  <p className="mt-2 text-xs font-medium text-amber-700">
+                    No preparing sales orders are currently available.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -874,6 +930,7 @@ export default function DeliveryPanel() {
                 <p className="text-sm font-semibold text-slate-800">
                   Customer Pickup
                 </p>
+
                 <p className="mt-1 text-sm text-slate-600">
                   The customer will collect the prepared items directly from the physical store. No delivery address is required.
                 </p>
@@ -892,7 +949,7 @@ export default function DeliveryPanel() {
                 <button
                   type="button"
                   onClick={() => void handleCreateDelivery()}
-                  disabled={saving}
+                  disabled={saving || availableOrders.length === 0}
                   className="min-h-11 rounded-lg bg-[#4F8585] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3D6D6D] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   {saving ? "Creating..." : "Create Pickup"}
@@ -903,14 +960,13 @@ export default function DeliveryPanel() {
         </div>
       )}
 
-      {/* Confirm Customer Collection Modal */}
       {deliveryToConfirm && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-slate-950/60 p-0 sm:items-center sm:p-4">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="collection-modal-title"
-            className="my-auto w-full max-h-[95dvh] overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-xl sm:p-6"
+            className="my-auto max-h-[95dvh] w-full overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-xl sm:p-6"
           >
             <div className="mb-5">
               <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-green-100 text-green-700">
@@ -939,7 +995,7 @@ export default function DeliveryPanel() {
               </h2>
 
               <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Enter the name of the customer who collected the items. This will mark the pickup as Delivered.
+                Enter the name of the customer who collected the items. This will mark the pickup as Delivered to Sales and complete the Sales Order.
               </p>
             </div>
 
@@ -947,9 +1003,11 @@ export default function DeliveryPanel() {
               <p className="text-xs font-medium text-slate-500">
                 Pickup Reference
               </p>
+
               <p className="mt-1 font-semibold text-slate-900">
                 PICK-{String(deliveryToConfirm.delivery_id).padStart(4, "0")}
               </p>
+
               <p className="mt-1 text-xs text-slate-600">
                 Order: SO-{String(deliveryToConfirm.order_id).padStart(4, "0")}
               </p>
@@ -980,7 +1038,7 @@ export default function DeliveryPanel() {
                 }}
                 placeholder="Enter full name"
                 maxLength={150}
-                disabled={saving}
+                disabled={updatingId !== null}
                 className={`min-h-12 w-full rounded-lg border bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:ring-2 ${
                   receivedByError
                     ? "border-red-400 focus:border-red-500 focus:ring-red-100"
@@ -999,7 +1057,7 @@ export default function DeliveryPanel() {
               <button
                 type="button"
                 onClick={closeReceivedByModal}
-                disabled={saving}
+                disabled={updatingId !== null}
                 className="min-h-11 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
@@ -1008,10 +1066,12 @@ export default function DeliveryPanel() {
               <button
                 type="button"
                 onClick={() => void handleConfirmCollection()}
-                disabled={saving}
+                disabled={updatingId !== null}
                 className="min-h-11 rounded-lg bg-green-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? "Confirming..." : "Confirm Collection"}
+                {updatingId !== null
+                  ? "Confirming..."
+                  : "Confirm Collection"}
               </button>
             </div>
           </div>
@@ -1036,7 +1096,9 @@ function SummaryCard({
         {title}
       </p>
 
-      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueStyle}`}>
+      <p
+        className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueStyle}`}
+      >
         {value}
       </p>
     </div>

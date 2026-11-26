@@ -1,4 +1,5 @@
-from sqlalchemy import ForeignKey, Integer
+
+from sqlalchemy import ForeignKey, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -28,6 +29,13 @@ class Stock(Base):
     quantity_on_hand: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
+    )
+
+    quantity_reserved: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
     )
 
     reorder_level: Mapped[int] = mapped_column(

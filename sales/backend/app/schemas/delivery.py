@@ -11,11 +11,9 @@ from pydantic import (
 
 
 DeliveryStatus = Literal[
-    "Pending",
-    "Preparing",
-    "Released",
-    "Delivered",
-    "Cancelled",
+    "pending-sales",
+    "released-inventory",
+    "delivered-sales",
 ]
 
 
@@ -26,15 +24,16 @@ def normalize_delivery_status(value):
     normalized = value.strip().lower()
 
     status_mapping = {
-        "pending": "Pending",
-        "preparing": "Preparing",
-        "released": "Released",
-        "shipped": "Released",
-        "released by inventory": "Released",
-        "released to sales": "Released",
-        "delivered": "Delivered",
-        "cancelled": "Cancelled",
-        "canceled": "Cancelled",
+        "pending": "pending-sales",
+        "pending-sales": "pending-sales",
+        "preparing": "pending-sales",
+        "released": "released-inventory",
+        "shipped": "released-inventory",
+        "released by inventory": "released-inventory",
+        "released to sales": "released-inventory",
+        "released-inventory": "released-inventory",
+        "delivered": "delivered-sales",
+        "delivered-sales": "delivered-sales",
     }
 
     return status_mapping.get(normalized, value)

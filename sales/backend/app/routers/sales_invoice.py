@@ -7,10 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.finance_pricing import (
-    fetch_finance_pricing_alerts,
-    validate_sales_price_against_finance,
-)
+from app.services.finance import validate_sales_price_against_finance
 from app.dependencies.auth import require_password_change_completed
 from app.models.sales_invoice import SalesInvoice
 from app.models.sales_order import SalesOrder
@@ -77,7 +74,12 @@ def create_invoice(
             detail="Sales order not found.",
         )
 
-    if order.status not in ("Accepted", "Approved", "Processing", "Completed"):
+    if order.status not in (
+        "Accepted",
+        "Approved",
+        "Processing",
+        "Completed",
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only Inventory-approved Sales orders can be invoiced.",
@@ -95,27 +97,43 @@ def create_invoice(
             detail="This sales order already has an invoice.",
         )
 
-    finance_alerts = fetch_finance_pricing_alerts()
     order_details = db.scalars(
         select(SalesOrderDetail).where(
             SalesOrderDetail.order_id == order.order_id
         )
     ).all()
 
+    if not order_details:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create an invoice for an order without items.",
+        )
+
     for detail in order_details:
         unit_price = Decimal(str(detail.unit_price))
-        discount = Decimal(str(detail.discount))
-        discounted_vat_ex_price = unit_price * (
-            Decimal("1") - discount / Decimal("100")
+        discount = Decimal(str(detail.discount or 0))
+
+        discounted_vat_ex_price = (
+            unit_price
+            * (Decimal("1") - discount / Decimal("100"))
+        ).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
         )
+
         validate_sales_price_against_finance(
             detail.IM_ID,
-            discounted_vat_ex_price,
-            finance_alerts,
+            float(discounted_vat_ex_price),
         )
 
     months = order.installment_months
-    interest_rate = INTEREST_RATES[months]
+    interest_rate = INTEREST_RATES.get(months)
+
+    if interest_rate is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid installment period. Allowed periods are 1, 3, 6, or 12 months.",
+        )
 
     order_total = Decimal(str(order.total_amount))
 

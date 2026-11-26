@@ -52,9 +52,24 @@ const statusStyles: Partial<Record<SalesOrderStatus, string>> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
   Accepted: "border-blue-200 bg-blue-50 text-blue-700",
   Approved: "border-blue-200 bg-blue-50 text-blue-700",
+  "Waiting for Stock": "border-orange-200 bg-orange-50 text-orange-700",
+  Preparing: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  "Released to Sales": "border-purple-200 bg-purple-50 text-purple-700",
   Cancelled: "border-red-200 bg-red-50 text-red-700",
   Processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
   Completed: "border-green-200 bg-green-50 text-green-700",
+};
+
+const statusLabels: Partial<Record<SalesOrderStatus, string>> = {
+  Pending: "Pending Inventory review",
+  Accepted: "Accepted",
+  Approved: "Accepted",
+  "Waiting for Stock": "Waiting for Stock",
+  Preparing: "Preparing",
+  "Released to Sales": "Released to Sales",
+  Processing: "Processing",
+  Completed: "Completed",
+  Cancelled: "Cancelled",
 };
 
 export default function OrdersPage() {
@@ -220,8 +235,20 @@ export default function OrdersPage() {
     (order) => order.status === "Pending"
   ).length;
 
-  const acceptedOrders = orders.filter(
-    (order) => order.status === "Accepted" || order.status === "Approved"
+  const preparingOrders = orders.filter(
+    (order) => order.status === "Preparing"
+  ).length;
+
+  const waitingForStockOrders = orders.filter(
+    (order) => order.status === "Waiting for Stock"
+  ).length;
+
+  const releasedOrders = orders.filter(
+    (order) => order.status === "Released to Sales"
+  ).length;
+
+  const completedOrders = orders.filter(
+    (order) => order.status === "Completed"
   ).length;
 
   const requestedByItem = useMemo(() => {
@@ -265,18 +292,12 @@ export default function OrdersPage() {
   const hasStockIssues = stockIssues.length > 0;
 
   const selectItems = useMemo(() => {
-    const combined = new Map<number, SalesOrderItem>();
+  return items.filter((item) => {
+    const status = String(item.status ?? "").trim().toLowerCase();
 
-    items.forEach((item) => combined.set(item.IM_ID, item));
-
-    lines.forEach((line) => {
-      if (line.IM_ID > 0 && itemCatalog[line.IM_ID]) {
-        combined.set(line.IM_ID, itemCatalog[line.IM_ID]);
-      }
-    });
-
-    return Array.from(combined.values());
-  }, [items, lines, itemCatalog]);
+    return status === "active" || status === "true";
+  });
+}, [items, lines, itemCatalog]);
 
   function updateLineById(
     lineId: number,
@@ -438,7 +459,7 @@ export default function OrdersPage() {
     !customerSelected || saving || loadingItems;
 
   return (
-    <div className="min-w-0 space-y-4 bg-white text-slate-800 sm:space-y-5">
+    <div className="min-w-0 space-y-4 bg-gray text-slate-800 sm:space-y-5">
       {error && (
         <div
           role="alert"
@@ -457,7 +478,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Total Orders" value={orders.length.toString()} />
         <SummaryCard title="Total Sales" value={money(totalSales)} />
 
@@ -468,8 +489,26 @@ export default function OrdersPage() {
         />
 
         <SummaryCard
-          title="Accepted Requests"
-          value={acceptedOrders.toString()}
+          title="Waiting for Stock"
+          value={waitingForStockOrders.toString()}
+          valueColor="text-orange-700"
+        />
+
+        <SummaryCard
+          title="Preparing Orders"
+          value={preparingOrders.toString()}
+          valueColor="text-indigo-700"
+        />
+
+        <SummaryCard
+          title="Released to Sales"
+          value={releasedOrders.toString()}
+          valueColor="text-purple-700"
+        />
+
+        <SummaryCard
+          title="Completed Orders"
+          value={completedOrders.toString()}
           valueColor="text-green-700"
         />
       </section>
@@ -482,7 +521,8 @@ export default function OrdersPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              Submit requested items to Inventory and track its decision.
+              Submit requested items to Inventory and track each order through
+              preparation, release, and completion.
             </p>
           </div>
 
@@ -523,7 +563,6 @@ export default function OrdersPage() {
           </div>
         ) : (
           <>
-            {/* Mobile order cards */}
             <div className="space-y-3 p-3 md:hidden">
               {paginatedOrders.map((order) => (
                 <div
@@ -546,11 +585,7 @@ export default function OrdersPage() {
                         "border-slate-300 bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {order.status === "Pending"
-                        ? "Pending Inventory review"
-                        : order.status === "Approved"
-                          ? "Accepted"
-                          : order.status}
+                      {statusLabels[order.status] ?? order.status}
                     </span>
                   </div>
 
@@ -590,7 +625,6 @@ export default function OrdersPage() {
               ))}
             </div>
 
-            {/* Desktop and tablet table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[850px] text-left text-sm">
                 <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
@@ -650,11 +684,7 @@ export default function OrdersPage() {
                             "border-slate-300 bg-slate-100 text-slate-600"
                           }`}
                         >
-                          {order.status === "Pending"
-                            ? "Pending Inventory review"
-                            : order.status === "Approved"
-                              ? "Accepted"
-                              : order.status}
+                          {statusLabels[order.status] ?? order.status}
                         </span>
                       </td>
                     </tr>
@@ -721,7 +751,7 @@ export default function OrdersPage() {
 
                 <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">
                   Select a customer and add the requested items. Inventory
-                  will review the request.
+                  will review the request and check Finished Goods stock.
                 </p>
               </div>
 
@@ -1164,8 +1194,9 @@ export default function OrdersPage() {
                     </p>
 
                     <p className="mt-1">
-                      You can still submit this request. Inventory will review
-                      it before accepting.
+                      You can still submit this request. Inventory will check
+                      stock and move the order to Waiting for Stock if the
+                      requested quantity is unavailable.
                     </p>
 
                     <ul className="mt-2 list-disc space-y-1 pl-5">

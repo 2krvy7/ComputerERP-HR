@@ -396,7 +396,7 @@ export default function ReturnsPanel() {
   }
 
   return (
-    <div className="min-w-0 w-full space-y-5 bg-white text-slate-800">
+    <div className="min-w-0 w-full space-y-5 bg-gray text-slate-800">
       {error && (
         <div
           role="alert"
