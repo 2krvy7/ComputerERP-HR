@@ -10,7 +10,9 @@ export default function Transactions() {
   const [error, setError] = useState<string | null>(null);
 
   // Tabs & Filters
-  const [activeTab, setActiveTab] = useState<"ALL" | "Needs Review" | "Matched" | "Reconciled">("ALL");
+  const [activeTab, setActiveTab] = useState<
+    "ALL" | "Needs Review" | "Matched" | "Reconciled"
+  >("ALL");
   const [search, setSearch] = useState("");
   const [selectedBankId, setSelectedBankId] = useState("ALL");
   const [startDate, setStartDate] = useState("");
@@ -19,38 +21,38 @@ export default function Transactions() {
   // Selection & Reconciliation state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [reconciledIds, setReconciledIds] = useState<string[]>([]);
-  const [customCategories, setCustomCategories] = useState<Record<string, string>>({});
+  const [customCategories, setCustomCategories] = useState<
+    Record<string, string>
+  >({});
 
   // Inspect / Categorize Modal
   const [inspectTx, setInspectTx] = useState<any | null>(null);
   const [editCategory, setEditCategory] = useState("");
 
+  const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
+
   useEffect(() => {
     fetchData();
   }, []);
 
-  const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
-
-  // FILE: finance/frontend/app/cash-bank/transactions/page.tsx (Lines 31–62)
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [txRes, bankRes] = await Promise.all([
-        // FETCH 1: GET http://127.0.0
+        // FETCH 1: GET ${API_URL}/api/transactions
         // Backend File: finance/backend/routers/transactions.py -> get_bank_transactions()
         // Database Tables: Reads "ARReceipt", "APPayment", and approved Payroll/Expenses from "JournalEntry"
         // Purpose: Loads all bank inflows and outflows for the Bank Transaction Register
         fetch(`${API_URL}/api/transactions`),
 
-        // FETCH 2: GET http://127.0.0
+        // FETCH 2: GET ${API_URL}/api/bank
         // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
-        // Database Tables: Reads "BankAccount" with computed live balances
-        // Purpose: Populates the Bank Account filter dropdown and calculates the active Book Balance
-        fetch(`${API_URL}/api/transactions`),
+        // Database Tables: Reads all registered "BankAccount" rows with live balances
+        // Purpose: Populates every registered bank account in the All Bank Accounts dropdown
+        fetch(`${API_URL}/api/bank`),
       ]);
 
       if (!txRes.ok) throw new Error(`Transactions API error: ${txRes.status}`);
@@ -68,10 +70,13 @@ export default function Transactions() {
     }
   }
 
+  // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Math.abs(Number(val || 0)));
 
   const formatDate = (dateStr?: string) => {
@@ -82,35 +87,54 @@ export default function Transactions() {
       year: "numeric",
     });
   };
+  // Enrich transactions and sort newest on top (date DESC, then numeric ID DESC)
+  const enrichedTransactions = useMemo(() => {
+    return transactions
+      .map((tx) => {
+        const isReconciled = reconciledIds.includes(tx.id);
+        const category =
+          customCategories[tx.id] ?? tx.category ?? "Uncategorized";
+        const status = isReconciled
+          ? "Reconciled"
+          : category === "Uncategorized"
+          ? "Needs Review"
+          : tx.status ?? "Matched";
+        const isoDate = tx.date
+          ? new Date(tx.date).toISOString().split("T")
+          : "";
 
-    const enrichedTransactions = useMemo(() => {
-    return transactions.map((tx) => {
-      const isReconciled = reconciledIds.includes(tx.id);
-      const category = customCategories[tx.id] ?? tx.category ?? "Uncategorized";
-      const status = isReconciled
-        ? "Reconciled"
-        : category === "Uncategorized"
-        ? "Needs Review"
-        : tx.status ?? "Matched";
-      const isoDate = tx.date ? new Date(tx.date).toISOString().split("T")[0] : "";
-
-      return {
-        ...tx,
-        isoDate,
-        dateFormatted: formatDate(tx.date),
-        category,
-        status,
-        action: isReconciled ? "View Entry" : "Review Match",
-      };
-    });
+        return {
+          ...tx,
+          isoDate,
+          dateFormatted: formatDate(tx.date),
+          category,
+          status,
+          action: isReconciled ? "View Entry" : "Review Match",
+        };
+      })
+      .sort((a, b) => {
+        const timeA = a.date ? new Date(a.date).getTime() : 0;
+        const timeB = b.date ? new Date(b.date).getTime() : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        const numA = Number(String(a.id ?? "").replace(/\D/g, "")) || 0;
+        const numB = Number(String(b.id ?? "").replace(/\D/g, "")) || 0;
+        return numB - numA;
+      });
   }, [transactions, reconciledIds, customCategories]);
 
   const stats = useMemo(() => {
     const totalCount = enrichedTransactions.length;
-    const needsReviewCount = enrichedTransactions.filter((t) => t.status === "Needs Review").length;
-    const matchedCount = enrichedTransactions.filter((t) => t.status === "Matched").length;
-    const reconciledCount = enrichedTransactions.filter((t) => t.status === "Reconciled").length;
-    const reconPct = totalCount > 0 ? ((reconciledCount / totalCount) * 100).toFixed(1) : "0.0";
+    const needsReviewCount = enrichedTransactions.filter(
+      (t) => t.status === "Needs Review"
+    ).length;
+    const matchedCount = enrichedTransactions.filter(
+      (t) => t.status === "Matched"
+    ).length;
+    const reconciledCount = enrichedTransactions.filter(
+      (t) => t.status === "Reconciled"
+    ).length;
+    const reconPct =
+      totalCount > 0 ? ((reconciledCount / totalCount) * 100).toFixed(1) : "0.0";
 
     return {
       totalCount,
@@ -125,7 +149,11 @@ export default function Transactions() {
   const filteredTransactions = useMemo(() => {
     return enrichedTransactions.filter((tx) => {
       if (activeTab !== "ALL" && tx.status !== activeTab) return false;
-      if (selectedBankId !== "ALL" && String(tx.bankAccountID) !== selectedBankId) return false;
+      if (
+        selectedBankId !== "ALL" &&
+        String(tx.bankAccountID) !== selectedBankId
+      )
+        return false;
       if (startDate && tx.isoDate && tx.isoDate < startDate) return false;
       if (endDate && tx.isoDate && tx.isoDate > endDate) return false;
 
@@ -139,20 +167,33 @@ export default function Transactions() {
       }
       return true;
     });
-  }, [enrichedTransactions, activeTab, selectedBankId, startDate, endDate, search]);
+  }, [
+    enrichedTransactions,
+    activeTab,
+    selectedBankId,
+    startDate,
+    endDate,
+    search,
+  ]);
 
   const activeBookBalance = useMemo(() => {
     if (selectedBankId === "ALL") {
       return bankAccounts.reduce((s, b) => s + Number(b.balance || 0), 0);
     }
-    const found = bankAccounts.find((b) => String(b.bankAccountID) === selectedBankId);
+    const found = bankAccounts.find(
+      (b) => String(b.bankAccountID) === selectedBankId
+    );
     return found ? Number(found.balance || 0) : 0;
   }, [bankAccounts, selectedBankId]);
 
   const activeBankName = useMemo(() => {
     if (selectedBankId === "ALL") return "All Bank Accounts";
-    const found = bankAccounts.find((b) => String(b.bankAccountID) === selectedBankId);
-    return found ? `${found.bankName} (${found.accountNumber})` : "Selected Account";
+    const found = bankAccounts.find(
+      (b) => String(b.bankAccountID) === selectedBankId
+    );
+    return found
+      ? `${found.bankName} (${found.accountNumber})`
+      : "Selected Account";
   }, [bankAccounts, selectedBankId]);
 
   function toggleSelectRow(id: string) {
@@ -177,23 +218,18 @@ export default function Transactions() {
     setReconciledIds((prev) => Array.from(new Set([...prev, ...selectedIds])));
     setSelectedIds([]);
   }
-
-    return (
+  return (
     <div className="transactions-page">
-      {/* Header */}
+      {/* Aligned Fixed Header (No subtitle, no Export button) */}
       <div className="page-header">
-        <div>
-          <h1>Transactions</h1>
-          <p>
-            Categorize bank activity, match records, and reconcile with confidence.
-          </p>
-        </div>
+        <h1>Transactions</h1>
 
         <div className="header-actions">
-          <button className="btn secondary" onClick={() => window.print()}>
-            Export
-          </button>
-          <button className="btn primary" onClick={fetchData}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={fetchData}
+          >
             Sync Transactions
           </button>
         </div>
@@ -205,7 +241,8 @@ export default function Transactions() {
           <span>Bank Transactions</span>
           <h2>{loading ? "..." : stats.totalCount}</h2>
           <small>
-            Across {stats.accountCount} {stats.accountCount === 1 ? "account" : "accounts"}
+            Across {stats.accountCount}{" "}
+            {stats.accountCount === 1 ? "account" : "accounts"}
           </small>
         </div>
 
@@ -230,18 +267,21 @@ export default function Transactions() {
 
       {/* Tabs */}
       <div className="tabs">
-        {(["ALL", "Needs Review", "Matched", "Reconciled"] as const).map((tab) => (
-          <button
-            key={tab}
-            className={activeTab === tab ? "tab active" : "tab"}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab === "ALL" ? "All Transactions" : tab}
-          </button>
-        ))}
+        {(["ALL", "Needs Review", "Matched", "Reconciled"] as const).map(
+          (tab) => (
+            <button
+              key={tab}
+              type="button"
+              className={activeTab === tab ? "tab active" : "tab"}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === "ALL" ? "All Transactions" : tab}
+            </button>
+          )
+        )}
       </div>
 
-      {/* Filters */}
+      {/* Filters (All registered bank accounts shown in dropdown) */}
       <div className="filters">
         <input
           type="text"
@@ -252,8 +292,10 @@ export default function Transactions() {
         />
 
         <select
+          className="filter-select"
           value={selectedBankId}
           onChange={(e) => setSelectedBankId(e.target.value)}
+          aria-label="Filter by Bank Account"
         >
           <option value="ALL">All Bank Accounts</option>
           {Array.from(
@@ -272,6 +314,7 @@ export default function Transactions() {
 
         <input
           type="date"
+          className="date-input"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
           title="Start Date"
@@ -279,12 +322,14 @@ export default function Transactions() {
 
         <input
           type="date"
+          className="date-input"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
           title="End Date"
         />
 
         <button
+          type="button"
           className="filter-btn"
           onClick={() => {
             setSearch("");
@@ -297,8 +342,7 @@ export default function Transactions() {
           Reset Filters
         </button>
       </div>
-
-      {/* Register */}
+      {/* Register (Newest transactions on top) */}
       <div className="table-card">
         <div className="table-header">
           <div>
@@ -308,17 +352,21 @@ export default function Transactions() {
             </p>
           </div>
 
-          <button className="btn secondary" onClick={handleReconcileSelected}>
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={handleReconcileSelected}
+          >
             Reconcile Selected ({selectedIds.length})
           </button>
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading bank transactions...</p>
+          <p className="state-message">Loading bank transactions...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+          <p className="state-message error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="tx-table">
             <thead>
               <tr>
                 <th>
@@ -343,7 +391,7 @@ export default function Transactions() {
             <tbody>
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={7} className="empty-table-cell">
                     No bank transactions recorded yet.
                   </td>
                 </tr>
@@ -392,6 +440,7 @@ export default function Transactions() {
 
                     <td>
                       <button
+                        type="button"
                         className="link-btn"
                         onClick={() => {
                           setInspectTx(tx);
@@ -411,28 +460,8 @@ export default function Transactions() {
 
       {/* Inspect / Reconcile Modal */}
       {inspectTx && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "420px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <div className="modal-box">
             <h3>Transaction Details ({inspectTx.id})</h3>
             <p>
               <strong>Date:</strong> {inspectTx.dateFormatted}
@@ -449,8 +478,9 @@ export default function Transactions() {
               {formatCurrency(inspectTx.amount)}
             </p>
 
-            <label>Account Category</label>
+            <label className="modal-label">Account Category</label>
             <select
+              className="modal-select"
               value={editCategory}
               onChange={(e) => setEditCategory(e.target.value)}
             >
@@ -461,18 +491,16 @@ export default function Transactions() {
               <option value="Other Cash Activity">Other Cash Activity</option>
             </select>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              <button className="btn secondary" onClick={() => setInspectTx(null)}>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setInspectTx(null)}
+              >
                 Close
               </button>
               <button
+                type="button"
                 className="btn primary"
                 onClick={() => {
                   setCustomCategories((prev) => ({

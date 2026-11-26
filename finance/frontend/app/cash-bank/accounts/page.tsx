@@ -3,6 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import "./accounts.css";
 
+// Sorts statement transactions newest-first (latest date and highest numeric ID on top)
+function sortLatestFirst(rows: any[]) {
+  return [...rows].sort((a, b) => {
+    const timeA = a.date ? new Date(a.date).getTime() : 0;
+    const timeB = b.date ? new Date(b.date).getTime() : 0;
+    if (timeA !== timeB) return timeB - timeA;
+    const numA = Number(String(a.id ?? "").replace(/\D/g, "")) || 0;
+    const numB = Number(String(b.id ?? "").replace(/\D/g, "")) || 0;
+    return numB - numA;
+  });
+}
+
 export default function BankAccounts() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,21 +46,20 @@ export default function BankAccounts() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [txLoading, setTxLoading] = useState(false);
 
+  const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
+
   useEffect(() => {
     setTransferDate(new Date().toISOString().split("T")[0]);
     fetchAccounts();
   }, []);
 
-  const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
-
   async function fetchAccounts() {
     setLoading(true);
     setError(null);
     try {
-      // FETCH 1: GET http://127.0.0
+      // FETCH 1: GET ${API_URL}/api/bank
       // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
       // Database Tables: Reads "BankAccount" with "isDisbursement" & "isReceiver" flags and aggregates "ARReceipt" & "APPayment"
       // Purpose: Loads all registered bank accounts, live balances, and role statuses
@@ -63,10 +74,13 @@ export default function BankAccounts() {
     }
   }
 
+    // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Number(val || 0));
 
   const formatDate = (dateStr?: string) => {
@@ -92,8 +106,13 @@ export default function BankAccounts() {
   const stats = useMemo(() => {
     const totalCash = accounts.reduce((s, a) => s + Number(a.balance || 0), 0);
     const totalInflows = accounts.reduce((s, a) => s + Number(a.totalIn || 0), 0);
-    const totalOutflows = accounts.reduce((s, a) => s + Number(a.totalOut || 0), 0);
-    const activeDisbCount = accounts.filter((a) => Boolean(a.isDisbursement)).length;
+    const totalOutflows = accounts.reduce(
+      (s, a) => s + Number(a.totalOut || 0),
+      0
+    );
+    const activeDisbCount = accounts.filter((a) =>
+      Boolean(a.isDisbursement)
+    ).length;
     const needsRecon = accounts.filter(
       (a) => !reconciledIds.includes(a.bankAccountID)
     ).length;
@@ -116,15 +135,16 @@ export default function BankAccounts() {
     setStatementBankId(account.bankAccountID);
     setStatementLoading(true);
     try {
-      // FETCH 2: GET http://127.0.0{bankAccountID}/transactions
+      // FETCH 2: GET ${API_URL}/api/bank/${account.bankAccountID}/transactions
       // Backend File: finance/backend/routers/bank.py -> get_bank_transactions()
       // Database Tables: Reads "ARReceipt" and "APPayment" for the clicked bankAccountID
-      // Purpose: Filters the Bank Statements table below to show only this specific bank's entries
+      // Purpose: Filters the Bank Statements table below to show only this specific bank's entries (latest on top)
       const res = await fetch(
         `${API_URL}/api/bank/${account.bankAccountID}/transactions`
       );
       if (res.ok) {
-        setStatementLines(await res.json());
+        const raw = await res.json();
+        setStatementLines(sortLatestFirst(Array.isArray(raw) ? raw : []));
       } else {
         setStatementLines([]);
       }
@@ -151,7 +171,7 @@ export default function BankAccounts() {
         : Boolean(account.isReceiver);
 
     try {
-      // FETCH 3: PATCH http://127.0.0{bankAccountID}/roles
+      // FETCH 3: PATCH ${API_URL}/api/bank/${account.bankAccountID}/roles
       // Backend File: finance/backend/routers/bank.py -> update_bank_roles()
       // Database Table: Updates "BankAccount" ("isDisbursement", "isReceiver")
       // Purpose: Turns Disbursement (for BDO) or Receiver (for BPI Sales) ON or OFF
@@ -184,7 +204,7 @@ export default function BankAccounts() {
 
     setTransferring(true);
     try {
-      // FETCH 4: POST http://127.0.0transfer
+      // FETCH 4: POST ${API_URL}/api/bank/transfer
       // Backend File: finance/backend/routers/bank.py -> transfer_between_banks()
       // Database Tables: Deducts outflow from BPI Sales, deposits inflow into BDO Corporate Checking, and posts a Journal Entry
       // Purpose: Transfers collected sales money from BPI Sales into BDO Corporate Checking
@@ -208,7 +228,9 @@ export default function BankAccounts() {
       setTransferAmount("");
       await fetchAccounts();
       if (currentStmtId !== "ALL") {
-        const refreshed = accounts.find((a) => a.bankAccountID === currentStmtId);
+        const refreshed = accounts.find(
+          (a) => a.bankAccountID === currentStmtId
+        );
         if (refreshed) await handleSelectBankStatement(refreshed);
       }
     } catch (err: any) {
@@ -224,7 +246,7 @@ export default function BankAccounts() {
 
     setSubmitting(true);
     try {
-      // FETCH 5: POST http://127.0.0
+      // FETCH 5: POST ${API_URL}/api/bank
       // Backend File: finance/backend/routers/bank.py -> create_bank_account()
       // Database Table: Inserts new bank record into "BankAccount"
       const res = await fetch(`${API_URL}/api/bank`, {
@@ -255,13 +277,14 @@ export default function BankAccounts() {
     setSelectedAccount(account);
     setTxLoading(true);
     try {
-      // FETCH 6: GET http://127.0.0{bankAccountID}/transactions
+      // FETCH 6: GET ${API_URL}/api/bank/${account.bankAccountID}/transactions
       // Backend File: finance/backend/routers/bank.py -> get_bank_transactions()
       const res = await fetch(
         `${API_URL}/api/bank/${account.bankAccountID}/transactions`
       );
       if (res.ok) {
-        setTransactions(await res.json());
+        const raw = await res.json();
+        setTransactions(sortLatestFirst(Array.isArray(raw) ? raw : []));
       } else {
         setTransactions([]);
       }
@@ -281,24 +304,25 @@ export default function BankAccounts() {
     );
   }
 
+
     return (
     <div className="bank-page">
+      {/* Aligned Fixed Header (No subtitle, no Export button) */}
       <div className="page-header">
-        <div>
-          <h1>Bank Accounts</h1>
-          <p>A single view of your cash and reconciliation progress.</p>
-        </div>
+        <h1>Bank Accounts</h1>
 
         <div className="header-actions">
-          <button className="btn secondary" onClick={() => window.print()}>
-            Export
-          </button>
-          <button className="btn primary" onClick={() => setShowAddModal(true)}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setShowAddModal(true)}
+          >
             Add Account
           </button>
         </div>
       </div>
 
+      {/* Summary Cards */}
       <div className="stats-grid">
         <div className="stat-card">
           <span>Total Cash Balance</span>
@@ -332,8 +356,10 @@ export default function BankAccounts() {
         </div>
       </div>
 
+      {/* Institution Filter Bar */}
       <div className="filters">
         <button
+          type="button"
           className={bankFilter === "ALL" ? "filter-btn active" : "filter-btn"}
           onClick={() => setBankFilter("ALL")}
         >
@@ -342,6 +368,7 @@ export default function BankAccounts() {
         {Array.from(new Set(accounts.map((a) => a.bankName))).map((name) => (
           <button
             key={name}
+            type="button"
             className={bankFilter === name ? "filter-btn active" : "filter-btn"}
             onClick={() => setBankFilter(name)}
           >
@@ -349,17 +376,22 @@ export default function BankAccounts() {
           </button>
         ))}
 
-        <button className="more-filter" onClick={fetchAccounts}>
+        <button
+          type="button"
+          className="more-filter"
+          onClick={fetchAccounts}
+        >
           Refresh Feed
         </button>
       </div>
 
+      {/* Bank Cards Grid */}
       {loading ? (
-        <p style={{ padding: "1rem" }}>Loading bank accounts...</p>
+        <p className="state-message">Loading bank accounts...</p>
       ) : error ? (
-        <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+        <p className="state-message error">Error: {error}</p>
       ) : filteredAccounts.length === 0 ? (
-        <p style={{ padding: "1rem" }}>
+        <p className="state-message">
           No bank accounts found. Click <strong>Add Account</strong> to register
           one.
         </p>
@@ -375,12 +407,10 @@ export default function BankAccounts() {
             return (
               <div
                 key={account.bankAccountID}
-                className="account-card"
+                className={`account-card ${
+                  isSelectedStmt ? "selected-stmt" : ""
+                }`}
                 onClick={() => handleSelectBankStatement(account)}
-                style={{
-                  cursor: "pointer",
-                  border: isSelectedStmt ? "2px solid #2563eb" : undefined,
-                }}
               >
                 <div className="card-header">
                   <div>
@@ -389,6 +419,7 @@ export default function BankAccounts() {
                   </div>
 
                   <button
+                    type="button"
                     className="menu-btn"
                     onClick={(e) => handleViewTransactions(e, account)}
                     title="View Transactions"
@@ -404,18 +435,12 @@ export default function BankAccounts() {
                   posted txns
                 </p>
 
-                <div
-                  className="status-row"
-                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
-                >
+                <div className="status-row">
                   {isBDO && (
                     <span
-                      className="badge"
-                      style={
-                        account.isDisbursement
-                          ? { backgroundColor: "#eff6ff", color: "#1d4ed8" }
-                          : { backgroundColor: "#fef2f2", color: "#991b1b" }
-                      }
+                      className={`badge ${
+                        account.isDisbursement ? "disb-on" : "role-off"
+                      }`}
                     >
                       {account.isDisbursement
                         ? "Disbursement: Active"
@@ -425,12 +450,9 @@ export default function BankAccounts() {
 
                   {isSalesBank && (
                     <span
-                      className="badge"
-                      style={
-                        account.isReceiver
-                          ? { backgroundColor: "#ecfdf5", color: "#065f46" }
-                          : { backgroundColor: "#fef2f2", color: "#991b1b" }
-                      }
+                      className={`badge ${
+                        account.isReceiver ? "" : "role-off"
+                      }`}
                     >
                       {account.isReceiver
                         ? "Receiver: Active"
@@ -443,25 +465,15 @@ export default function BankAccounts() {
                   </span>
                 </div>
 
-                <div
-                  className="card-actions"
-                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}
-                >
-                  {/* 1. BDO Corporate Checking: ONLY Disbursement ON/OFF button */}
+                <div className="card-actions">
                   {isBDO && (
                     <button
-                      className="btn secondary"
+                      type="button"
+                      className={`btn secondary ${
+                        account.isDisbursement ? "disb-btn-active" : ""
+                      }`}
                       onClick={(e) =>
                         handleToggleRole(e, account, "isDisbursement")
-                      }
-                      style={
-                        account.isDisbursement
-                          ? {
-                              backgroundColor: "#eff6ff",
-                              borderColor: "#93c5fd",
-                              color: "#1d4ed8",
-                            }
-                          : undefined
                       }
                     >
                       {account.isDisbursement
@@ -470,22 +482,15 @@ export default function BankAccounts() {
                     </button>
                   )}
 
-                  {/* 2. BPI Sales: Receiver ON/OFF + Send to Corporate Checking */}
                   {isSalesBank && (
                     <>
                       <button
-                        className="btn secondary"
+                        type="button"
+                        className={`btn secondary ${
+                          account.isReceiver ? "rec-btn-active" : ""
+                        }`}
                         onClick={(e) =>
                           handleToggleRole(e, account, "isReceiver")
-                        }
-                        style={
-                          account.isReceiver
-                            ? {
-                                backgroundColor: "#ecfdf5",
-                                borderColor: "#6ee7b7",
-                                color: "#065f46",
-                              }
-                            : undefined
                         }
                       >
                         {account.isReceiver
@@ -494,6 +499,7 @@ export default function BankAccounts() {
                       </button>
 
                       <button
+                        type="button"
                         className="btn primary"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -509,6 +515,7 @@ export default function BankAccounts() {
                   )}
 
                   <button
+                    type="button"
                     className="btn secondary"
                     onClick={(e) => toggleReconcile(e, account.bankAccountID)}
                   >
@@ -521,7 +528,8 @@ export default function BankAccounts() {
         </div>
       )}
 
-{/* Bank Statements (Filtered to Specific Clicked Bank) */}
+
+      {/* Bank Statements (Latest entries on top) */}
       <div className="statements-card">
         <div className="table-header">
           <div>
@@ -536,13 +544,14 @@ export default function BankAccounts() {
             <p>
               {statementBankId === "ALL"
                 ? "Tap any bank card above to view only that bank's statement."
-                : "Showing posted statement entries for the selected bank only."}
+                : "Showing posted statement entries for the selected bank only (latest on top)."}
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: "0.5rem" }}>
+          <div className="table-header-actions">
             {statementBankId !== "ALL" && (
               <button
+                type="button"
                 className="btn secondary"
                 onClick={() => {
                   setStatementBankId("ALL");
@@ -553,6 +562,7 @@ export default function BankAccounts() {
               </button>
             )}
             <button
+              type="button"
               className="btn secondary"
               onClick={() => {
                 fetchAccounts();
@@ -570,7 +580,7 @@ export default function BankAccounts() {
         </div>
 
         {statementBankId === "ALL" ? (
-          <table>
+          <table className="statements-table">
             <thead>
               <tr>
                 <th>Account</th>
@@ -584,7 +594,7 @@ export default function BankAccounts() {
             <tbody>
               {accounts.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={5} className="empty-table-cell">
                     No bank statements available yet.
                   </td>
                 </tr>
@@ -594,8 +604,8 @@ export default function BankAccounts() {
                   return (
                     <tr
                       key={acc.bankAccountID}
+                      className="clickable-row"
                       onClick={() => handleSelectBankStatement(acc)}
-                      style={{ cursor: "pointer" }}
                     >
                       <td>
                         <strong>{acc.bankName}</strong> - {acc.accountNumber}
@@ -604,7 +614,9 @@ export default function BankAccounts() {
                         +{formatCurrency(acc.totalIn)} / -
                         {formatCurrency(acc.totalOut)}
                       </td>
-                      <td>{formatCurrency(acc.balance)}</td>
+                      <td>
+                        <strong>{formatCurrency(acc.balance)}</strong>
+                      </td>
                       <td>
                         <span
                           className={
@@ -618,6 +630,7 @@ export default function BankAccounts() {
                       </td>
                       <td>
                         <button
+                          type="button"
                           className="link-btn"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -634,9 +647,9 @@ export default function BankAccounts() {
             </tbody>
           </table>
         ) : statementLoading ? (
-          <p style={{ padding: "1rem" }}>Loading statement lines...</p>
+          <p className="state-message">Loading statement lines...</p>
         ) : (
-          <table>
+          <table className="statements-table">
             <thead>
               <tr>
                 <th>Date</th>
@@ -650,7 +663,7 @@ export default function BankAccounts() {
             <tbody>
               {statementLines.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={5} className="empty-table-cell">
                     No statement entries recorded for this specific bank yet.
                   </td>
                 </tr>
@@ -658,14 +671,17 @@ export default function BankAccounts() {
                 statementLines.map((tx) => (
                   <tr key={tx.id}>
                     <td>{formatDate(tx.date)}</td>
-                    <td>{tx.id}</td>
+                    <td>
+                      <strong>{tx.id}</strong>
+                    </td>
                     <td>{tx.type}</td>
                     <td>{tx.reference}</td>
                     <td
-                      style={{
-                        fontWeight: 600,
-                        color: tx.direction === "IN" ? "#16a34a" : "#dc2626",
-                      }}
+                      className={
+                        tx.direction === "IN"
+                          ? "tx-amount-in"
+                          : "tx-amount-out"
+                      }
                     >
                       {tx.direction === "IN" ? "+" : "-"}
                       {formatCurrency(tx.amount)}
@@ -680,69 +696,44 @@ export default function BankAccounts() {
 
       {/* Send Collected Sales Money to BDO Corporate Checking Modal */}
       {transferSourceBank && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleTransferToCorporate}
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "420px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <form className="modal-box" onSubmit={handleTransferToCorporate}>
             <h3>Send Funds to Corporate Checking</h3>
-            <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
+            <p className="modal-subtext">
               <strong>From:</strong> {transferSourceBank.bankName} (Available:{" "}
               {formatCurrency(transferSourceBank.balance)})
             </p>
-            <p style={{ margin: 0, fontSize: "0.9rem", color: "#4b5563" }}>
+            <p className="modal-subtext">
               <strong>To:</strong>{" "}
               {corporateCheckingBank
                 ? `${corporateCheckingBank.bankName} (${corporateCheckingBank.accountNumber})`
                 : "BDO Corporate Checking (Please register BDO first)"}
             </p>
 
-            <label>Transfer Date *</label>
+            <label className="modal-label">Transfer Date *</label>
             <input
               type="date"
+              className="modal-input"
               required
               value={transferDate}
               onChange={(e) => setTransferDate(e.target.value)}
             />
 
-            <label>Amount to Send *</label>
+            <label className="modal-label">Amount to Send *</label>
             <input
               type="number"
               step="0.01"
+              className="modal-input"
               required
               placeholder="0.00"
               value={transferAmount}
               onChange={(e) => setTransferAmount(e.target.value)}
             />
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="modal-actions">
               <button
                 type="button"
+                className="btn secondary"
                 onClick={() => setTransferSourceBank(null)}
               >
                 Cancel
@@ -759,60 +750,38 @@ export default function BankAccounts() {
         </div>
       )}
 
-       {/* Add Bank Account Modal */}
+      {/* Add Bank Account Modal */}
       {showAddModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleAddAccount}
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "400px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <form className="modal-box" onSubmit={handleAddAccount}>
             <h3>Add Bank Account</h3>
 
-            <label>Bank Name *</label>
+            <label className="modal-label">Bank Name *</label>
             <input
               type="text"
+              className="modal-input"
               required
               placeholder="e.g. BDO Corporate Checking"
               value={formBankName}
               onChange={(e) => setFormBankName(e.target.value)}
             />
 
-            <label>Account Number *</label>
+            <label className="modal-label">Account Number *</label>
             <input
               type="text"
+              className="modal-input"
               required
               placeholder="e.g. 0048-2910-4821"
               value={formAccountNum}
               onChange={(e) => setFormAccountNum(e.target.value)}
             />
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              <button type="button" onClick={() => setShowAddModal(false)}>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => setShowAddModal(false)}
+              >
                 Cancel
               </button>
               <button
@@ -829,46 +798,24 @@ export default function BankAccounts() {
 
       {/* View Transactions Modal */}
       {selectedAccount && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "520px",
-              maxHeight: "80vh",
-              overflowY: "auto",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <div className="modal-box tx-modal">
             <h3>
               {selectedAccount.bankName} ({selectedAccount.accountNumber})
             </h3>
-            <p>
+            <p className="modal-subtext">
               <strong>Current Balance:</strong>{" "}
               {formatCurrency(selectedAccount.balance)}
             </p>
 
             {txLoading ? (
-              <p>Loading transactions...</p>
+              <p className="state-message">Loading transactions...</p>
             ) : transactions.length === 0 ? (
-              <p>
+              <p className="state-message">
                 No AP payments or AR receipts recorded on this account yet.
               </p>
             ) : (
-              <table>
+              <table className="statements-table">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -881,14 +828,18 @@ export default function BankAccounts() {
                 <tbody>
                   {transactions.map((tx) => (
                     <tr key={tx.id}>
-                      <td>{tx.id}</td>
+                      <td>
+                        <strong>{tx.id}</strong>
+                      </td>
                       <td>{tx.type}</td>
                       <td>{tx.reference}</td>
                       <td>{formatDate(tx.date)}</td>
                       <td
-                        style={{
-                          color: tx.direction === "IN" ? "green" : "crimson",
-                        }}
+                        className={
+                          tx.direction === "IN"
+                            ? "tx-amount-in"
+                            : "tx-amount-out"
+                        }
                       >
                         {tx.direction === "IN" ? "+" : "-"}
                         {formatCurrency(tx.amount)}
@@ -899,14 +850,9 @@ export default function BankAccounts() {
               </table>
             )}
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="modal-actions">
               <button
+                type="button"
                 className="btn secondary"
                 onClick={() => setSelectedAccount(null)}
               >

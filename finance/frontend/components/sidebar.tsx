@@ -1,12 +1,22 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { getUser, logout, type SessionUser } from "../../back up/components/AuthGate";
 import "./sidebar.css";
+
+interface DbUserProfile {
+  UserID: string;
+  Username: string;
+  roleName: string;
+  DeptID: string;
+}
 
 export default function Sidebar() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [dbUser, setDbUser] = useState<DbUserProfile | null>(null);
   const pathname = usePathname();
 
   const [apOpen, setApOpen] = useState(
@@ -19,11 +29,58 @@ export default function Sidebar() {
     pathname.startsWith("/reports")
   );
 
+  // Read the authenticated user session and load matching profile from public."User"
+  useEffect(() => {
+    const tokenUser = getUser();
+    setUser(tokenUser);
+
+    const API_URL = (
+      process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+    ).replace(/\/$/, "");
+
+    const query = tokenUser?.sub
+      ? `?user_id=${encodeURIComponent(tokenUser.sub)}`
+      : tokenUser?.username
+      ? `?username=${encodeURIComponent(tokenUser.username)}`
+      : "";
+
+    // FETCH: GET ${API_URL}/api/me
+    // Backend Route: finance/backend/main.py -> get_current_user_profile()
+    // Database Table: Reads public."User"
+    // Purpose: Loads real Username, Role, and DeptID for the Sidebar footer
+    fetch(`${API_URL}/api/me${query}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.Username) setDbUser(data);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Generate display name, role, and 2-letter avatar initials
+  const displayName = dbUser?.Username || user?.username || "Finance User";
+  const displayRole = dbUser
+    ? `${dbUser.roleName} · ${dbUser.DeptID}`
+    : user?.role
+    ? `${user.role}${user.department ? ` · ${user.department}` : ""}`
+    : "Finance Staff";
+
+  const initials =
+    displayName
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part.toUpperCase())
+      .join("") || "FN";
+
   return (
+
     <nav className={`sidebar ${sidebarOpen ? "" : "closed"}`}>
+      {/* Sidebar Header & Logo */}
       <header>
         <div className="sidebar-logo">
-          <div className="logo-icon">F</div>
+          <div className="logo-img-box">
+            <img src="/logo.png" alt="Computer ERP Logo" className="logo-img" />
+          </div>
 
           <div className="logo-text">
             <h2>Finance</h2>
@@ -37,6 +94,7 @@ export default function Sidebar() {
         ></div>
       </header>
 
+      {/* Main Navigation Links */}
       <ul className="menu-links">
         {/* Dashboard */}
         <li className={`nav-link ${pathname === "/" ? "active-link" : ""}`}>
@@ -119,7 +177,7 @@ export default function Sidebar() {
           )}
         </li>
 
-        {/* Accounts Receivable (Single Main Tab — No Submenu) */}
+        {/* Accounts Receivable */}
         <li
           className={`nav-link ${
             pathname.startsWith("/accounts-receivable") ? "active-link" : ""
@@ -248,20 +306,32 @@ export default function Sidebar() {
         </li>
       </ul>
 
-      <div className="sidebar-footer">
-        <div className="help-link">
-          <i className="bx bx-help-circle"></i>
-          Help &amp; Resources
-        </div>
-
+       <div className="sidebar-footer">
         <div className="user-box">
-          <div className="avatar">HA</div>
+          <div className="avatar" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              className="avatar-silhouette"
+            >
+              <path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v3h20v-3c0-3.33-6.67-5-10-5z" />
+            </svg>
+          </div>
 
           <div className="user-info">
-            <strong>Hev Adie</strong>
-            <small>Administrator</small>
+            <strong>{displayName}</strong>
+            <small>{displayRole}</small>
           </div>
         </div>
+
+        <button
+          type="button"
+          className="logout-btn"
+          onClick={logout}
+          title="Log out and return to Computer ERP Login"
+        >
+          <i className="bx bx-log-out"></i>
+          <span className="logout-text">Log Out</span>
+        </button>
       </div>
     </nav>
   );

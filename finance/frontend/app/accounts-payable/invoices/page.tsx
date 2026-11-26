@@ -10,10 +10,10 @@ export default function APInvoices() {
   const [error, setError] = useState<string | null>(null);
   const [todayStr, setTodayStr] = useState("");
 
-  // Tabs & Filters
-  const [activeTab, setActiveTab] = useState<
-    "Awaiting Finance" | "Unpaid" | "ALL" | "Overdue" | "Partially Paid" | "Paid"
-  >("Awaiting Finance");
+  // Dropdown Status Filter (Defaults to "ALL" = All AP Bills) & Search
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "Awaiting Finance" | "Unpaid" | "Partially Paid" | "Overdue" | "Paid"
+  >("ALL");
   const [search, setSearch] = useState("");
   const [supplierFilter, setSupplierFilter] = useState("ALL");
 
@@ -24,6 +24,10 @@ export default function APInvoices() {
 
   // View Existing AP Invoice Modal
   const [viewingAP, setViewingAP] = useState<any | null>(null);
+
+  const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
 
   useEffect(() => {
     const today = new Date().toISOString().split("T")[0];
@@ -36,16 +40,16 @@ export default function APInvoices() {
     setError(null);
     try {
       const [apRes, awaitingRes] = await Promise.all([
-        // FETCH 1: GET /api/invoices/
+        // FETCH 1: GET /api/apinvoices
         // Source: Finance "APInvoice" table joined with Team 1 "Supplier" table.
         // Purpose: Loads all official AP bills already accepted by Finance (Unpaid, Partial, Overdue, Paid).
-        fetch("http://127.0.0.1:8000/api/apinvoices"),
+        fetch(`${API_URL}/api/apinvoices`),
 
-        // FETCH 2: GET /api/invoices/awaiting-finance
+        // FETCH 2: GET /api/apinvoices/awaiting-finance
         // Source: Team 1 "PurchaseInvoice" joined with "PurchaseOrder", "GoodsReceived", and "Supplier"
         //         where PI_ID does NOT yet exist in Finance "APInvoice".
         // Purpose: Loads incoming supplier invoices from Procurement waiting for Finance 3-way match & due date.
-        fetch("http://127.0.0.1:8000/api/apinvoices/awaiting-finance"),
+        fetch(`${API_URL}/api/awaiting-finance`),
       ]);
 
       if (!apRes.ok) throw new Error(`AP Invoices API error: ${apRes.status}`);
@@ -63,10 +67,13 @@ export default function APInvoices() {
     }
   }
 
+  // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Number(val || 0));
 
   const formatDate = (dateStr?: string) => {
@@ -78,51 +85,53 @@ export default function APInvoices() {
     });
   };
 
-  // Normalize official APInvoice records
+  // Normalize official APInvoice records & sort newest on top (apInvoiceID DESC)
   const normalizedAP = useMemo(() => {
-    return apInvoices.map((row, idx) => {
-      const id = Number(row.apInvoiceID ?? row.apinvoiceid ?? idx + 1);
-      const displayId = `AP-${String(id).padStart(4, "0")}`;
-      const piId = row.piID ?? row.piid ?? "-";
-      const poId = row.poID ?? row.poid ?? "-";
-      const supplier =
-        row.supplier_name ??
-        row.supplierName ??
-        `Supplier #${row.supplierID ?? row.supplierid ?? "-"}`;
-      const amount = Number(row.amount ?? 0);
-      const totalPaid = Number(row.totalPaid ?? row.totalpaid ?? 0);
-      const remaining = Number(
-        row.remainingBalance ?? row.remainingbalance ?? amount - totalPaid
-      );
-      const dueDateRaw = row.dueDate ?? row.duedate ?? "";
-      const isoDue = dueDateRaw
-        ? new Date(dueDateRaw).toISOString().split("T")[0]
-        : "";
+    return apInvoices
+      .map((row, idx) => {
+        const id = Number(row.apInvoiceID ?? row.apinvoiceid ?? idx + 1);
+        const displayId = `AP-${String(id).padStart(4, "0")}`;
+        const piId = row.piID ?? row.piid ?? "-";
+        const poId = row.poID ?? row.poid ?? "-";
+        const supplier =
+          row.supplier_name ??
+          row.supplierName ??
+          `Supplier #${row.supplierID ?? row.supplierid ?? "-"}`;
+        const amount = Number(row.amount ?? 0);
+        const totalPaid = Number(row.totalPaid ?? row.totalpaid ?? 0);
+        const remaining = Number(
+          row.remainingBalance ?? row.remainingbalance ?? amount - totalPaid
+        );
+        const dueDateRaw = row.dueDate ?? row.duedate ?? "";
+        const isoDue = dueDateRaw
+          ? new Date(dueDateRaw).toISOString().split("T")[0]
+          : "";
 
-      let status = row.status ?? "Unpaid";
-      if (remaining <= 0 || status.toLowerCase() === "paid") {
-        status = "Paid";
-      } else if (todayStr && isoDue && isoDue < todayStr) {
-        status = "Overdue";
-      } else if (totalPaid > 0) {
-        status = "Partially Paid";
-      } else {
-        status = "Unpaid";
-      }
+        let status = row.status ?? "Unpaid";
+        if (remaining <= 0 || status.toLowerCase() === "paid") {
+          status = "Paid";
+        } else if (todayStr && isoDue && isoDue < todayStr) {
+          status = "Overdue";
+        } else if (totalPaid > 0) {
+          status = "Partially Paid";
+        } else {
+          status = "Unpaid";
+        }
 
-      return {
-        id,
-        displayId,
-        piRef: `PI-${String(piId).padStart(4, "0")}`,
-        poRef: `PO-${String(poId).padStart(4, "0")}`,
-        supplier,
-        amount,
-        totalPaid,
-        remaining,
-        dueDateFormatted: formatDate(dueDateRaw),
-        status,
-      };
-    });
+        return {
+          id,
+          displayId,
+          piRef: `PI-${String(piId).padStart(4, "0")}`,
+          poRef: `PO-${String(poId).padStart(4, "0")}`,
+          supplier,
+          amount,
+          totalPaid,
+          remaining,
+          dueDateFormatted: formatDate(dueDateRaw),
+          status,
+        };
+      })
+      .sort((a, b) => b.id - a.id);
   }, [apInvoices, todayStr]);
 
   // Summary KPIs
@@ -143,14 +152,17 @@ export default function APInvoices() {
     };
   }, [awaitingInvoices, normalizedAP]);
 
-  // Filtered AP rows for the active tab
+  // Filtered AP rows for the active status dropdown selection
   const filteredAP = useMemo(() => {
     return normalizedAP.filter((bill) => {
-      if (activeTab === "Unpaid" && bill.status === "Paid") return false;
-      if (activeTab === "Overdue" && bill.status !== "Overdue") return false;
-      if (activeTab === "Partially Paid" && bill.status !== "Partially Paid")
+      if (statusFilter === "Unpaid" && bill.status === "Paid") return false;
+      if (statusFilter === "Overdue" && bill.status !== "Overdue") return false;
+      if (
+        statusFilter === "Partially Paid" &&
+        bill.status !== "Partially Paid"
+      )
         return false;
-      if (activeTab === "Paid" && bill.status !== "Paid") return false;
+      if (statusFilter === "Paid" && bill.status !== "Paid") return false;
 
       if (supplierFilter !== "ALL" && bill.supplier !== supplierFilter)
         return false;
@@ -160,6 +172,7 @@ export default function APInvoices() {
         if (
           !bill.displayId.toLowerCase().includes(q) &&
           !bill.piRef.toLowerCase().includes(q) &&
+          !bill.poRef.toLowerCase().includes(q) &&
           !bill.supplier.toLowerCase().includes(q)
         ) {
           return false;
@@ -167,20 +180,39 @@ export default function APInvoices() {
       }
       return true;
     });
-  }, [normalizedAP, activeTab, supplierFilter, search]);
+  }, [normalizedAP, statusFilter, supplierFilter, search]);
+
+  // Filtered Awaiting Finance rows sorted newest PI on top
+  const filteredAwaiting = useMemo(() => {
+    return [...awaitingInvoices]
+      .sort((a, b) => Number(b.piID || 0) - Number(a.piID || 0))
+      .filter((pi) => {
+        const sup = pi.supplierName || `Supplier #${pi.supplierID}`;
+        if (supplierFilter !== "ALL" && sup !== supplierFilter) return false;
+        if (search) {
+          const q = search.toLowerCase();
+          const piRef = `pi-${String(pi.piID).padStart(4, "0")}`;
+          const poRef = pi.poID
+            ? `po-${String(pi.poID).padStart(4, "0")}`
+            : "";
+          if (
+            !piRef.includes(q) &&
+            !poRef.includes(q) &&
+            !sup.toLowerCase().includes(q)
+          ) {
+            return false;
+          }
+        }
+        return true;
+      });
+  }, [awaitingInvoices, supplierFilter, search]);
 
   function openThreeWayMatchModal(piRow: any) {
     setReviewingPI(piRow);
-    // Default due date to 30 days from today
     const future = new Date();
     future.setDate(future.getDate() + 30);
     setDueDateInput(future.toISOString().split("T")[0]);
   }
-
-  const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
 
   async function handleApproveAndCreateAP(e: React.FormEvent) {
     e.preventDefault();
@@ -188,20 +220,17 @@ export default function APInvoices() {
 
     setSubmitting(true);
     try {
-      // FETCH 3: POST /api/invoices/create-from-pi
+      // FETCH 3: POST /api/apinvoices/create-from-pi
       // Destination: Inserts verified PurchaseInvoice into Finance "APInvoice" table with the chosen dueDate.
       // Side Effect: Changes Procurement's read-only status from "Awaiting Finance" to "Unpaid".
-      const res = await fetch(
-        `${API_URL}/api/apinvoices/create-from-pi`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            piID: Number(reviewingPI.piID),
-            dueDate: dueDateInput,
-          }),
-        }
-      );
+      const res = await fetch(`${API_URL}/api/apinvoices/create-from-pi`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          piID: Number(reviewingPI.piID),
+          dueDate: dueDateInput,
+        }),
+      });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -217,19 +246,17 @@ export default function APInvoices() {
     }
   }
 
-  return (
+    return (
     <div className="ap-invoices-page invoices-page">
-      {/* Header */}
+      {/* Aligned Fixed Header (No subtitle, matches Chart of Accounts) */}
       <div className="page-header">
-        <div>
-          <h1>AP Invoices</h1>
-          <p>
-            Review incoming Procurement invoices, perform 3-way matching, and
-            manage supplier payables.
-          </p>
-        </div>
+        <h1>AP Invoices</h1>
 
-        <button className="primary-btn btn-primary" onClick={fetchAllData}>
+        <button
+          type="button"
+          className="primary-btn btn-primary"
+          onClick={fetchAllData}
+        >
           Sync Procurement &amp; AP
         </button>
       </div>
@@ -270,125 +297,73 @@ export default function APInvoices() {
         </div>
       </div>
 
-      {/* Styled Tab Buttons (Matches Original Pill/Tab Design) */}
-      <div
-        className="tabs"
-        style={{
-          display: "flex",
-          gap: "0.65rem",
-          flexWrap: "wrap",
-          margin: "1.25rem 0 1rem 0",
-        }}
-      >
-        {(
-          [
-            {
-              key: "Awaiting Finance",
-              label: `Awaiting Finance (${awaitingInvoices.length})`,
-            },
-            { key: "Unpaid", label: "Unpaid Bills" },
-            { key: "Partially Paid", label: "Partially Paid" },
-            { key: "Overdue", label: "Overdue" },
-            { key: "Paid", label: "Paid" },
-            { key: "ALL", label: "All AP Bills" },
-          ] as const
-        ).map((t) => {
-          const isActive = activeTab === t.key;
-          return (
-            <button
-              key={t.key}
-              className={isActive ? "tab active" : "tab"}
-              onClick={() => setActiveTab(t.key)}
-              style={{
-                padding: "0.6rem 1.15rem",
-                borderRadius: "10px",
-                border: isActive ? "1px solid #dbeafe" : "1px solid #edf0f4",
-                backgroundColor: isActive ? "#f1f6fd" : "#ffffff",
-                color: isActive ? "#25578a" : "#111827",
-                fontWeight: 500,
-                fontSize: "0.9rem",
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Unified Search Bar & Status Dropdown (Default: All AP Bills) */}
+      <div className="filter-bar filters">
+        <input
+          type="text"
+          className="filter-search-input"
+          placeholder="Search AP ID, PI/PO reference, or supplier..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
 
-      {/* Filters (Shown for AP Bills tabs) */}
-      {activeTab !== "Awaiting Finance" && (
-        <div
-          className="filter-bar filters"
-          style={{
-            display: "flex",
-            gap: "0.75rem",
-            marginBottom: "1rem",
-            flexWrap: "wrap",
+        <select
+          className="filter-select"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as any)}
+          aria-label="Filter AP Invoices by Status"
+        >
+          <option value="ALL">All AP Bills</option>
+          <option value="Awaiting Finance">
+            Awaiting Finance ({awaitingInvoices.length})
+          </option>
+          <option value="Unpaid">Unpaid Bills</option>
+          <option value="Partially Paid">Partially Paid</option>
+          <option value="Overdue">Overdue</option>
+          <option value="Paid">Paid</option>
+        </select>
+
+        <select
+          className="filter-select"
+          value={supplierFilter}
+          onChange={(e) => setSupplierFilter(e.target.value)}
+          aria-label="Filter by Supplier"
+        >
+          <option value="ALL">All Suppliers</option>
+          {Array.from(
+            new Set([
+              ...normalizedAP.map((b) => b.supplier),
+              ...awaitingInvoices.map(
+                (pi) => pi.supplierName || `Supplier #${pi.supplierID}`
+              ),
+            ])
+          ).map((sup) => (
+            <option key={sup} value={sup}>
+              {sup}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          className="reset-filter-btn"
+          onClick={() => {
+            setSearch("");
+            setStatusFilter("ALL");
+            setSupplierFilter("ALL");
           }}
         >
-          <input
-            type="text"
-            placeholder="Search AP ID, PI reference, or supplier..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: "220px",
-              padding: "0.5rem 0.75rem",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              backgroundColor: "#ffffff",
-            }}
-          />
-
-          <select
-            value={supplierFilter}
-            onChange={(e) => setSupplierFilter(e.target.value)}
-            style={{
-              padding: "0.5rem 0.75rem",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              backgroundColor: "#ffffff",
-            }}
-          >
-            <option value="ALL">All Suppliers</option>
-            {Array.from(new Set(normalizedAP.map((b) => b.supplier))).map(
-              (sup) => (
-                <option key={sup} value={sup}>
-                  {sup}
-                </option>
-              )
-            )}
-          </select>
-
-          <button
-            onClick={() => {
-              setSearch("");
-              setSupplierFilter("ALL");
-            }}
-            style={{
-              padding: "0.5rem 0.9rem",
-              borderRadius: "8px",
-              border: "1px solid #d1d5db",
-              backgroundColor: "#f9fafb",
-              color: "#374151",
-              cursor: "pointer",
-            }}
-          >
-            Reset Filters
-          </button>
-        </div>
-      )}
+          Reset Filters
+        </button>
+      </div>
 
       {/* Main Table Section */}
       <div className="table-card">
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading Procurement &amp; AP data...</p>
+          <p className="state-message">Loading Procurement &amp; AP data...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
-        ) : activeTab === "Awaiting Finance" ? (
+          <p className="state-message error">Error: {error}</p>
+        ) : statusFilter === "Awaiting Finance" ? (
           <>
             <div className="table-header">
               <div>
@@ -400,7 +375,7 @@ export default function APInvoices() {
               </div>
             </div>
 
-            <table>
+            <table className="ap-table">
               <thead>
                 <tr>
                   <th>Purchase Invoice</th>
@@ -415,15 +390,15 @@ export default function APInvoices() {
               </thead>
 
               <tbody>
-                {awaitingInvoices.length === 0 ? (
+                {filteredAwaiting.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
+                    <td colSpan={8} className="empty-table-cell">
                       All Procurement purchase invoices have been processed into
                       AP!
                     </td>
                   </tr>
                 ) : (
-                  awaitingInvoices.map((pi) => {
+                  filteredAwaiting.map((pi) => {
                     const poAmt = Number(pi.poAmount ?? 0);
                     const invAmt = Number(pi.invoiceAmount ?? 0);
                     const isMatched =
@@ -432,7 +407,9 @@ export default function APInvoices() {
 
                     return (
                       <tr key={pi.piID}>
-                        <td>PI-{String(pi.piID).padStart(4, "0")}</td>
+                        <td>
+                          <strong>PI-{String(pi.piID).padStart(4, "0")}</strong>
+                        </td>
                         <td>
                           <strong>
                             {pi.supplierName || `Supplier #${pi.supplierID}`}
@@ -466,6 +443,7 @@ export default function APInvoices() {
                         </td>
                         <td>
                           <button
+                            type="button"
                             className="primary-btn"
                             onClick={() => openThreeWayMatchModal(pi)}
                           >
@@ -480,7 +458,8 @@ export default function APInvoices() {
             </table>
           </>
         ) : (
-          <>
+
+                    <>
             <div className="table-header">
               <div>
                 <h3>Accounts Payable Register</h3>
@@ -491,7 +470,7 @@ export default function APInvoices() {
               </div>
             </div>
 
-            <table>
+            <table className="ap-table">
               <thead>
                 <tr>
                   <th>AP Invoice ID</th>
@@ -508,7 +487,7 @@ export default function APInvoices() {
               <tbody>
                 {filteredAP.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", padding: "1rem" }}>
+                    <td colSpan={8} className="empty-table-cell">
                       No AP invoices found in this category.
                     </td>
                   </tr>
@@ -543,6 +522,7 @@ export default function APInvoices() {
                       </td>
                       <td>
                         <button
+                          type="button"
                           className="view-btn"
                           onClick={() => setViewingAP(bill)}
                         >
@@ -560,44 +540,11 @@ export default function APInvoices() {
 
       {/* Three-Way Match & Create AP Invoice Modal */}
       {reviewingPI && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleApproveAndCreateAP}
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "450px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.85rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>Three-Way Match &amp; Create AP</h3>
+        <div className="modal-overlay">
+          <form className="modal-box" onSubmit={handleApproveAndCreateAP}>
+            <h3>Three-Way Match &amp; Create AP</h3>
 
-            <div
-              style={{
-                backgroundColor: "#f8fafc",
-                padding: "0.85rem",
-                borderRadius: "8px",
-                border: "1px solid #e2e8f0",
-                fontSize: "0.88rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.35rem",
-              }}
-            >
+            <div className="match-summary-card">
               <div>
                 <strong>Supplier:</strong>{" "}
                 {reviewingPI.supplierName ||
@@ -606,9 +553,10 @@ export default function APInvoices() {
               <div>
                 <strong>1. Purchase Order (PO):</strong>{" "}
                 {reviewingPI.poID
-                  ? `PO-${String(reviewingPI.poID).padStart(4, "0")} (${formatCurrency(
-                      reviewingPI.poAmount
-                    )})`
+                  ? `PO-${String(reviewingPI.poID).padStart(
+                      4,
+                      "0"
+                    )} (${formatCurrency(reviewingPI.poAmount)})`
                   : "No PO linked"}
               </div>
               <div>
@@ -626,37 +574,22 @@ export default function APInvoices() {
               </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="modal-field">
               <label>Set Payment Due Date *</label>
               <input
                 type="date"
+                className="modal-input"
                 required
                 value={dueDateInput}
                 onChange={(e) => setDueDateInput(e.target.value)}
-                style={{
-                  padding: "0.55rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                }}
               />
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="modal-actions">
               <button
                 type="button"
+                className="cancel-btn"
                 onClick={() => setReviewingPI(null)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                }}
               >
                 Cancel
               </button>
@@ -674,29 +607,9 @@ export default function APInvoices() {
 
       {/* View AP Details Modal */}
       {viewingAP && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "400px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.65rem",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>{viewingAP.displayId} Details</h3>
+        <div className="modal-overlay">
+          <div className="modal-box details-modal">
+            <h3>{viewingAP.displayId} Details</h3>
             <p>
               <strong>Supplier:</strong> {viewingAP.supplier}
             </p>
@@ -720,20 +633,11 @@ export default function APInvoices() {
               <strong>Status:</strong> {viewingAP.status}
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="modal-actions">
               <button
+                type="button"
+                className="cancel-btn"
                 onClick={() => setViewingAP(null)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                }}
               >
                 Close
               </button>

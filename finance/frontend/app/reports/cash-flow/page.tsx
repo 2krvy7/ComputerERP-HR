@@ -61,10 +61,12 @@ export default function CashFlowStatement() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatSignedCurrency = (val: number) => {
     const num = Number(val || 0);
@@ -151,32 +153,7 @@ export default function CashFlowStatement() {
         </div>
       </div>
 
-      {/* Period Selector */}
-      <div className="tabs">
-        {(["This month", "This quarter", "This year", "Custom"] as const).map(
-          (tab) => (
-            <button
-              key={tab}
-              className={activePeriod === tab ? "active" : ""}
-              onClick={() => setActivePeriod(tab)}
-            >
-              {tab}
-            </button>
-          )
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="filters">
-        <button className="btn-light">
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button className="btn-light">Direct Method</button>
-        <button className="btn-light">Period: {activePeriod}</button>
-        <button className="btn-light push-right" onClick={fetchCashFlow}>
-          Update Report
-        </button>
-      </div>
+      
 
       {/* Summary Cards */}
       <div className="summary-grid">
