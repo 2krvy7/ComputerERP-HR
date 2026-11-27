@@ -672,14 +672,23 @@ export default function QuotationPanel({
                       }
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700 outline-none focus:border-[#3F7657] disabled:cursor-wait disabled:opacity-60"
                     >
-                      {(quotation.status === "Draft"
-                        ? ["Draft", "Accepted", "Rejected"] as QuotationStatus[]
-                        : [quotation.status]
-                      ).map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
+                      {quotation.status !== "Accepted" ? (
+  <select
+    value={quotation.status}
+    onChange={(e) =>
+      handleStatusChange(
+        quotation.quotation_id,
+        e.target.value
+      )
+    }
+  >
+    <option value="Draft">Draft</option>
+    <option value="Accepted">Accepted</option>
+    <option value="Rejected">Rejected</option>
+  </select>
+) : (
+  <span>Accepted</span>
+)}
                     </select>
 
                     {savingQuotationId === quotation.quotation_id && (

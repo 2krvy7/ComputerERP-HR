@@ -719,7 +719,7 @@ def create_order(
             quotation = SalesQuotation(
                 customer_id=order_data.customer_id,
                 quotation_date=order_data.order_date or date.today(),
-                status="Accepted",
+                status="Draft",
                 total_amount=quotation_total,
                 tax_type=tax_type,
                 tax_rate=tax_rate,
