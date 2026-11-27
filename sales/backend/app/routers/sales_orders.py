@@ -339,6 +339,7 @@ def is_superadmin(current_user: User) -> bool:
     return current_user.role_id == SUPERADMIN_ROLE_ID
 
 
+
 @router.get("/items")
 def get_order_items(
     search: str | None = Query(default=None, max_length=150),
@@ -407,6 +408,7 @@ def get_order_items(
             "Item_Name": item.Item_Name,
             "Category": item.Category,
             "Brand": item.Brand,
+            "ItemType": item.ItemType,
             "unit_of_measure": item.unit_of_measure,
             "Price": item.Price,
             "status": item.status,
@@ -414,6 +416,7 @@ def get_order_items(
         }
         for item, stock_available in results
     ]
+
 
 
 @router.get(

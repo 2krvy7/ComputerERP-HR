@@ -6,7 +6,6 @@ import { customerAPI, quotationAPI } from "@/lib/api";
 
 import type {
   SalesQuotation,
-  SalesQuotationCreate,
   QuotationCatalogItem,
   QuotationStatus,
 } from "@/types/quotation";
@@ -34,7 +33,19 @@ interface DraftQuotationLine {
   discount: number;
 }
 
-export default function QuotationPanel() {
+interface SalesOrderDraft {
+  customer_id: number;
+  installment_months: 1 | 3 | 6 | 12;
+  details: DraftQuotationLine[];
+}
+
+interface QuotationPanelProps {
+  onProceedToOrder: (draft: SalesOrderDraft) => void;
+}
+
+export default function QuotationPanel({
+  onProceedToOrder,
+}: QuotationPanelProps) {
   const [quotations, setQuotations] = useState<SalesQuotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,7 +61,6 @@ export default function QuotationPanel() {
     useState<SalesQuotation | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [catalogItems, setCatalogItems] = useState<QuotationCatalogItem[]>([]);
@@ -60,6 +70,17 @@ export default function QuotationPanel() {
   const [newLines, setNewLines] = useState<DraftQuotationLine[]>([
     { IM_ID: 0, quantity: 1, discount: 0 },
   ]);
+
+  const getCustomerName = useCallback(
+    (customerId: number) => {
+      const customer = customers.find(
+        (item) => item.customer_id === customerId
+      );
+
+      return customer?.name || `Customer #${customerId}`;
+    },
+    [customers]
+  );
 
   const fetchQuotations = useCallback(async () => {
     try {
@@ -81,6 +102,48 @@ export default function QuotationPanel() {
   useEffect(() => {
     void fetchQuotations();
   }, [fetchQuotations]);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const data = await customerAPI.getAll();
+        setCustomers(data);
+      } catch (err) {
+        console.error("Failed to load customer names:", err);
+      }
+    };
+
+    void fetchCustomers();
+  }, []);
+
+  const customerMap = useMemo(() => {
+  return new Map(
+    customers.map((customer) => [
+      Number(customer.customer_id),
+      customer.name,
+    ])
+  );
+}, [customers]);
+
+  const selectableItems = useMemo(() => {
+  return catalogItems.filter((item) => {
+    const status = String(item.status ?? "")
+      .trim()
+      .toLowerCase();
+
+    const itemType = String(item.ItemType ?? "")
+      .trim()
+      .toLowerCase();
+
+    const isActive = status === "active" || status === "true";
+    const isFinishedProduct =
+      itemType === "finished" ||
+      itemType === "finished goods" ||
+      itemType === "finished product";
+
+    return isActive && isFinishedProduct;
+  });
+}, [catalogItems]);
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -119,6 +182,7 @@ export default function QuotationPanel() {
       ).padStart(4, "0")}`;
 
       const customerId = String(quotation.customer_id);
+      const customerName = getCustomerName(quotation.customer_id).toLowerCase();
 
       const quotationDate = quotation.quotation_date
         ? quotation.quotation_date.split("T")[0]
@@ -150,7 +214,7 @@ export default function QuotationPanel() {
         quotationId.includes(searchTerm) ||
         formattedQuotationId.includes(searchTerm) ||
         customerId.includes(searchTerm) ||
-        `#${customerId}`.includes(searchTerm) ||
+        customerName.includes(searchTerm) ||
         quotationStatus.includes(searchTerm) ||
         quotationDate.includes(searchTerm) ||
         formattedDate.includes(searchTerm) ||
@@ -163,7 +227,7 @@ export default function QuotationPanel() {
 
       return matchesSearch && matchesStatus;
     });
-  }, [quotations, search, statusFilter]);
+  }, [quotations, search, statusFilter, customers, getCustomerName]);
 
   const totalPages = Math.max(
     1,
@@ -257,7 +321,7 @@ export default function QuotationPanel() {
   };
 
   const subtotal = newLines.reduce((sum, line) => {
-    const item = catalogItems.find(
+    const item = selectableItems.find(
       (candidate) => candidate.IM_ID === line.IM_ID
     );
 
@@ -314,7 +378,7 @@ export default function QuotationPanel() {
     }
   }
 
-  async function handleCreateQuotation() {
+  function handleProceedToSalesOrder() {
     setCreateError("");
 
     if (!newCustomerId) {
@@ -331,16 +395,17 @@ export default function QuotationPanel() {
           line.quantity <= 0 ||
           !Number.isFinite(line.discount) ||
           line.discount < 0 ||
-          line.discount > 100
+          line.discount > 100 ||
+          !selectableItems.some((item) => item.IM_ID === line.IM_ID)
       )
     ) {
       setCreateError(
-        "Select valid items, quantities, and discounts between 0% and 100%."
+        "Select valid Active or Finished items, quantities, and discounts between 0% and 100%."
       );
       return;
     }
 
-    const data: SalesQuotationCreate = {
+    const orderDraft: SalesOrderDraft = {
       customer_id: Number(newCustomerId),
       installment_months: newInstallmentMonths,
       details: newLines.map(({ IM_ID, quantity, discount }) => ({
@@ -350,21 +415,8 @@ export default function QuotationPanel() {
       })),
     };
 
-    setCreateSaving(true);
-
-    try {
-      await quotationAPI.create(data);
-      setShowCreateForm(false);
-      await fetchQuotations();
-    } catch (err) {
-      setCreateError(
-        err instanceof Error
-          ? err.message
-          : "Unable to create quotation."
-      );
-    } finally {
-      setCreateSaving(false);
-    }
+    setShowCreateForm(false);
+    onProceedToOrder(orderDraft);
   }
 
   const draftCount = quotations.filter(
@@ -377,7 +429,6 @@ export default function QuotationPanel() {
 
   return (
     <div className="min-w-0 space-y-5 bg-gray text-slate-800">
-      {/* Summary Cards */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           title="Total Quotations"
@@ -404,9 +455,7 @@ export default function QuotationPanel() {
         />
       </section>
 
-      {/* Quotation Records */}
       <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-        {/* Records Header */}
         <div className="flex flex-col gap-4 border-b border-[#D1D5DB] p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <h2 className="font-bold text-slate-900">
@@ -427,7 +476,6 @@ export default function QuotationPanel() {
               + Create Quotation
             </button>
 
-            {/* Search Bar */}
             <div className="relative min-w-0 flex-1 sm:min-w-[220px] lg:w-[280px] lg:flex-none">
               <svg
                 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -478,7 +526,6 @@ export default function QuotationPanel() {
               )}
             </div>
 
-            {/* Status Filter */}
             <select
               value={statusFilter}
               onChange={(event) =>
@@ -498,7 +545,6 @@ export default function QuotationPanel() {
           </div>
         </div>
 
-        {/* Search Result Count */}
         {(search || statusFilter !== "All") && (
           <div className="flex flex-col gap-2 border-b border-[#D1D5DB] px-4 py-3 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <span>
@@ -516,21 +562,18 @@ export default function QuotationPanel() {
           </div>
         )}
 
-        {/* Status Update Error */}
         {actionError && (
           <div className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-5">
             {actionError}
           </div>
         )}
 
-        {/* Loading */}
         {loading && (
           <div className="p-10 text-center text-sm text-slate-600">
             Loading quotations...
           </div>
         )}
 
-        {/* Loading Error */}
         {!loading && error && (
           <div className="p-8 text-center">
             <p className="text-sm text-rose-600">{error}</p>
@@ -545,10 +588,8 @@ export default function QuotationPanel() {
           </div>
         )}
 
-        {/* Records */}
         {!loading && !error && (
           <>
-            {/* Mobile Quotation Cards */}
             <div className="space-y-3 p-3 md:hidden">
               {paginatedQuotations.map((quotation) => (
                 <div
@@ -577,12 +618,12 @@ export default function QuotationPanel() {
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="min-w-0">
+                    <div className="col-span-2 min-w-0">
                       <p className="text-xs text-slate-500">
-                        Customer ID
+                        Customer Name
                       </p>
-                      <p className="mt-1 font-medium text-slate-800">
-                        #{quotation.customer_id}
+                      <p className="mt-1 break-words font-medium text-slate-800">
+                        {getCustomerName(quotation.customer_id)}
                       </p>
                     </div>
 
@@ -595,11 +636,11 @@ export default function QuotationPanel() {
                       </p>
                     </div>
 
-                    <div className="col-span-2 min-w-0">
+                    <div className="min-w-0">
                       <p className="text-xs text-slate-500">
                         Total Amount
                       </p>
-                      <p className="mt-1 text-lg font-bold text-slate-900">
+                      <p className="mt-1 break-words font-bold text-slate-900">
                         {formatCurrency(
                           Number(quotation.total_amount) || 0
                         )}
@@ -681,7 +722,6 @@ export default function QuotationPanel() {
               )}
             </div>
 
-            {/* Desktop Quotation Table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[950px] text-left text-sm">
                 <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
@@ -691,7 +731,7 @@ export default function QuotationPanel() {
                     </th>
 
                     <th className="px-5 py-4 text-center font-semibold">
-                      Customer ID
+                      Customer Name
                     </th>
 
                     <th className="px-5 py-4 font-semibold">
@@ -723,8 +763,8 @@ export default function QuotationPanel() {
                         {String(quotation.quotation_id).padStart(4, "0")}
                       </td>
 
-                      <td className="px-5 py-4 text-center text-slate-700">
-                        #{quotation.customer_id}
+                      <td className="px-5 py-4 text-center font-medium text-slate-700">
+                        {getCustomerName(quotation.customer_id)}
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4 text-slate-700">
@@ -822,7 +862,6 @@ export default function QuotationPanel() {
               </table>
             </div>
 
-            {/* Pagination */}
             <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <p className="text-center text-sm text-slate-600 sm:text-left">
                 Showing{" "}
@@ -872,28 +911,27 @@ export default function QuotationPanel() {
         )}
       </section>
 
-      {/* Create Quotation Modal */}
       {showCreateForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-0 sm:items-center sm:p-4">
           <div className="my-auto max-h-[95dvh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl sm:p-6">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
-                  Create Sales Quotation
+                  Prepare Sales Order
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600">
-                  The quotation total includes 12% VAT and installment
-                  interest.
+                  Select the customer and items before proceeding to the Sales
+                  Order Form. The estimated total includes 12% VAT and
+                  installment interest.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowCreateForm(false)}
-                disabled={createSaving}
-                className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-50"
-                aria-label="Close quotation form"
+                className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100"
+                aria-label="Close form"
               >
                 ✕
               </button>
@@ -914,7 +952,6 @@ export default function QuotationPanel() {
               </p>
             ) : (
               <div className="space-y-5">
-                {/* Customer */}
                 <div>
                   <label
                     htmlFor="quotation-customer"
@@ -929,7 +966,6 @@ export default function QuotationPanel() {
                     onChange={(event) =>
                       setNewCustomerId(event.target.value)
                     }
-                    disabled={createSaving}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm"
                   >
                     <option value="">Select customer</option>
@@ -947,10 +983,9 @@ export default function QuotationPanel() {
                   </select>
                 </div>
 
-                {/* Quoted Items */}
                 <div>
                   <h3 className="mb-3 text-sm font-semibold text-slate-700">
-                    Quoted Items
+                    Order Items
                   </h3>
 
                   <div className="space-y-3">
@@ -969,7 +1004,7 @@ export default function QuotationPanel() {
 
                           <select
                             id={`quotation-item-${index}`}
-                            aria-label="Quoted item"
+                            aria-label="Order item"
                             value={line.IM_ID || ""}
                             onChange={(event) =>
                               setNewLines((current) =>
@@ -983,20 +1018,16 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           >
                             <option value="">Select item</option>
 
-                            {catalogItems.map((item) => (
-                              <option
-                                key={item.IM_ID}
-                                value={item.IM_ID}
-                              >
-                                {item.SKU} — {item.Item_Name} (
-                                {formatCurrency(Number(item.Price ?? 0))})
-                              </option>
-                            ))}
+                            {selectableItems.map((item) => (
+  <option key={item.IM_ID} value={item.IM_ID}>
+    {item.SKU} — {item.Item_Name} (
+    {formatCurrency(Number(item.Price ?? 0))})
+  </option>
+))}
                           </select>
                         </div>
 
@@ -1027,7 +1058,6 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           />
                         </div>
@@ -1060,7 +1090,6 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           />
                         </div>
@@ -1072,9 +1101,7 @@ export default function QuotationPanel() {
                               current.filter((_, i) => i !== index)
                             )
                           }
-                          disabled={
-                            createSaving || newLines.length === 1
-                          }
+                          disabled={newLines.length === 1}
                           className="rounded-lg border border-rose-200 bg-white px-3 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 sm:border-0 sm:bg-transparent sm:px-2"
                         >
                           Remove item
@@ -1091,14 +1118,12 @@ export default function QuotationPanel() {
                         { IM_ID: 0, quantity: 1, discount: 0 },
                       ])
                     }
-                    disabled={createSaving}
                     className="mt-3 rounded-lg px-1 py-2 text-sm font-semibold text-[#3F7657] transition hover:text-[#244C3A]"
                   >
                     + Add item
                   </button>
                 </div>
 
-                {/* Installment */}
                 <div>
                   <label
                     htmlFor="quotation-installment"
@@ -1115,7 +1140,6 @@ export default function QuotationPanel() {
                         Number(event.target.value) as 1 | 3 | 6 | 12
                       )
                     }
-                    disabled={createSaving}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm"
                   >
                     <option value={1}>1 Month — 0% Interest</option>
@@ -1125,7 +1149,6 @@ export default function QuotationPanel() {
                   </select>
                 </div>
 
-                {/* Quotation Summary */}
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-600">
@@ -1153,7 +1176,7 @@ export default function QuotationPanel() {
                   </div>
 
                   <div className="flex flex-col gap-1 border-t border-slate-200 pt-3 font-bold text-slate-900 sm:flex-row sm:justify-between">
-                    <span>Quotation total</span>
+                    <span>Estimated Order Total</span>
                     <span className="text-lg">
                       {formatCurrency(quotationTotal)}
                     </span>
@@ -1162,35 +1185,28 @@ export default function QuotationPanel() {
               </div>
             )}
 
-            {/* Create Form Footer */}
             <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
                 onClick={() => setShowCreateForm(false)}
-                disabled={createSaving}
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto sm:py-2.5"
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:py-2.5"
               >
                 Cancel
               </button>
 
               <button
                 type="button"
-                onClick={() => void handleCreateQuotation()}
-                disabled={
-                  createLoading ||
-                  createSaving ||
-                  !newCustomerId
-                }
+                onClick={handleProceedToSalesOrder}
+                disabled={createLoading || !newCustomerId}
                 className="w-full rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
               >
-                {createSaving ? "Creating..." : "Create Quotation"}
+                Proceed to Sales Order Form
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Quotation Items Modal */}
       {selectedQuotation && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
@@ -1204,7 +1220,6 @@ export default function QuotationPanel() {
             className="flex max-h-[95dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            {/* Modal Header */}
             <div className="flex items-start justify-between gap-3 border-b border-[#D1D5DB] bg-[#244C3A] px-4 py-4 sm:px-6 sm:py-5">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wider text-green-100">
@@ -1246,16 +1261,14 @@ export default function QuotationPanel() {
               </button>
             </div>
 
-            {/* Modal Content */}
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
-              {/* Quotation Information */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                 <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4">
                   <p className="text-xs font-medium text-slate-500">
-                    Customer ID
+                    Customer Name
                   </p>
-                  <p className="mt-1 font-semibold text-slate-900">
-                    #{selectedQuotation.customer_id}
+                  <p className="mt-1 break-words font-semibold text-slate-900">
+                    {getCustomerName(selectedQuotation.customer_id)}
                   </p>
                 </div>
 
@@ -1282,7 +1295,6 @@ export default function QuotationPanel() {
                 </div>
               </div>
 
-              {/* Quoted Items */}
               <div>
                 <div className="mb-3">
                   <h3 className="font-bold text-slate-900">
@@ -1298,7 +1310,6 @@ export default function QuotationPanel() {
                   </p>
                 </div>
 
-                {/* Mobile Item Cards */}
                 <div className="space-y-3 md:hidden">
                   {(selectedQuotation.details ?? []).map((detail) => (
                     <div
@@ -1365,7 +1376,6 @@ export default function QuotationPanel() {
                   )}
                 </div>
 
-                {/* Desktop Item Table */}
                 <div className="hidden overflow-x-auto rounded-xl border border-[#D1D5DB] md:block">
                   <table className="w-full min-w-[850px] text-sm">
                     <thead className="bg-[#E5E7EB] text-xs uppercase tracking-wide text-slate-600">
@@ -1449,7 +1459,6 @@ export default function QuotationPanel() {
                 </div>
               </div>
 
-              {/* Quotation Total */}
               <div className="flex justify-end">
                 <div className="w-full space-y-3 rounded-xl border border-[#D1D5DB] bg-[#E8F0EA] p-4 text-sm sm:w-96 sm:p-5">
                   <div className="flex justify-between gap-3">
@@ -1500,7 +1509,6 @@ export default function QuotationPanel() {
               </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="border-t border-[#D1D5DB] bg-white px-4 py-3 sm:px-6 sm:py-4">
               <button
                 type="button"
