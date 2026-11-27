@@ -10,12 +10,19 @@ app = FastAPI(title="HRIS & Payroll API")
 # CORS
 # =========================
 
+origins = [
+    o.strip().rstrip("/")
+    for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=origins,
+    allow_origin_regex=r"https://computer-erp-[a-z0-9-]+\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -32,6 +39,7 @@ app.include_router(leave.router)
 app.include_router(payroll.router)
 app.include_router(recruitment.router)
 app.include_router(applicants.router)
+
 
 @app.get("/")
 def root():
