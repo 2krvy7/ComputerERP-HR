@@ -28,6 +28,7 @@ export default function Sidebar() {
   const [hovered, setHovered] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [profile, setProfile] = useState<AuthUser | null>(null);
@@ -192,6 +193,7 @@ export default function Sidebar() {
     } catch (err) {
       console.error("Logout error:", err);
       setLoggingOut(false);
+      setLogoutConfirmOpen(false);
     }
   };
 
@@ -363,7 +365,7 @@ export default function Sidebar() {
 
           <button
             type="button"
-            onClick={handleLogout}
+            onClick={() => setLogoutConfirmOpen(true)}
             disabled={loggingOut}
             title={collapsed ? "Log out" : undefined}
             className={`flex h-11 w-full items-center rounded-xl text-[13px] font-semibold text-[#DCE7EA] transition-colors hover:bg-[#426F77] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -665,6 +667,77 @@ export default function Sidebar() {
                 className="rounded-lg bg-[#315F68] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#426F77] disabled:opacity-50"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {logoutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          onClick={() => {
+            if (!loggingOut) setLogoutConfirmOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-title"
+            aria-describedby="logout-description"
+            className="w-full max-w-[400px] rounded-2xl border border-[#333333] bg-black p-6 text-white shadow-2xl sm:p-7"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10 text-red-500">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  className="h-7 w-7"
+                  aria-hidden="true"
+                >
+                  <path d="M10 17l5-5-5-5" />
+                  <path d="M15 12H3" />
+                  <path d="M12 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" />
+                </svg>
+              </div>
+
+              <h2
+                id="logout-title"
+                className="mt-5 text-xl font-bold tracking-tight text-white"
+              >
+                Confirm Logout
+              </h2>
+
+              <p
+                id="logout-description"
+                className="mt-2 max-w-[290px] text-sm leading-6 text-gray-400"
+              >
+                Are you sure you want to log out of the Sales Module ERP?
+              </p>
+            </div>
+
+            <div className="mt-7 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(false)}
+                disabled={loggingOut}
+                className="flex h-11 items-center justify-center rounded-lg border border-[#444444] bg-[#171717] px-4 text-sm font-semibold text-gray-300 transition-colors hover:bg-[#262626] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                disabled={loggingOut}
+                className="flex h-11 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loggingOut ? "Logging out..." : "Yes, Log Out"}
               </button>
             </div>
           </div>

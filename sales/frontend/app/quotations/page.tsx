@@ -1,14 +1,37 @@
-
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import QuotationPanel from "../../components/sales-processing/QuotationPanel";
 import OrderPanel from "../../components/sales-processing/OrderPanel";
 
 type SalesTab = "orders" | "quotations";
 
+export interface SalesOrderDraft {
+  customer_id: number;
+  installment_months: 1 | 3 | 6 | 12;
+  details: Array<{
+    IM_ID: number;
+    quantity: number;
+    discount: number;
+  }>;
+}
+
 export default function SalesProcessingPage() {
   const [activeTab, setActiveTab] = useState<SalesTab>("orders");
+  const [pendingOrderDraft, setPendingOrderDraft] =
+    useState<SalesOrderDraft | null>(null);
+
+  const handleProceedToOrder = useCallback(
+    (draft: SalesOrderDraft) => {
+      setPendingOrderDraft(draft);
+      setActiveTab("orders");
+    },
+    []
+  );
+
+  const handleDraftHandled = useCallback(() => {
+    setPendingOrderDraft(null);
+  }, []);
 
   const tabClass = (tab: SalesTab) =>
     `rounded-lg px-5 py-3 text-sm font-semibold transition-colors ${
@@ -20,7 +43,6 @@ export default function SalesProcessingPage() {
   return (
     <div className="min-h-full bg-green-50 p-4 text-slate-900 sm:p-6">
       <div className="mx-auto w-full max-w-7xl space-y-5">
-        {/* Tabs */}
         <div
           role="tablist"
           aria-label="Sales processing sections"
@@ -51,7 +73,6 @@ export default function SalesProcessingPage() {
           </button>
         </div>
 
-        {/* Active Panel */}
         {activeTab === "orders" && (
           <section
             id="orders-panel"
@@ -59,7 +80,10 @@ export default function SalesProcessingPage() {
             aria-labelledby="orders-tab"
             className="min-w-0"
           >
-            <OrderPanel />
+            <OrderPanel
+              initialDraft={pendingOrderDraft}
+              onDraftHandled={handleDraftHandled}
+            />
           </section>
         )}
 
@@ -70,7 +94,9 @@ export default function SalesProcessingPage() {
             aria-labelledby="quotations-tab"
             className="min-w-0"
           >
-            <QuotationPanel />
+            <QuotationPanel
+              onProceedToOrder={handleProceedToOrder}
+            />
           </section>
         )}
       </div>

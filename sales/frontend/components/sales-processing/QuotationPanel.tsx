@@ -6,18 +6,10 @@ import { customerAPI, quotationAPI } from "@/lib/api";
 
 import type {
   SalesQuotation,
-  SalesQuotationCreate,
   QuotationCatalogItem,
   QuotationStatus,
 } from "@/types/quotation";
 import type { Customer } from "@/types/customer";
-
-const statuses: Array<"All" | QuotationStatus> = [
-  "All",
-  "Draft",
-  "Accepted",
-  "Rejected",
-];
 
 const PAGE_SIZE = 10;
 
@@ -34,32 +26,53 @@ interface DraftQuotationLine {
   discount: number;
 }
 
-export default function QuotationPanel() {
+interface SalesOrderDraft {
+  customer_id: number;
+  installment_months: 1 | 3 | 6 | 12;
+  details: DraftQuotationLine[];
+}
+
+interface QuotationPanelProps {
+  onProceedToOrder: (draft: SalesOrderDraft) => void;
+}
+
+export default function QuotationPanel({
+  onProceedToOrder,
+}: QuotationPanelProps) {
   const [quotations, setQuotations] = useState<SalesQuotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [actionError, setActionError] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] =
-    useState<"All" | QuotationStatus>("All");
   const [currentPage, setCurrentPage] = useState(1);
-  const [savingQuotationId, setSavingQuotationId] = useState<number | null>(
-    null
-  );
+
   const [selectedQuotation, setSelectedQuotation] =
     useState<SalesQuotation | null>(null);
+
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
-  const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState("");
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [catalogItems, setCatalogItems] = useState<QuotationCatalogItem[]>([]);
+
   const [newCustomerId, setNewCustomerId] = useState("");
   const [newInstallmentMonths, setNewInstallmentMonths] =
     useState<1 | 3 | 6 | 12>(1);
+
   const [newLines, setNewLines] = useState<DraftQuotationLine[]>([
     { IM_ID: 0, quantity: 1, discount: 0 },
   ]);
+
+  const getCustomerName = useCallback(
+    (customerId: number) => {
+      const customer = customers.find(
+        (item) => item.customer_id === customerId
+      );
+
+      return customer?.name || `Customer #${customerId}`;
+    },
+    [customers]
+  );
 
   const fetchQuotations = useCallback(async () => {
     try {
@@ -81,6 +94,35 @@ export default function QuotationPanel() {
   useEffect(() => {
     void fetchQuotations();
   }, [fetchQuotations]);
+
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const data = await customerAPI.getAll();
+        setCustomers(data);
+      } catch (err) {
+        console.error("Failed to load customer names:", err);
+      }
+    };
+
+    void fetchCustomers();
+  }, []);
+
+  const selectableItems = useMemo(() => {
+    return catalogItems.filter((item) => {
+      const status = String(item.status ?? "").trim().toLowerCase();
+      const itemType = String(item.ItemType ?? "").trim().toLowerCase();
+
+      const isActive = status === "active" || status === "true";
+
+      const isFinishedProduct =
+        itemType === "finished" ||
+        itemType === "finished goods" ||
+        itemType === "finished product";
+
+      return isActive && isFinishedProduct;
+    });
+  }, [catalogItems]);
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("en-PH", {
@@ -108,10 +150,15 @@ export default function QuotationPanel() {
     });
   };
 
+  const acceptedQuotations = useMemo(
+    () => quotations.filter((quotation) => quotation.status === "Accepted"),
+    [quotations]
+  );
+
   const filteredQuotations = useMemo(() => {
     const searchTerm = search.trim().toLowerCase();
 
-    return quotations.filter((quotation) => {
+    return acceptedQuotations.filter((quotation) => {
       const quotationId = String(quotation.quotation_id);
 
       const formattedQuotationId = `qt-${String(
@@ -119,6 +166,10 @@ export default function QuotationPanel() {
       ).padStart(4, "0")}`;
 
       const customerId = String(quotation.customer_id);
+
+      const customerName = getCustomerName(
+        quotation.customer_id
+      ).toLowerCase();
 
       const quotationDate = quotation.quotation_date
         ? quotation.quotation_date.split("T")[0]
@@ -136,34 +187,26 @@ export default function QuotationPanel() {
         Number(quotation.total_amount) || 0
       ).toLowerCase();
 
-      const quotationStatus = String(
-        quotation.status ?? ""
-      ).toLowerCase();
-
       const itemNames = (quotation.details ?? [])
         .map((detail) => detail.Item_Name ?? "")
         .join(" ")
         .toLowerCase();
 
-      const matchesSearch =
+      return (
         !searchTerm ||
         quotationId.includes(searchTerm) ||
         formattedQuotationId.includes(searchTerm) ||
         customerId.includes(searchTerm) ||
-        `#${customerId}`.includes(searchTerm) ||
-        quotationStatus.includes(searchTerm) ||
+        customerName.includes(searchTerm) ||
+        "accepted".includes(searchTerm) ||
         quotationDate.includes(searchTerm) ||
         formattedDate.includes(searchTerm) ||
         totalAmount.includes(searchTerm) ||
         formattedAmount.includes(searchTerm) ||
-        itemNames.includes(searchTerm);
-
-      const matchesStatus =
-        statusFilter === "All" || quotation.status === statusFilter;
-
-      return matchesSearch && matchesStatus;
+        itemNames.includes(searchTerm)
+      );
     });
-  }, [quotations, search, statusFilter]);
+  }, [acceptedQuotations, search, getCustomerName]);
 
   const totalPages = Math.max(
     1,
@@ -186,78 +229,32 @@ export default function QuotationPanel() {
     filteredQuotations.length
   );
 
-  const totalAmount = quotations.reduce(
-    (sum, quotation) => sum + (Number(quotation.total_amount) || 0),
+  const totalAcceptedAmount = acceptedQuotations.reduce(
+    (sum, quotation) =>
+      sum + (Number(quotation.total_amount) || 0),
     0
   );
 
-  const getStatusStyle = (status: QuotationStatus) => {
-    const styles: Record<QuotationStatus, string> = {
-      Draft: "bg-slate-100 text-slate-700",
-      Sent: "bg-blue-100 text-blue-700",
-      Accepted: "bg-emerald-100 text-emerald-700",
-      Rejected: "bg-rose-100 text-rose-700",
-      Expired: "bg-amber-100 text-amber-700",
-    };
+  const totalAcceptedItems = acceptedQuotations.reduce(
+    (sum, quotation) => sum + (quotation.details?.length ?? 0),
+    0
+  );
 
-    return styles[status];
-  };
-
-  const handleStatusChange = async (
-    quotationId: number,
-    newStatus: QuotationStatus
-  ) => {
-    try {
-      setSavingQuotationId(quotationId);
-      setActionError("");
-
-      const updatedQuotation = await quotationAPI.updateStatus(
-        quotationId,
-        newStatus
-      );
-
-      setQuotations((previous) =>
-        previous.map((quotation) =>
-          quotation.quotation_id === quotationId
-            ? updatedQuotation
-            : quotation
-        )
-      );
-
-      setSelectedQuotation((previous) =>
-        previous?.quotation_id === quotationId
-          ? updatedQuotation
-          : previous
-      );
-    } catch (err) {
-      setActionError(
-        err instanceof Error
-          ? err.message
-          : "Failed to update quotation status."
-      );
-    } finally {
-      setSavingQuotationId(null);
-    }
-  };
+  const getStatusStyle = (_status: QuotationStatus) =>
+    "bg-emerald-100 text-emerald-700";
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
     setCurrentPage(1);
   };
 
-  const handleFilterChange = (value: "All" | QuotationStatus) => {
-    setStatusFilter(value);
-    setCurrentPage(1);
-  };
-
-  const handleClearFilters = () => {
+  const handleClearSearch = () => {
     setSearch("");
-    setStatusFilter("All");
     setCurrentPage(1);
   };
 
   const subtotal = newLines.reduce((sum, line) => {
-    const item = catalogItems.find(
+    const item = selectableItems.find(
       (candidate) => candidate.IM_ID === line.IM_ID
     );
 
@@ -314,7 +311,7 @@ export default function QuotationPanel() {
     }
   }
 
-  async function handleCreateQuotation() {
+  function handleProceedToSalesOrder() {
     setCreateError("");
 
     if (!newCustomerId) {
@@ -331,90 +328,60 @@ export default function QuotationPanel() {
           line.quantity <= 0 ||
           !Number.isFinite(line.discount) ||
           line.discount < 0 ||
-          line.discount > 100
+          line.discount > 100 ||
+          !selectableItems.some((item) => item.IM_ID === line.IM_ID)
       )
     ) {
       setCreateError(
-        "Select valid items, quantities, and discounts between 0% and 100%."
+        "Select valid Active Finished Goods items, quantities, and discounts between 0% and 100%."
       );
       return;
     }
 
-    const data: SalesQuotationCreate = {
+    onProceedToOrder({
       customer_id: Number(newCustomerId),
       installment_months: newInstallmentMonths,
-      details: newLines.map(({ IM_ID, quantity, discount }) => ({
-        IM_ID,
-        quantity,
-        discount,
+      details: newLines.map((line) => ({
+        IM_ID: line.IM_ID,
+        quantity: line.quantity,
+        discount: line.discount,
       })),
-    };
+    });
 
-    setCreateSaving(true);
-
-    try {
-      await quotationAPI.create(data);
-      setShowCreateForm(false);
-      await fetchQuotations();
-    } catch (err) {
-      setCreateError(
-        err instanceof Error
-          ? err.message
-          : "Unable to create quotation."
-      );
-    } finally {
-      setCreateSaving(false);
-    }
+    setShowCreateForm(false);
   }
-
-  const draftCount = quotations.filter(
-    (quotation) => quotation.status === "Draft"
-  ).length;
-
-  const acceptedCount = quotations.filter(
-    (quotation) => quotation.status === "Accepted"
-  ).length;
 
   return (
     <div className="min-w-0 space-y-5 bg-gray text-slate-800">
-      {/* Summary Cards */}
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          title="Total Quotations"
-          value={quotations.length.toString()}
-          description="All quotation records"
-        />
-
-        <SummaryCard
-          title="Draft Quotations"
-          value={draftCount.toString()}
-          description="Quotations not yet sent"
-        />
-
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
           title="Accepted Quotations"
-          value={acceptedCount.toString()}
-          description="Quotations accepted by customers"
+          value={acceptedQuotations.length.toString()}
+          description="Total accepted quotation records"
         />
 
         <SummaryCard
-          title="Total Quotation Value"
-          value={formatCurrency(totalAmount)}
-          description="Combined value of all quotations"
+          title="Accepted Quotation Items"
+          value={totalAcceptedItems.toString()}
+          description="Items included in accepted quotations"
+        />
+
+        <SummaryCard
+          title="Total Accepted Value"
+          value={formatCurrency(totalAcceptedAmount)}
+          description="Combined value of accepted quotations"
         />
       </section>
 
-      {/* Quotation Records */}
       <section className="overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
-        {/* Records Header */}
         <div className="flex flex-col gap-4 border-b border-[#D1D5DB] p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <h2 className="font-bold text-slate-900">
-              Quotation Records
+              Accepted Quotations
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              View quotation items and update their current status.
+              View accepted quotations and their item details.
             </p>
           </div>
 
@@ -427,7 +394,6 @@ export default function QuotationPanel() {
               + Create Quotation
             </button>
 
-            {/* Search Bar */}
             <div className="relative min-w-0 flex-1 sm:min-w-[220px] lg:w-[280px] lg:flex-none">
               <svg
                 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
@@ -446,7 +412,7 @@ export default function QuotationPanel() {
 
               <input
                 type="search"
-                placeholder="Search quotations..."
+                placeholder="Search accepted quotations..."
                 value={search}
                 onChange={(event) =>
                   handleSearchChange(event.target.value)
@@ -457,7 +423,7 @@ export default function QuotationPanel() {
               {search && (
                 <button
                   type="button"
-                  onClick={() => handleSearchChange("")}
+                  onClick={handleClearSearch}
                   aria-label="Clear search"
                   className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                 >
@@ -477,60 +443,32 @@ export default function QuotationPanel() {
                 </button>
               )}
             </div>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(event) =>
-                handleFilterChange(
-                  event.target.value as "All" | QuotationStatus
-                )
-              }
-              aria-label="Filter quotations by status"
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700 outline-none focus:border-[#3F7657] focus:ring-2 focus:ring-[#E8F0EA] sm:w-40"
-            >
-              {statuses.map((status) => (
-                <option key={status} value={status}>
-                  {status === "All" ? "All Statuses" : status}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 
-        {/* Search Result Count */}
-        {(search || statusFilter !== "All") && (
+        {search && (
           <div className="flex flex-col gap-2 border-b border-[#D1D5DB] px-4 py-3 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <span>
-              Found {filteredQuotations.length} matching quotation
+              Found {filteredQuotations.length} matching accepted quotation
               {filteredQuotations.length !== 1 ? "s" : ""}
             </span>
 
             <button
               type="button"
-              onClick={handleClearFilters}
+              onClick={handleClearSearch}
               className="self-start font-medium text-[#315F46] transition hover:text-[#244C3A] sm:self-auto"
             >
-              Clear filters
+              Clear search
             </button>
           </div>
         )}
 
-        {/* Status Update Error */}
-        {actionError && (
-          <div className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 sm:mx-5">
-            {actionError}
-          </div>
-        )}
-
-        {/* Loading */}
         {loading && (
           <div className="p-10 text-center text-sm text-slate-600">
             Loading quotations...
           </div>
         )}
 
-        {/* Loading Error */}
         {!loading && error && (
           <div className="p-8 text-center">
             <p className="text-sm text-rose-600">{error}</p>
@@ -545,10 +483,8 @@ export default function QuotationPanel() {
           </div>
         )}
 
-        {/* Records */}
         {!loading && !error && (
           <>
-            {/* Mobile Quotation Cards */}
             <div className="space-y-3 p-3 md:hidden">
               {paginatedQuotations.map((quotation) => (
                 <div
@@ -572,17 +508,18 @@ export default function QuotationPanel() {
                         quotation.status
                       )}`}
                     >
-                      {quotation.status}
+                      Accepted
                     </span>
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="min-w-0">
+                    <div className="col-span-2 min-w-0">
                       <p className="text-xs text-slate-500">
-                        Customer ID
+                        Customer Name
                       </p>
-                      <p className="mt-1 font-medium text-slate-800">
-                        #{quotation.customer_id}
+
+                      <p className="mt-1 break-words font-medium text-slate-800">
+                        {getCustomerName(quotation.customer_id)}
                       </p>
                     </div>
 
@@ -590,16 +527,18 @@ export default function QuotationPanel() {
                       <p className="text-xs text-slate-500">
                         Quotation Date
                       </p>
+
                       <p className="mt-1 break-words text-sm font-medium text-slate-800">
                         {formatDate(quotation.quotation_date)}
                       </p>
                     </div>
 
-                    <div className="col-span-2 min-w-0">
+                    <div className="min-w-0">
                       <p className="text-xs text-slate-500">
                         Total Amount
                       </p>
-                      <p className="mt-1 text-lg font-bold text-slate-900">
+
+                      <p className="mt-1 break-words font-bold text-slate-900">
                         {formatCurrency(
                           Number(quotation.total_amount) || 0
                         )}
@@ -608,49 +547,10 @@ export default function QuotationPanel() {
                   </div>
 
                   <div className="mt-4 border-t border-slate-200 pt-3">
-                    <label
-                      htmlFor={`mobile-status-${quotation.quotation_id}`}
-                      className="mb-2 block text-xs font-semibold text-slate-600"
-                    >
-                      Update Status
-                    </label>
-
-                    <select
-                      id={`mobile-status-${quotation.quotation_id}`}
-                      aria-label={`Update status for quotation ${quotation.quotation_id}`}
-                      value={quotation.status}
-                      disabled={
-                        savingQuotationId !== null ||
-                        quotation.status !== "Draft"
-                      }
-                      onChange={(event) =>
-                        void handleStatusChange(
-                          quotation.quotation_id,
-                          event.target.value as QuotationStatus
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700 outline-none focus:border-[#3F7657] disabled:cursor-wait disabled:opacity-60"
-                    >
-                      {(quotation.status === "Draft"
-                        ? ["Draft", "Accepted", "Rejected"] as QuotationStatus[]
-                        : [quotation.status]
-                      ).map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-
-                    {savingQuotationId === quotation.quotation_id && (
-                      <p className="mt-2 text-xs text-[#3F7657]">
-                        Saving status...
-                      </p>
-                    )}
-
                     <button
                       type="button"
                       onClick={() => setSelectedQuotation(quotation)}
-                      className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#3F7657] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46]"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#3F7657] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46]"
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -674,14 +574,13 @@ export default function QuotationPanel() {
 
               {filteredQuotations.length === 0 && (
                 <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-12 text-center text-sm text-slate-600">
-                  {quotations.length === 0
-                    ? "No quotation records available."
-                    : "No quotations match your search or selected filter."}
+                  {acceptedQuotations.length === 0
+                    ? "No accepted quotations available."
+                    : "No accepted quotations match your search."}
                 </div>
               )}
             </div>
 
-            {/* Desktop Quotation Table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[950px] text-left text-sm">
                 <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
@@ -691,7 +590,7 @@ export default function QuotationPanel() {
                     </th>
 
                     <th className="px-5 py-4 text-center font-semibold">
-                      Customer ID
+                      Customer Name
                     </th>
 
                     <th className="px-5 py-4 font-semibold">
@@ -723,8 +622,8 @@ export default function QuotationPanel() {
                         {String(quotation.quotation_id).padStart(4, "0")}
                       </td>
 
-                      <td className="px-5 py-4 text-center text-slate-700">
-                        #{quotation.customer_id}
+                      <td className="px-5 py-4 text-center font-medium text-slate-700">
+                        {getCustomerName(quotation.customer_id)}
                       </td>
 
                       <td className="whitespace-nowrap px-5 py-4 text-slate-700">
@@ -737,47 +636,14 @@ export default function QuotationPanel() {
                         )}
                       </td>
 
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-center gap-2 whitespace-nowrap">
-                          <span
-                            className={`rounded-full px-3 py-1 text-center text-xs font-semibold ${getStatusStyle(
-                              quotation.status
-                            )}`}
-                          >
-                            {quotation.status}
-                          </span>
-
-                          <select
-                            aria-label={`Update status for quotation ${quotation.quotation_id}`}
-                            value={quotation.status}
-                            disabled={
-                              savingQuotationId !== null ||
-                              quotation.status !== "Draft"
-                            }
-                            onChange={(event) =>
-                              void handleStatusChange(
-                                quotation.quotation_id,
-                                event.target.value as QuotationStatus
-                              )
-                            }
-                            className="max-w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-xs text-slate-700 outline-none focus:border-[#3F7657] disabled:cursor-wait disabled:opacity-60"
-                          >
-                            {(quotation.status === "Draft"
-                              ? ["Draft", "Accepted", "Rejected"] as QuotationStatus[]
-                              : [quotation.status]
-                            ).map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {savingQuotationId === quotation.quotation_id && (
-                          <p className="mt-1 text-center text-xs text-[#3F7657]">
-                            Saving...
-                          </p>
-                        )}
+                      <td className="px-5 py-4 text-center">
+                        <span
+                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                            quotation.status
+                          )}`}
+                        >
+                          Accepted
+                        </span>
                       </td>
 
                       <td className="px-5 py-4 text-center">
@@ -812,9 +678,9 @@ export default function QuotationPanel() {
                         colSpan={6}
                         className="px-5 py-12 text-center text-slate-600"
                       >
-                        {quotations.length === 0
-                          ? "No quotation records available."
-                          : "No quotations match your search or selected filter."}
+                        {acceptedQuotations.length === 0
+                          ? "No accepted quotations available."
+                          : "No accepted quotations match your search."}
                       </td>
                     </tr>
                   )}
@@ -822,7 +688,6 @@ export default function QuotationPanel() {
               </table>
             </div>
 
-            {/* Pagination */}
             <div className="flex flex-col gap-3 border-t border-[#D1D5DB] bg-[#E5E7EB] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <p className="text-center text-sm text-slate-600 sm:text-left">
                 Showing{" "}
@@ -837,7 +702,7 @@ export default function QuotationPanel() {
                 <span className="font-semibold text-slate-800">
                   {filteredQuotations.length}
                 </span>{" "}
-                quotations
+                accepted quotations
               </p>
 
               <div className="flex items-center justify-center gap-2">
@@ -872,28 +737,27 @@ export default function QuotationPanel() {
         )}
       </section>
 
-      {/* Create Quotation Modal */}
       {showCreateForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/50 p-0 sm:items-center sm:p-4">
           <div className="my-auto max-h-[95dvh] w-full max-w-3xl overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl sm:max-h-[92vh] sm:rounded-2xl sm:p-6">
             <div className="mb-5 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
-                  Create Sales Quotation
+                  Prepare Sales Order
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-600">
-                  The quotation total includes 12% VAT and installment
-                  interest.
+                  Select the customer and items before proceeding to the Sales
+                  Order Form. The estimated total includes 12% VAT and
+                  installment interest.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowCreateForm(false)}
-                disabled={createSaving}
-                className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-50"
-                aria-label="Close quotation form"
+                className="shrink-0 rounded-lg p-2 text-slate-500 transition hover:bg-slate-100"
+                aria-label="Close form"
               >
                 ✕
               </button>
@@ -914,7 +778,6 @@ export default function QuotationPanel() {
               </p>
             ) : (
               <div className="space-y-5">
-                {/* Customer */}
                 <div>
                   <label
                     htmlFor="quotation-customer"
@@ -929,7 +792,6 @@ export default function QuotationPanel() {
                     onChange={(event) =>
                       setNewCustomerId(event.target.value)
                     }
-                    disabled={createSaving}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm"
                   >
                     <option value="">Select customer</option>
@@ -947,10 +809,9 @@ export default function QuotationPanel() {
                   </select>
                 </div>
 
-                {/* Quoted Items */}
                 <div>
                   <h3 className="mb-3 text-sm font-semibold text-slate-700">
-                    Quoted Items
+                    Order Items
                   </h3>
 
                   <div className="space-y-3">
@@ -969,7 +830,7 @@ export default function QuotationPanel() {
 
                           <select
                             id={`quotation-item-${index}`}
-                            aria-label="Quoted item"
+                            aria-label="Order item"
                             value={line.IM_ID || ""}
                             onChange={(event) =>
                               setNewLines((current) =>
@@ -983,16 +844,12 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           >
                             <option value="">Select item</option>
 
-                            {catalogItems.map((item) => (
-                              <option
-                                key={item.IM_ID}
-                                value={item.IM_ID}
-                              >
+                            {selectableItems.map((item) => (
+                              <option key={item.IM_ID} value={item.IM_ID}>
                                 {item.SKU} — {item.Item_Name} (
                                 {formatCurrency(Number(item.Price ?? 0))})
                               </option>
@@ -1027,7 +884,6 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           />
                         </div>
@@ -1060,7 +916,6 @@ export default function QuotationPanel() {
                                 )
                               )
                             }
-                            disabled={createSaving}
                             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm"
                           />
                         </div>
@@ -1072,9 +927,7 @@ export default function QuotationPanel() {
                               current.filter((_, i) => i !== index)
                             )
                           }
-                          disabled={
-                            createSaving || newLines.length === 1
-                          }
+                          disabled={newLines.length === 1}
                           className="rounded-lg border border-rose-200 bg-white px-3 py-3 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 sm:border-0 sm:bg-transparent sm:px-2"
                         >
                           Remove item
@@ -1091,14 +944,12 @@ export default function QuotationPanel() {
                         { IM_ID: 0, quantity: 1, discount: 0 },
                       ])
                     }
-                    disabled={createSaving}
                     className="mt-3 rounded-lg px-1 py-2 text-sm font-semibold text-[#3F7657] transition hover:text-[#244C3A]"
                   >
                     + Add item
                   </button>
                 </div>
 
-                {/* Installment */}
                 <div>
                   <label
                     htmlFor="quotation-installment"
@@ -1115,7 +966,6 @@ export default function QuotationPanel() {
                         Number(event.target.value) as 1 | 3 | 6 | 12
                       )
                     }
-                    disabled={createSaving}
                     className="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm"
                   >
                     <option value={1}>1 Month — 0% Interest</option>
@@ -1125,12 +975,12 @@ export default function QuotationPanel() {
                   </select>
                 </div>
 
-                {/* Quotation Summary */}
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-600">
                       Items subtotal
                     </span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(subtotal)}
                     </span>
@@ -1138,6 +988,7 @@ export default function QuotationPanel() {
 
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-600">VAT (12%)</span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(taxAmount)}
                     </span>
@@ -1147,13 +998,15 @@ export default function QuotationPanel() {
                     <span className="text-slate-600">
                       Installment interest ({interestRate}%)
                     </span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(interestAmount)}
                     </span>
                   </div>
 
                   <div className="flex flex-col gap-1 border-t border-slate-200 pt-3 font-bold text-slate-900 sm:flex-row sm:justify-between">
-                    <span>Quotation total</span>
+                    <span>Estimated Order Total</span>
+
                     <span className="text-lg">
                       {formatCurrency(quotationTotal)}
                     </span>
@@ -1162,35 +1015,28 @@ export default function QuotationPanel() {
               </div>
             )}
 
-            {/* Create Form Footer */}
             <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 type="button"
                 onClick={() => setShowCreateForm(false)}
-                disabled={createSaving}
-                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto sm:py-2.5"
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto sm:py-2.5"
               >
                 Cancel
               </button>
 
               <button
                 type="button"
-                onClick={() => void handleCreateQuotation()}
-                disabled={
-                  createLoading ||
-                  createSaving ||
-                  !newCustomerId
-                }
+                onClick={handleProceedToSalesOrder}
+                disabled={createLoading || !newCustomerId}
                 className="w-full rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
               >
-                {createSaving ? "Creating..." : "Create Quotation"}
+                Proceed to Sales Order Form
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Quotation Items Modal */}
       {selectedQuotation && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
@@ -1204,7 +1050,6 @@ export default function QuotationPanel() {
             className="flex max-h-[95dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            {/* Modal Header */}
             <div className="flex items-start justify-between gap-3 border-b border-[#D1D5DB] bg-[#244C3A] px-4 py-4 sm:px-6 sm:py-5">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wider text-green-100">
@@ -1246,16 +1091,15 @@ export default function QuotationPanel() {
               </button>
             </div>
 
-            {/* Modal Content */}
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
-              {/* Quotation Information */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                 <div className="rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4">
                   <p className="text-xs font-medium text-slate-500">
-                    Customer ID
+                    Customer Name
                   </p>
-                  <p className="mt-1 font-semibold text-slate-900">
-                    #{selectedQuotation.customer_id}
+
+                  <p className="mt-1 break-words font-semibold text-slate-900">
+                    {getCustomerName(selectedQuotation.customer_id)}
                   </p>
                 </div>
 
@@ -1263,6 +1107,7 @@ export default function QuotationPanel() {
                   <p className="text-xs font-medium text-slate-500">
                     Quotation Date
                   </p>
+
                   <p className="mt-1 font-semibold text-slate-900">
                     {formatDate(selectedQuotation.quotation_date)}
                   </p>
@@ -1272,17 +1117,17 @@ export default function QuotationPanel() {
                   <p className="text-xs font-medium text-slate-500">
                     Status
                   </p>
+
                   <span
                     className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
                       selectedQuotation.status
                     )}`}
                   >
-                    {selectedQuotation.status}
+                    Accepted
                   </span>
                 </div>
               </div>
 
-              {/* Quoted Items */}
               <div>
                 <div className="mb-3">
                   <h3 className="font-bold text-slate-900">
@@ -1298,7 +1143,6 @@ export default function QuotationPanel() {
                   </p>
                 </div>
 
-                {/* Mobile Item Cards */}
                 <div className="space-y-3 md:hidden">
                   {(selectedQuotation.details ?? []).map((detail) => (
                     <div
@@ -1326,6 +1170,7 @@ export default function QuotationPanel() {
                           <p className="text-xs text-slate-500">
                             Unit Price
                           </p>
+
                           <p className="mt-1 text-sm font-medium text-slate-800">
                             {formatCurrency(
                               Number(detail.unit_price) || 0
@@ -1337,6 +1182,7 @@ export default function QuotationPanel() {
                           <p className="text-xs text-slate-500">
                             Discount
                           </p>
+
                           <p className="mt-1 text-sm font-medium text-slate-800">
                             {formatCurrency(
                               Number(detail.discount) || 0
@@ -1348,6 +1194,7 @@ export default function QuotationPanel() {
                           <p className="text-xs text-slate-500">
                             Subtotal
                           </p>
+
                           <p className="mt-1 font-bold text-slate-900">
                             {formatCurrency(
                               Number(detail.line_total) || 0
@@ -1365,7 +1212,6 @@ export default function QuotationPanel() {
                   )}
                 </div>
 
-                {/* Desktop Item Table */}
                 <div className="hidden overflow-x-auto rounded-xl border border-[#D1D5DB] md:block">
                   <table className="w-full min-w-[850px] text-sm">
                     <thead className="bg-[#E5E7EB] text-xs uppercase tracking-wide text-slate-600">
@@ -1449,13 +1295,13 @@ export default function QuotationPanel() {
                 </div>
               </div>
 
-              {/* Quotation Total */}
               <div className="flex justify-end">
                 <div className="w-full space-y-3 rounded-xl border border-[#D1D5DB] bg-[#E8F0EA] p-4 text-sm sm:w-96 sm:p-5">
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-600">
                       Items subtotal
                     </span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(selectedQuotationSubtotal)}
                     </span>
@@ -1466,6 +1312,7 @@ export default function QuotationPanel() {
                       {selectedQuotation.tax_type} (
                       {Number(selectedQuotation.tax_rate).toFixed(2)}%)
                     </span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(
                         Number(selectedQuotation.tax_amount) || 0
@@ -1481,6 +1328,7 @@ export default function QuotationPanel() {
                         : `${selectedQuotation.installment_months} months`}
                       , {Number(selectedQuotation.interest_rate).toFixed(2)}%)
                     </span>
+
                     <span className="text-right font-medium text-slate-800">
                       {formatCurrency(
                         Number(selectedQuotation.interest_amount) || 0
@@ -1490,6 +1338,7 @@ export default function QuotationPanel() {
 
                   <div className="flex flex-col gap-1 border-t border-[#C7D7CA] pt-3 font-bold text-[#244C3A] sm:flex-row sm:justify-between">
                     <span>Total Quotation Amount</span>
+
                     <span className="text-lg">
                       {formatCurrency(
                         Number(selectedQuotation.total_amount) || 0
@@ -1500,7 +1349,6 @@ export default function QuotationPanel() {
               </div>
             </div>
 
-            {/* Modal Footer */}
             <div className="border-t border-[#D1D5DB] bg-white px-4 py-3 sm:px-6 sm:py-4">
               <button
                 type="button"

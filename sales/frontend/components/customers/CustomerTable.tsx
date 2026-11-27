@@ -143,25 +143,13 @@ export default function CustomerTable({
               key={customer.customer_id}
               className="min-w-0 space-y-3 p-3"
             >
-              <div className="flex min-w-0 items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Customer #{customer.customer_id}
-                  </p>
-                  <h3 className="mt-1 break-words text-sm font-bold text-slate-900">
-                    {customer.name}
-                  </h3>
-                </div>
-
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    customer.status
-                      ? "bg-green-100 text-green-700"
-                      : "bg-slate-200 text-slate-600"
-                  }`}
-                >
-                  {customer.status ? "Active" : "Inactive"}
-                </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Customer #{customer.customer_id}
+                </p>
+                <h3 className="mt-1 break-words text-sm font-bold text-slate-900">
+                  {customer.name}
+                </h3>
               </div>
 
               <div className="grid min-w-0 grid-cols-1 gap-2 text-xs sm:grid-cols-2">
@@ -173,7 +161,9 @@ export default function CustomerTable({
                 </div>
 
                 <div className="min-w-0">
-                  <p className="font-medium text-slate-500">Customer Type</p>
+                  <p className="font-medium text-slate-500">
+                    Customer Type
+                  </p>
                   <p className="mt-0.5 text-slate-800">
                     {getCustomerType(customer)}
                   </p>
@@ -245,7 +235,7 @@ export default function CustomerTable({
 
       {/* Tablet and desktop customer table */}
       <div className="hidden min-w-0 overflow-x-auto md:block">
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-[1000px] text-left text-sm">
           <thead className="bg-[#D1D5DB] text-slate-600">
             <tr>
               <th className="px-4 py-4 text-center font-semibold">
@@ -266,10 +256,6 @@ export default function CustomerTable({
 
               <th className="px-4 py-4 text-center font-semibold">
                 Type
-              </th>
-
-              <th className="px-4 py-4 text-center font-semibold">
-                Status
               </th>
 
               <th className="px-4 py-4 text-center font-semibold">
@@ -327,18 +313,6 @@ export default function CustomerTable({
 
                   <td className="px-4 py-4 text-slate-600">
                     {getCustomerType(customer)}
-                  </td>
-
-                  <td className="px-4 py-4 text-center">
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        customer.status
-                          ? "bg-green-100 text-green-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {customer.status ? "Active" : "Inactive"}
-                    </span>
                   </td>
 
                   <td className="max-w-[220px] break-words px-4 py-4 text-slate-600">

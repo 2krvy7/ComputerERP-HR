@@ -1,7 +1,6 @@
+from datetime import date, datetime
 
-from datetime import date
-
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -41,5 +40,15 @@ class Delivery(Base):
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
-        default="Pending",
+        default="pending-sales",
+    )
+
+    received_by: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )

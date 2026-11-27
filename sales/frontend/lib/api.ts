@@ -272,9 +272,11 @@ export const salesOrderAPI = {
 export const deliveryAPI = {
   getAll: () => request<Delivery[]>("/api/deliveries"),
 
-  getById: (id: number) => request<Delivery>(`/api/deliveries/${id}`),
+  getById: (id: number) =>
+    request<Delivery>(`/api/deliveries/${id}`),
 
-  getWarehouses: () => request<Warehouse[]>("/api/deliveries/warehouses"),
+  getWarehouses: () =>
+    request<Warehouse[]>("/api/deliveries/warehouses"),
 
   create: (data: DeliveryCreate) =>
     request<Delivery>("/api/deliveries", {
@@ -291,7 +293,7 @@ export const deliveryAPI = {
       method: "PATCH",
       body: JSON.stringify({
         status,
-        received_by: receivedBy,
+        ...(receivedBy ? { received_by: receivedBy } : {}),
       }),
     }),
 };
@@ -348,6 +350,26 @@ export const salesReturnAPI = {
       body: JSON.stringify(data),
     }),
 };
+
+
+export interface OnHandStock {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  Category: string | null;
+  unit_of_measure: string | null;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  available_stock: number;
+  reorder_level: number;
+  status: "In Stock" | "Low Stock" | "Out of Stock";
+}
+
+export const onHandStockAPI = {
+  getAll: () =>
+    request<OnHandStock[]>("/api/dashboard/on-hand-stocks"),
+};
+
 
 // SALES QUOTATIONS
 

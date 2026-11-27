@@ -4,6 +4,9 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.services.finance import (
+    get_finance_minimum_selling_price,
+)
 
 
 SalesOrderStatus = Literal[
