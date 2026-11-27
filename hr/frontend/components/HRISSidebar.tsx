@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Contact,
@@ -14,16 +14,13 @@ import {
   CircleUser,
   LogOut,
 } from "lucide-react";
+import { logout, getUser } from "@/components/AuthGate";
 
 const COLORS = {
   sidebar: "#365f68",
   light: "#668d98",
   logo: "#c0d9d9",
 };
-
-// Where to go after logout. Set NEXT_PUBLIC_LOGIN_URL in Vercel
-// (the shared login page), or it falls back to "/".
-const LOGIN_URL = (process.env.NEXT_PUBLIC_LOGIN_URL || "/").trim();
 
 const NAV = [
   { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
@@ -39,40 +36,16 @@ type Props = {
   username?: string;
   userId?: string;
   role?: string;
+  // Kept so pages that still pass it don't break; logout always uses AuthGate
   onLogout?: () => void;
 };
-
-// Read the JWT payload safely (no verification, display only)
-function readToken(): Record<string, unknown> | null {
-  try {
-    const token = localStorage.getItem("erp_token");
-    if (!token) return null;
-
-    const part = token.split(".")[1];
-    if (!part) return null;
-
-    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
-    const json = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
-        .join("")
-    );
-
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
 
 export default function HRISSidebar({
   username = "Admin User",
   userId = "HR-001",
   role = "HR Administrator",
-  onLogout,
 }: Props) {
   const pathname = usePathname();
-  const router = useRouter();
   const [hovered, setHovered] = useState<string | null>(null);
   const [hoverUser, setHoverUser] = useState(false);
   const [hoverLogout, setHoverLogout] = useState(false);
@@ -80,45 +53,17 @@ export default function HRISSidebar({
   const [displayName, setDisplayName] = useState(username);
   const [displayRole, setDisplayRole] = useState(role);
 
-  // Show the signed-in user's info from the token
+  // Show the signed-in user's info from the session
   useEffect(() => {
-    const payload = readToken();
-    if (!payload) return;
+    const user = getUser();
+    if (!user) return;
 
-    const name =
-      (payload.name as string) ||
-      (payload.username as string) ||
-      (payload.email as string);
-
-    if (name) setDisplayName(name);
-
-    if (typeof payload.role === "string" && payload.role) {
-      setDisplayRole(payload.role);
-    }
+    if (user.username) setDisplayName(user.username);
+    if (user.role) setDisplayRole(user.role);
   }, []);
 
   const handleLogout = () => {
-    // Full page load so the AuthGate re-checks the (now missing) token
-      if (/^https?:\/\//i.test(LOGIN_URL)) {
-        window.location.replace(LOGIN_URL);
-      } else {
-        window.location.replace("/dashboard");
-      }
-    }
-
-    try {
-      localStorage.removeItem("erp_token");
-      localStorage.removeItem("erp_user");
-      sessionStorage.clear();
-    } catch {
-      // ignore storage errors
-    }
-
-    if (/^https?:\/\//i.test(LOGIN_URL)) {
-      window.location.href = LOGIN_URL;
-    } else {
-      router.replace(LOGIN_URL);
-    }
+    logout();
   };
 
   return (
