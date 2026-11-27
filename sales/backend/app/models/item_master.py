@@ -54,11 +54,6 @@ class ItemMaster(Base):
         nullable=True,
     )
 
-    minimum_selling_price: Mapped[Decimal | None] = mapped_column(
-        Numeric(12, 2),
-        nullable=True,
-    )
-
     markup_percentage: Mapped[Decimal | None] = mapped_column(
         Numeric(7, 2),
         nullable=True,

@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+
 from app.database import DATABASE_URL
 
 # Models
@@ -50,6 +51,7 @@ app = FastAPI(
 
 
 # CORS configuration
+
 DEFAULT_ALLOWED_ORIGINS = [
     "https://sales-kenethvivas22.vercel.app",
     "https://sales-pink-iota.vercel.app",
@@ -69,6 +71,17 @@ ALLOWED_ORIGINS = list(
         if origin.strip()
     )
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+    max_age=600,
+)
+
 
 app.add_middleware(
     CORSMiddleware,
