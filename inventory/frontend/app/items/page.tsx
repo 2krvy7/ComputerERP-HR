@@ -261,13 +261,32 @@ export default function ItemsPage() {
 
       {/* Add / Edit Form */}
       {showForm && (
-        <form
-          onSubmit={handleSaveItem}
-          className="mt-6 rounded-2xl border border-[#DCE7EA] bg-white p-6"
-        >
-          <h3 className="mb-5 text-lg font-bold text-[#1F3338]">
-            {editingId !== null ? "Edit Item" : "Add New Item"}
-          </h3>
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#DCE7EA] bg-white shadow-2xl">
+      <form
+        onSubmit={handleSaveItem}
+        className="p-6 sm:p-8"
+      >
+        {/* Modal Header */}
+        <div className="mb-6 flex items-center justify-between border-b border-[#DCE7EA] pb-4">
+          <div>
+            <h3 className="text-xl font-bold text-[#1F3338]">
+              {editingId !== null ? "Edit Item" : "Add New Item"}
+            </h3>
+            <p className="mt-1 text-sm text-[#587176]">
+              Enter the item information below.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="rounded-lg p-2 text-[#587176] transition-colors hover:bg-[#F2F7F8] hover:text-[#1F3338]"
+            aria-label="Close form"
+          >
+            ✕
+          </button>
+        </div>
 
           {formError && (
             <p className="mb-4 text-sm text-red-600">
@@ -482,7 +501,9 @@ export default function ItemsPage() {
             </button>
           </div>
         </form>
-      )}
+    </div>
+  </div>
+)}
 
       {/* Search */}
       <div className="mt-6">
