@@ -19,7 +19,7 @@ const COLORS = {
 };
 
 const REDIRECT_TO = "/dashboard";
-const DURATION = 5000;
+const DURATION = 2000;
 
 export default function Home() {
   const router = useRouter();
