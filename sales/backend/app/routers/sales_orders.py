@@ -10,6 +10,10 @@ from sqlalchemy import String, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.services.finance import (
+    get_finance_minimum_selling_price,
+)
+
 from app.database import get_db
 from app.core.roles import (
     ADMIN_ROLE_ID,
@@ -419,6 +423,7 @@ def get_order_items(
 
 
 
+
 @router.get(
     "/finished-goods",
     dependencies=[Depends(require_admin)],
@@ -430,7 +435,12 @@ def get_finished_goods(
     statement = select(ItemMaster).where(
         func.lower(func.trim(ItemMaster.ItemType)).in_(
             list(FINISHED_GOODS_TYPES)
-        )
+        ),
+        func.lower(
+            func.trim(
+                func.cast(ItemMaster.status, String)
+            )
+        ).in_(["active", "true"]),
     )
 
     if search and search.strip():
