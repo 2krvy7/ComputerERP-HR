@@ -98,10 +98,11 @@ export default function HRISSidebar({
   }, []);
 
   const handleLogout = () => {
-    // Custom logout from the page, if one was passed
-    if (onLogout) {
-      onLogout();
-      return;
+        if (/^https?:\/\//i.test(LOGIN_URL)) {
+          window.location.href = LOGIN_URL;
+        } else {
+          router.replace(LOGIN_URL);
+        }
     }
 
     try {
