@@ -1,4 +1,3 @@
-
 from datetime import date, datetime
 from typing import Literal
 
@@ -52,9 +51,6 @@ class DeliveryCreate(BaseModel):
 
 
 class DeliveryWarehouseAllocationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    allocation_id: int
     WH_ID: int
     quantity: int
 
@@ -70,7 +66,9 @@ class DeliveryResponse(BaseModel):
     status: DeliveryStatus
     received_by: str | None = None
     received_at: datetime | None = None
-    warehouse_allocations: list[DeliveryWarehouseAllocationResponse] = []
+    warehouse_allocations: list[
+        DeliveryWarehouseAllocationResponse
+    ] = Field(default_factory=list)
 
     @field_validator("status", mode="before")
     @classmethod

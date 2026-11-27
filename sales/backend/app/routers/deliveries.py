@@ -1,4 +1,3 @@
-
 from collections import defaultdict
 from datetime import datetime
 import re
@@ -48,7 +47,8 @@ SALES_DEPT_ID = "SL"
 
 PENDING_SALES = "pending-sales"
 RELEASED_INVENTORY = "released-inventory"
-DELIVERED_SALES = "delivered-sales"
+RECEIVED_SALES = "received-sales"
+RECEIVED_CUSTOMER = "received-customer"
 
 
 def normalize_status(value: str) -> str:
@@ -66,10 +66,12 @@ def normalize_status(value: str) -> str:
         "released by inventory": RELEASED_INVENTORY,
         "released to sales": RELEASED_INVENTORY,
         "released-inventory": RELEASED_INVENTORY,
-        "delivered": DELIVERED_SALES,
-        "delivered-sales": DELIVERED_SALES,
-        "cancelled": PENDING_SALES,
-        "canceled": PENDING_SALES,
+        "received by sales": RECEIVED_SALES,
+        "received-sales": RECEIVED_SALES,
+        "delivered": RECEIVED_CUSTOMER,
+        "delivered-sales": RECEIVED_CUSTOMER,
+        "received by customer": RECEIVED_CUSTOMER,
+        "received-customer": RECEIVED_CUSTOMER,
     }
 
     return legacy_statuses.get(normalized, value.strip())
@@ -127,10 +129,7 @@ def require_sales_or_admin(user: User):
         )
 
 
-def authorize_status_update(
-    user: User,
-    target_status: str,
-):
+def authorize_status_update(user: User, target_status: str):
     if is_superadmin(user):
         return
 
@@ -141,7 +140,7 @@ def authorize_status_update(
         return
 
     if (
-        target_status == DELIVERED_SALES
+        target_status in (RECEIVED_SALES, RECEIVED_CUSTOMER)
         and is_sales_user(user)
     ):
         return
@@ -170,18 +169,62 @@ def get_active_reservations(detail) -> list[dict]:
     ]
 
 
+def build_delivery_response(db: Session, delivery: Delivery) -> dict:
+    order = db.scalar(
+        select(SalesOrder)
+        .options(selectinload(SalesOrder.details))
+        .where(SalesOrder.order_id == delivery.order_id)
+    )
+
+    warehouse_totals = defaultdict(int)
+
+    if order:
+        for detail in order.details:
+            for allocation in (detail.stock_allocations or []):
+                warehouse_id = allocation.get("warehouse_id")
+                quantity = allocation.get("quantity", 0)
+
+                if warehouse_id is None:
+                    continue
+
+                try:
+                    warehouse_id = int(warehouse_id)
+                    quantity = int(quantity)
+                except (TypeError, ValueError):
+                    continue
+
+                if warehouse_id > 0 and quantity > 0:
+                    warehouse_totals[warehouse_id] += quantity
+
+    warehouse_allocations = [
+        {
+            "WH_ID": warehouse_id,
+            "quantity": quantity,
+        }
+        for warehouse_id, quantity in sorted(
+            warehouse_totals.items()
+        )
+    ]
+
+    return {
+        "delivery_id": delivery.delivery_id,
+        "order_id": delivery.order_id,
+        "WH_ID": delivery.WH_ID,
+        "delivery_date": delivery.delivery_date,
+        "delivery_address": delivery.delivery_address or "",
+        "status": normalize_status(delivery.status),
+        "received_by": delivery.received_by,
+        "received_at": delivery.received_at,
+        "warehouse_allocations": warehouse_allocations,
+    }
+
+
 def deduct_delivery_stock(
     db: Session,
     delivery: Delivery,
     order: SalesOrder,
     logged_by: str,
 ):
-    """
-    Deduct only the quantities reserved for this order.
-    Reservations are deducted from their original stock rows,
-    which may belong to more than one Finished Goods warehouse.
-    """
-
     reference_no = f"DEL-{delivery.delivery_id}"
 
     existing_ledger = db.scalar(
@@ -221,7 +264,6 @@ def deduct_delivery_stock(
 
     all_allocations = []
     stock_ids = set()
-    total_deducted_by_item = defaultdict(int)
     deducted_by_item_and_warehouse = defaultdict(int)
 
     for detail in order.details:
@@ -284,7 +326,6 @@ def deduct_delivery_stock(
             stock_ids.add(stock_id)
 
             all_allocations.append({
-                "detail": detail,
                 "item_id": detail.IM_ID,
                 "stock_id": stock_id,
                 "warehouse_id": warehouse_id,
@@ -381,8 +422,6 @@ def deduct_delivery_stock(
             int(stock.quantity_reserved or 0) - quantity
         )
 
-        total_deducted_by_item[allocation["item_id"]] += quantity
-
         deducted_by_item_and_warehouse[
             (allocation["item_id"], allocation["warehouse_id"])
         ] += quantity
@@ -422,14 +461,6 @@ def deduct_delivery_stock(
         )
 
 
-def load_delivery(db: Session, delivery_id: int):
-    return db.scalar(
-        select(Delivery).where(
-            Delivery.delivery_id == delivery_id
-        )
-    )
-
-
 @router.get(
     "",
     response_model=list[DeliveryResponse],
@@ -438,11 +469,16 @@ def get_deliveries(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    statement = select(Delivery).order_by(
-        Delivery.delivery_id.desc()
-    )
+    deliveries = db.scalars(
+        select(Delivery).order_by(
+            Delivery.delivery_id.desc()
+        )
+    ).all()
 
-    return db.scalars(statement).all()
+    return [
+        build_delivery_response(db, delivery)
+        for delivery in deliveries
+    ]
 
 
 @router.get("/warehouses")
@@ -484,7 +520,7 @@ def get_delivery(
             detail="Delivery record not found.",
         )
 
-    return delivery
+    return build_delivery_response(db, delivery)
 
 
 @router.post(
@@ -524,41 +560,6 @@ def create_delivery(
                 ),
             )
 
-        for detail in order.details:
-            reserved = sum(
-                int(allocation.get("quantity", 0))
-                for allocation in get_active_reservations(detail)
-            )
-
-            if reserved != int(detail.quantity):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Order detail for item {detail.IM_ID} "
-                        "is not fully reserved. Inventory must "
-                        "reserve all required quantities before delivery."
-                    ),
-                )
-
-        warehouse = db.get(
-            Warehouse,
-            delivery_data.WH_ID,
-        )
-
-        if warehouse is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Warehouse not found.",
-            )
-
-        if not is_finished_goods_warehouse(
-            warehouse.Warehouse_Name
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Deliveries must use a Finished Goods Warehouse.",
-            )
-
         existing_delivery = db.scalar(
             select(Delivery).where(
                 Delivery.order_id == delivery_data.order_id
@@ -566,16 +567,69 @@ def create_delivery(
         )
 
         if existing_delivery is not None:
+            return build_delivery_response(db, existing_delivery)
+
+        warehouse_totals = defaultdict(int)
+
+        for detail in order.details:
+            for allocation in get_active_reservations(detail):
+                warehouse_id = int(
+                    allocation.get("warehouse_id", 0)
+                )
+                quantity = int(
+                    allocation.get("quantity", 0)
+                )
+
+                if warehouse_id > 0 and quantity > 0:
+                    warehouse_totals[warehouse_id] += quantity
+
+        if not warehouse_totals:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A delivery record already exists for this sales order.",
+                detail=(
+                    "No active warehouse allocations were found "
+                    "for this order. Inventory must reserve the "
+                    "required stock first."
+                ),
             )
 
+        warehouse_ids = list(warehouse_totals.keys())
+
+        warehouses = db.scalars(
+            select(Warehouse).where(
+                Warehouse.WH_ID.in_(warehouse_ids)
+            )
+        ).all()
+
+        warehouses_by_id = {
+            warehouse.WH_ID: warehouse
+            for warehouse in warehouses
+        }
+
+        for warehouse_id in warehouse_ids:
+            warehouse = warehouses_by_id.get(warehouse_id)
+
+            if (
+                warehouse is None
+                or not is_finished_goods_warehouse(
+                    warehouse.Warehouse_Name
+                )
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "An order allocation does not belong to "
+                        "a valid Finished Goods warehouse."
+                    ),
+                )
+
+        first_warehouse_id = warehouse_ids[0]
+
         delivery = Delivery(
-            order_id=delivery_data.order_id,
-            WH_ID=delivery_data.WH_ID,
+            order_id=order.order_id,
+            WH_ID=first_warehouse_id,
             delivery_date=delivery_data.delivery_date,
-            delivery_address=delivery_data.delivery_address,
+            delivery_address=delivery_data.delivery_address or "",
             status=PENDING_SALES,
         )
 
@@ -583,7 +637,7 @@ def create_delivery(
         db.commit()
         db.refresh(delivery)
 
-        return delivery
+        return build_delivery_response(db, delivery)
 
     except HTTPException:
         db.rollback()
@@ -638,12 +692,13 @@ def update_delivery_status(
         )
 
         if current_status == target_status:
-            return delivery
+            return build_delivery_response(db, delivery)
 
         allowed_transitions = {
             PENDING_SALES: [RELEASED_INVENTORY],
-            RELEASED_INVENTORY: [DELIVERED_SALES],
-            DELIVERED_SALES: [],
+            RELEASED_INVENTORY: [RECEIVED_SALES],
+            RECEIVED_SALES: [RECEIVED_CUSTOMER],
+            RECEIVED_CUSTOMER: [],
         }
 
         if target_status not in allowed_transitions.get(
@@ -692,7 +747,17 @@ def update_delivery_status(
 
             order.status = "Released to Sales"
 
-        elif target_status == DELIVERED_SALES:
+        elif target_status == RECEIVED_SALES:
+            if order.status != "Released to Sales":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "The Sales Order must be released by Inventory "
+                        "before Sales can receive it."
+                    ),
+                )
+
+        elif target_status == RECEIVED_CUSTOMER:
             if (
                 not status_data.received_by
                 or not status_data.received_by.strip()
@@ -700,28 +765,20 @@ def update_delivery_status(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
-                        "Customer name is required to confirm "
-                        "delivery acceptance."
+                        "Recipient name is required to confirm "
+                        "customer receipt."
                     ),
                 )
 
-            if order.status != "Released to Sales":
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        "The Sales Order must be Released to Sales "
-                        "before Sales can confirm customer receipt."
-                    ),
-                )
-
-            order.status = "Completed"
+            delivery.received_by = status_data.received_by.strip()
+            delivery.received_at = datetime.now()
 
         delivery.status = target_status
 
         db.commit()
         db.refresh(delivery)
 
-        return delivery
+        return build_delivery_response(db, delivery)
 
     except HTTPException:
         db.rollback()

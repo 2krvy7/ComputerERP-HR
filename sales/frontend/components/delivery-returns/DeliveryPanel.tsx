@@ -15,8 +15,6 @@ import type { Customer } from "../../types/customer";
 import type { Delivery, DeliveryStatus, Warehouse } from "../../types/delivery";
 import type { SalesOrder } from "../../types/order";
 
-import { isAdminRole } from "../../lib/roles";
-
 const PENDING_SALES: DeliveryStatus = "pending-sales";
 const RELEASED_INVENTORY: DeliveryStatus = "released-inventory";
 const RECEIVED_SALES: DeliveryStatus = "received-sales";
@@ -107,9 +105,6 @@ const formatDateTime = (date: string | null) => {
     timeStyle: "short",
   });
 };
-
-const isAdmin = (user: AuthUser | null) =>
-  isAdminRole(user?.role_id);
 
 function getAvailableTransitions(
   status: DeliveryStatus,
@@ -821,26 +816,9 @@ export default function DeliveryPanel() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-labelledby="receipt-modal-title"
+            aria-label="Confirm customer receipt"
             className="my-auto max-h-[95dvh] w-full overflow-y-auto rounded-t-2xl border border-[#D1D5DB] bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-xl sm:p-6"
           >
-            <div className="mb-5">
-              <h2
-                id="receipt-modal-title"
-                className="text-lg font-bold text-slate-900"
-              >
-                Confirm Customer Receipt
-              </h2>
-
-              <p className="mt-2 text-sm text-slate-600">
-                Delivery: DEL-{String(deliveryToConfirm.delivery_id).padStart(4, "0")}
-              </p>
-
-              <p className="mt-1 text-sm text-slate-600">
-                Order: SO-{String(deliveryToConfirm.order_id).padStart(4, "0")}
-              </p>
-            </div>
-
             <div>
               <label
                 htmlFor="received-by"
