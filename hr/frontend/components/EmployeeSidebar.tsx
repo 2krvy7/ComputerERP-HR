@@ -12,7 +12,9 @@ import {
   LogOut,
 } from "lucide-react";
 
-const API = "http://127.0.0.1:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 const COLORS = {
   sidebar: "#365f68",
@@ -99,7 +101,7 @@ export default function EmployeeSidebar({
         }
 
         const response = await fetch(
-          `${API}/employees/`
+          `${API_URL}/employees/`
         );
 
         if (!response.ok) {
