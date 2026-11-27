@@ -98,11 +98,12 @@ export default function HRISSidebar({
   }, []);
 
   const handleLogout = () => {
-        if (/^https?:\/\//i.test(LOGIN_URL)) {
-          window.location.href = LOGIN_URL;
-        } else {
-          router.replace(LOGIN_URL);
-        }
+    // Full page load so the AuthGate re-checks the (now missing) token
+      if (/^https?:\/\//i.test(LOGIN_URL)) {
+        window.location.replace(LOGIN_URL);
+      } else {
+        window.location.replace("/dashboard");
+      }
     }
 
     try {
