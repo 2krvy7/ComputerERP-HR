@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 const LOCAL = "http://127.0.0.1:8000";
-const API = process.env.NEXT_PUBLIC_API_URL ?? LOCAL;
+const API = (process.env.NEXT_PUBLIC_API_URL ?? LOCAL).replace(/\/+$/, "");
 
 const LOGIN_URL = "https://computer-erp-login.vercel.app";
 
 const DEPT = "HR";
 const KEY = "erp_token";
+
+// Pages every logged-in employee may open, whatever their department
+const EMPLOYEE_PREFIX = "/employee-";
 
 export type SessionUser = {
   sub: string;
@@ -81,6 +84,7 @@ export function getUser(): SessionUser | null {
 export function logout() {
   try {
     localStorage.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
   } catch {}
 
   window.location.href = LOGIN_URL;
@@ -108,7 +112,7 @@ if (typeof window !== "undefined" && !patched) {
 
     // Convert local backend URL to deployed backend URL
     if (url.startsWith(LOCAL)) {
-      url = API + url.slice(LOCAL.length);
+      url = API + "/" + url.slice(LOCAL.length).replace(/^\/+/, "");
 
       const headers = new Headers(init.headers);
 
@@ -143,7 +147,7 @@ export default function AuthGate({
   );
 
   useEffect(() => {
-    // Login service sends the JWT token
+    // Login service (or another department) sends the JWT token
     // through the URL fragment.
     const match = window.location.hash.match(/token=([^&]+)/);
 
@@ -168,11 +172,15 @@ export default function AuthGate({
       return;
     }
 
-    // SuperAdmin can access HR
-    // HR department users can access HR
+    const isEmployeePage =
+      window.location.pathname.startsWith(EMPLOYEE_PREFIX);
+
+    // SuperAdmin and HR department can open everything.
+    // Any logged-in employee can open the employee pages.
     if (
       user.role === "SuperAdmin" ||
-      user.department === DEPT
+      user.department === DEPT ||
+      isEmployeePage
     ) {
       setState("ok");
     } else {
