@@ -7,6 +7,28 @@ import type { FinishedGoodItem } from "../../types/order";
 
 const PAGE_SIZE = 10;
 
+type SellingPriceItem = FinishedGoodItem & {
+  ItemType?: string | null;
+  status?: string | null;
+};
+
+const isEligibleItem = (item: SellingPriceItem) => {
+  const status = String(item.status ?? "").trim().toLowerCase();
+  const itemType = String(item.ItemType ?? "").trim().toLowerCase();
+
+  const isActive = status === "active";
+
+  const isFinishedGood = [
+    "finished",
+    "finished good",
+    "finished goods",
+    "finished product",
+    "finished products",
+  ].includes(itemType);
+
+  return isActive && isFinishedGood;
+};
+
 const formatCurrency = (value: string | number | null | undefined) => {
   if (value === null || value === undefined || value === "") {
     return "—";
@@ -21,7 +43,7 @@ const formatCurrency = (value: string | number | null | undefined) => {
 };
 
 export default function SellingPricesPage() {
-  const [items, setItems] = useState<FinishedGoodItem[]>([]);
+  const [items, setItems] = useState<SellingPriceItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,7 +52,7 @@ export default function SellingPricesPage() {
   const [page, setPage] = useState(1);
 
   const [selectedItem, setSelectedItem] =
-    useState<FinishedGoodItem | null>(null);
+    useState<SellingPriceItem | null>(null);
   const [markupInput, setMarkupInput] = useState("");
 
   const loadItems = useCallback(async (searchTerm = "") => {
@@ -39,7 +61,12 @@ export default function SellingPricesPage() {
       setError("");
 
       const data = await salesOrderAPI.getFinishedGoods(searchTerm);
-      setItems(data);
+
+      const eligibleItems = (data as SellingPriceItem[]).filter(
+        isEligibleItem
+      );
+
+      setItems(eligibleItems);
     } catch (err) {
       setError(
         err instanceof Error
@@ -83,7 +110,7 @@ export default function SellingPricesPage() {
     return items.slice(start, start + PAGE_SIZE);
   }, [items, safePage]);
 
-  const openEditor = (item: FinishedGoodItem) => {
+  const openEditor = (item: SellingPriceItem) => {
     setSelectedItem(item);
     setMarkupInput(
       item.markup_percentage === null ||
@@ -165,15 +192,14 @@ export default function SellingPricesPage() {
 
   return (
     <div className="min-w-0 space-y-5 bg-white text-[#374151]">
-      {/* Description */}
       <div>
         <p className="text-sm leading-relaxed text-gray-500">
-          Set selling prices for finished goods using the production
-          cost provided by Finance and your chosen markup percentage.
+          Set selling prices for active finished goods using the
+          production cost provided by Finance and your chosen markup
+          percentage.
         </p>
       </div>
 
-      {/* Success Message */}
       {success && (
         <div
           role="status"
@@ -192,7 +218,6 @@ export default function SellingPricesPage() {
         </div>
       )}
 
-      {/* Error Message */}
       {error && !selectedItem && (
         <div
           role="alert"
@@ -202,9 +227,7 @@ export default function SellingPricesPage() {
         </div>
       )}
 
-      {/* Finished Goods Section */}
       <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
-        {/* Section Header and Search */}
         <div className="mb-5 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-[#374151]">
@@ -212,7 +235,7 @@ export default function SellingPricesPage() {
             </h2>
 
             <p className="mt-1 text-sm text-gray-600">
-              Only finished goods are displayed in this list.
+              Only active finished goods are displayed in this list.
             </p>
           </div>
 
@@ -252,14 +275,12 @@ export default function SellingPricesPage() {
           </div>
         </div>
 
-        {/* Loading */}
         {loading && (
           <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-12 text-center text-sm text-gray-500">
             Loading finished goods...
           </div>
         )}
 
-        {/* Load Error */}
         {!loading && error && !selectedItem && (
           <div className="rounded-lg border border-red-200 bg-white px-4 py-10 text-center">
             <p className="text-sm text-red-600">{error}</p>
@@ -274,10 +295,8 @@ export default function SellingPricesPage() {
           </div>
         )}
 
-        {/* Results */}
         {!loading && !error && (
           <>
-            {/* Mobile Finished Goods Cards */}
             <div className="space-y-3 md:hidden">
               {paginatedItems.map((item) => (
                 <div
@@ -318,12 +337,11 @@ export default function SellingPricesPage() {
 
               {paginatedItems.length === 0 && (
                 <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-12 text-center text-sm text-gray-500">
-                  No finished goods found.
+                  No active finished goods found.
                 </div>
               )}
             </div>
 
-            {/* Desktop Finished Goods Table */}
             <div className="hidden overflow-x-auto rounded-lg border border-[#D1D5DB] bg-white md:block">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead className="bg-[#244C3A] text-white">
@@ -374,7 +392,7 @@ export default function SellingPricesPage() {
                         colSpan={3}
                         className="px-4 py-10 text-center text-gray-500"
                       >
-                        No finished goods found.
+                        No active finished goods found.
                       </td>
                     </tr>
                   )}
@@ -382,7 +400,6 @@ export default function SellingPricesPage() {
               </table>
             </div>
 
-            {/* Pagination */}
             <div className="mt-4 flex flex-col gap-3 border-t border-[#D1D5DB] pt-4 text-sm sm:flex-row sm:items-center sm:justify-between">
               <p className="text-center text-gray-600 sm:text-left">
                 Showing{" "}
@@ -434,7 +451,6 @@ export default function SellingPricesPage() {
         )}
       </section>
 
-      {/* Set Selling Price Modal */}
       {selectedItem && (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 p-0 sm:items-center sm:p-4"
@@ -448,7 +464,6 @@ export default function SellingPricesPage() {
             className="my-auto max-h-[95dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:max-h-[90vh] sm:rounded-xl"
             onClick={(event) => event.stopPropagation()}
           >
-            {/* Modal Header */}
             <div className="flex items-start justify-between gap-3 rounded-t-xl bg-[#244C3A] px-4 py-4 sm:px-6">
               <div className="min-w-0">
                 <h2
@@ -474,7 +489,6 @@ export default function SellingPricesPage() {
               </button>
             </div>
 
-            {/* Modal Content */}
             <div className="space-y-5 p-4 sm:p-6">
               {error && (
                 <div
@@ -485,7 +499,6 @@ export default function SellingPricesPage() {
                 </div>
               )}
 
-              {/* Production Cost */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Production Cost
@@ -500,7 +513,6 @@ export default function SellingPricesPage() {
                 </p>
               </div>
 
-              {/* Markup Percentage */}
               <div>
                 <label
                   htmlFor="markup"
@@ -524,7 +536,6 @@ export default function SellingPricesPage() {
                 />
               </div>
 
-              {/* Calculated Selling Price */}
               <div className="rounded-lg border border-[#C8D8CC] bg-[#E8F0EA] p-4">
                 <p className="text-sm font-medium text-[#315F46]">
                   Calculated Selling Price
@@ -543,7 +554,6 @@ export default function SellingPricesPage() {
                 </p>
               </div>
 
-              {/* Modal Actions */}
               <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end sm:gap-3">
                 <button
                   type="button"
