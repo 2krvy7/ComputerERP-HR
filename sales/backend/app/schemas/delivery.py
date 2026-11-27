@@ -1,5 +1,5 @@
 
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import (
@@ -13,7 +13,8 @@ from pydantic import (
 DeliveryStatus = Literal[
     "pending-sales",
     "released-inventory",
-    "delivered-sales",
+    "received-sales",
+    "received-customer",
 ]
 
 
@@ -32,8 +33,12 @@ def normalize_delivery_status(value):
         "released by inventory": "released-inventory",
         "released to sales": "released-inventory",
         "released-inventory": "released-inventory",
-        "delivered": "delivered-sales",
-        "delivered-sales": "delivered-sales",
+        "received by sales": "received-sales",
+        "received-sales": "received-sales",
+        "delivered": "received-customer",
+        "delivered-sales": "received-customer",
+        "received by customer": "received-customer",
+        "received-customer": "received-customer",
     }
 
     return status_mapping.get(normalized, value)
@@ -41,9 +46,17 @@ def normalize_delivery_status(value):
 
 class DeliveryCreate(BaseModel):
     order_id: int = Field(gt=0)
-    WH_ID: int = Field(gt=0)
+    WH_ID: int | None = Field(default=None, gt=0)
     delivery_date: date | None = None
     delivery_address: str = ""
+
+
+class DeliveryWarehouseAllocationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    allocation_id: int
+    WH_ID: int
+    quantity: int
 
 
 class DeliveryResponse(BaseModel):
@@ -55,6 +68,9 @@ class DeliveryResponse(BaseModel):
     delivery_date: date | None
     delivery_address: str
     status: DeliveryStatus
+    received_by: str | None = None
+    received_at: datetime | None = None
+    warehouse_allocations: list[DeliveryWarehouseAllocationResponse] = []
 
     @field_validator("status", mode="before")
     @classmethod
@@ -69,4 +85,4 @@ class DeliveryResponse(BaseModel):
 
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
-    received_by: str | None = None
+    received_by: str | None = Field(default=None, max_length=150)

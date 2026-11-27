@@ -1,8 +1,8 @@
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -41,5 +41,52 @@ class Delivery(Base):
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
-        default="Pending",
+        default="pending-sales",
+    )
+
+    received_by: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
+    )
+
+    received_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    warehouse_allocations: Mapped[list["DeliveryWarehouseAllocation"]] = relationship(
+        back_populates="delivery",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
+class DeliveryWarehouseAllocation(Base):
+    __tablename__ = "delivery_warehouse_allocation"
+
+    allocation_id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    delivery_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("delivery.delivery_id"),
+        nullable=False,
+    )
+
+    WH_ID: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("WAREHOUSE.WH_ID"),
+        nullable=False,
+    )
+
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    delivery: Mapped["Delivery"] = relationship(
+        back_populates="warehouse_allocations",
     )
