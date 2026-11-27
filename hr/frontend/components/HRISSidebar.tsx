@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Contact,
@@ -21,42 +21,18 @@ const COLORS = {
   logo: "#c0d9d9",
 };
 
+// Where to go after logout. Set NEXT_PUBLIC_LOGIN_URL in Vercel
+// (the shared login page), or it falls back to "/".
+const LOGIN_URL = (process.env.NEXT_PUBLIC_LOGIN_URL || "/").trim();
+
 const NAV = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    Icon: LayoutDashboard,
-  },
-  {
-    label: "Employees",
-    href: "/employees",
-    Icon: Contact,
-  },
-  {
-    label: "Recruitment",
-    href: "/recruitment",
-    Icon: FileText,
-  },
-  {
-    label: "Attendance",
-    href: "/attendance",
-    Icon: ClipboardList,
-  },
-  {
-    label: "Leave Management",
-    href: "/leave",
-    Icon: CalendarDays,
-  },
-  {
-    label: "Payroll",
-    href: "/payroll",
-    Icon: Receipt,
-  },
-  {
-    label: "Reports",
-    href: "/reports",
-    Icon: BarChart3,
-  },
+  { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { label: "Employees", href: "/employees", Icon: Contact },
+  { label: "Recruitment", href: "/recruitment", Icon: FileText },
+  { label: "Attendance", href: "/attendance", Icon: ClipboardList },
+  { label: "Leave Management", href: "/leave", Icon: CalendarDays },
+  { label: "Payroll", href: "/payroll", Icon: Receipt },
+  { label: "Reports", href: "/reports", Icon: BarChart3 },
 ];
 
 type Props = {
@@ -66,6 +42,29 @@ type Props = {
   onLogout?: () => void;
 };
 
+// Read the JWT payload safely (no verification, display only)
+function readToken(): Record<string, unknown> | null {
+  try {
+    const token = localStorage.getItem("erp_token");
+    if (!token) return null;
+
+    const part = token.split(".")[1];
+    if (!part) return null;
+
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+        .join("")
+    );
+
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 export default function HRISSidebar({
   username = "Admin User",
   userId = "HR-001",
@@ -73,7 +72,52 @@ export default function HRISSidebar({
   onLogout,
 }: Props) {
   const pathname = usePathname();
+  const router = useRouter();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [hoverUser, setHoverUser] = useState(false);
+  const [hoverLogout, setHoverLogout] = useState(false);
+
+  const [displayName, setDisplayName] = useState(username);
+  const [displayRole, setDisplayRole] = useState(role);
+
+  // Show the signed-in user's info from the token
+  useEffect(() => {
+    const payload = readToken();
+    if (!payload) return;
+
+    const name =
+      (payload.name as string) ||
+      (payload.username as string) ||
+      (payload.email as string);
+
+    if (name) setDisplayName(name);
+
+    if (typeof payload.role === "string" && payload.role) {
+      setDisplayRole(payload.role);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    // Custom logout from the page, if one was passed
+    if (onLogout) {
+      onLogout();
+      return;
+    }
+
+    try {
+      localStorage.removeItem("erp_token");
+      localStorage.removeItem("erp_user");
+      sessionStorage.clear();
+    } catch {
+      // ignore storage errors
+    }
+
+    if (/^https?:\/\//i.test(LOGIN_URL)) {
+      window.location.href = LOGIN_URL;
+    } else {
+      router.replace(LOGIN_URL);
+    }
+  };
 
   return (
     <aside
@@ -192,6 +236,8 @@ export default function HRISSidebar({
 
       {/* User Card */}
       <div
+        onMouseEnter={() => setHoverUser(true)}
+        onMouseLeave={() => setHoverUser(false)}
         style={{
           height: "5.2vw",
           borderRadius: "1vw",
@@ -200,6 +246,8 @@ export default function HRISSidebar({
           alignItems: "center",
           gap: "1vw",
           padding: "0 1.64vw",
+          filter: hoverUser ? "brightness(1.08)" : "none",
+          transition: "filter 0.15s",
         }}
       >
         <CircleUser
@@ -215,15 +263,19 @@ export default function HRISSidebar({
             display: "flex",
             flexDirection: "column",
             lineHeight: 1.3,
+            minWidth: 0,
           }}
         >
           <span
             style={{
               fontSize: "0.78vw",
               fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
-            {username}
+            {displayName}
           </span>
 
           <span
@@ -241,7 +293,7 @@ export default function HRISSidebar({
               opacity: 0.8,
             }}
           >
-            {role}
+            {displayRole}
           </span>
         </div>
       </div>
@@ -249,7 +301,9 @@ export default function HRISSidebar({
       {/* Logout */}
       <button
         type="button"
-        onClick={onLogout}
+        onClick={handleLogout}
+        onMouseEnter={() => setHoverLogout(true)}
+        onMouseLeave={() => setHoverLogout(false)}
         style={{
           marginTop: "0.65vw",
           height: "3vw",
@@ -264,6 +318,8 @@ export default function HRISSidebar({
           fontSize: "0.75vw",
           fontFamily: "inherit",
           cursor: "pointer",
+          filter: hoverLogout ? "brightness(1.12)" : "none",
+          transition: "filter 0.15s",
         }}
       >
         <LogOut
