@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.services.finance import (
+    get_finance_pricing_alerts,
     get_finance_minimum_selling_price,
 )
 
@@ -81,7 +82,10 @@ def is_finished_goods_warehouse(name: str | None) -> bool:
     return normalized in FINISHED_GOODS_WAREHOUSES
 
 
-def get_item_pricing_data(item: ItemMaster):
+def get_item_pricing_data(
+    item: ItemMaster,
+    minimum_selling_price: Decimal | None = None,
+):
     return {
         "IM_ID": item.IM_ID,
         "SKU": item.SKU,
@@ -91,6 +95,7 @@ def get_item_pricing_data(item: ItemMaster):
         "ItemType": item.ItemType,
         "unit_of_measure": item.unit_of_measure,
         "production_cost": item.production_cost,
+        "minimum_selling_price": minimum_selling_price,
         "markup_percentage": item.markup_percentage,
         "Price": item.Price,
         "status": item.status,
@@ -454,11 +459,41 @@ def get_finished_goods(
         statement.order_by(ItemMaster.IM_ID.desc())
     ).all()
 
-    return [
-        get_item_pricing_data(item)
-        for item in items
-    ]
+    finance_alerts = get_finance_pricing_alerts()
 
+    minimum_prices: dict[int, Decimal] = {}
+
+    for alert in finance_alerts:
+        product_id = alert.get("productID")
+
+        if product_id is None:
+            continue
+
+        try:
+            product_id = int(product_id)
+            minimum_price = Decimal(
+                str(alert.get("minSellingPrice"))
+            )
+        except (TypeError, ValueError, ArithmeticError):
+            continue
+
+        if not minimum_price.is_finite() or minimum_price < 0:
+            continue
+
+        if product_id not in minimum_prices:
+            minimum_prices[product_id] = minimum_price
+
+    result = []
+
+    for item in items:
+        result.append(
+            get_item_pricing_data(
+                item,
+                minimum_prices.get(item.IM_ID),
+            )
+        )
+
+    return result
 
 @router.patch(
     "/items/{item_id}/selling-price",
@@ -483,40 +518,62 @@ def update_selling_price(
             detail="Selling prices can only be updated for Finished Goods.",
         )
 
-    if item.production_cost is None:
+    item_status = str(item.status or "").strip().lower()
+
+    if item_status not in ("active", "true"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Production cost has not been provided by Finance.",
+            detail="Only active Finished Goods can have their selling prices updated.",
         )
 
-    production_cost = Decimal(str(item.production_cost))
     markup_percentage = Decimal(str(price_data.markup_percentage))
 
-    if production_cost < 0:
+    if not markup_percentage.is_finite() or markup_percentage < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Production cost cannot be negative.",
+            detail="Markup percentage must be a valid non-negative number.",
         )
 
+    minimum_selling_price = get_finance_minimum_selling_price(
+        item.IM_ID
+    )
+
     selling_price = (
-        production_cost
-        * (Decimal("1") + markup_percentage / Decimal("100"))
+        minimum_selling_price
+        * (
+            Decimal("1")
+            + markup_percentage / Decimal("100")
+        )
     ).quantize(
         Decimal("0.01"),
         rounding=ROUND_HALF_UP,
     )
 
+    if selling_price < minimum_selling_price:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selling price cannot be below Finance's minimum selling price.",
+        )
+
     try:
         item.markup_percentage = markup_percentage
         item.Price = selling_price
+
         db.commit()
         db.refresh(item)
-        return get_item_pricing_data(item)
+
+        response = get_item_pricing_data(
+            item,
+            minimum_selling_price,
+        )
+
+        response["selling_price"] = selling_price
+
+        return response
 
     except Exception:
         db.rollback()
         raise
-
 
 @router.get(
     "",

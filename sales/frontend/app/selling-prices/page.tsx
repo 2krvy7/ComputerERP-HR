@@ -8,7 +8,6 @@ import type { FinishedGoodItem } from "../../types/order";
 const PAGE_SIZE = 10;
 
 type SellingPriceItem = FinishedGoodItem & {
-  ItemType?: string | null;
   status?: string | null;
 };
 
@@ -16,7 +15,7 @@ const isEligibleItem = (item: SellingPriceItem) => {
   const status = String(item.status ?? "").trim().toLowerCase();
   const itemType = String(item.ItemType ?? "").trim().toLowerCase();
 
-  const isActive = status === "active";
+  const isActive = status === "active" || status === "true";
 
   const isFinishedGood = [
     "finished",
@@ -34,12 +33,18 @@ const formatCurrency = (value: string | number | null | undefined) => {
     return "—";
   }
 
+  const amount = Number(value);
+
+  if (!Number.isFinite(amount)) {
+    return "—";
+  }
+
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
     currency: "PHP",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(Number(value));
+  }).format(amount);
 };
 
 export default function SellingPricesPage() {
@@ -87,11 +92,21 @@ export default function SellingPricesPage() {
     return () => clearTimeout(timeout);
   }, [search, loadItems]);
 
-  const productionCost = Number(selectedItem?.production_cost ?? 0);
+  const minimumSellingPrice = Number(
+    selectedItem?.minimum_selling_price ?? 0
+  );
+
   const markupPercentage = Number(markupInput);
 
   const calculatedPrice =
-    productionCost * (1 + markupPercentage / 100);
+    minimumSellingPrice * (1 + markupPercentage / 100);
+
+  const hasMinimumPrice =
+    selectedItem?.minimum_selling_price !== null &&
+    selectedItem?.minimum_selling_price !== undefined &&
+    selectedItem?.minimum_selling_price !== "" &&
+    Number.isFinite(minimumSellingPrice) &&
+    minimumSellingPrice >= 0;
 
   const validMarkup =
     markupInput.trim() !== "" &&
@@ -133,12 +148,9 @@ export default function SellingPricesPage() {
   const saveSellingPrice = async () => {
     if (!selectedItem) return;
 
-    if (
-      selectedItem.production_cost === null ||
-      selectedItem.production_cost === undefined
-    ) {
+    if (!hasMinimumPrice) {
       setError(
-        "Production cost has not been provided by Finance for this item."
+        "Finance's minimum selling price is unavailable for this item. Please check the Finance integration."
       );
       return;
     }
@@ -195,8 +207,8 @@ export default function SellingPricesPage() {
       <div>
         <p className="text-sm leading-relaxed text-gray-500">
           Set selling prices for active finished goods using the
-          production cost provided by Finance and your chosen markup
-          percentage.
+          minimum selling price provided by Finance and your chosen
+          markup percentage.
         </p>
       </div>
 
@@ -501,15 +513,18 @@ export default function SellingPricesPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Production Cost
+                  Finance Minimum Selling Price
                 </label>
 
                 <div className="rounded-lg border border-[#D1D5DB] bg-gray-100 px-4 py-3 font-semibold text-gray-700">
-                  {formatCurrency(selectedItem.production_cost)}
+                  {hasMinimumPrice
+                    ? formatCurrency(selectedItem.minimum_selling_price)
+                    : "Unavailable from Finance"}
                 </div>
 
                 <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                  Provided by Finance. This value cannot be edited here.
+                  VAT-exclusive minimum price retrieved from Finance.
+                  This value cannot be edited in Sales.
                 </p>
               </div>
 
@@ -531,7 +546,7 @@ export default function SellingPricesPage() {
                     setMarkupInput(event.target.value)
                   }
                   placeholder="Enter markup percentage"
-                  disabled={saving}
+                  disabled={saving || !hasMinimumPrice}
                   className="w-full rounded-lg border border-[#D1D5DB] bg-white px-4 py-3 text-sm text-gray-800 outline-none transition focus:border-[#3F7657] focus:ring-2 focus:ring-[#3F7657]/20 disabled:bg-gray-100"
                 />
               </div>
@@ -542,15 +557,13 @@ export default function SellingPricesPage() {
                 </p>
 
                 <p className="mt-1 break-words text-2xl font-bold text-[#244C3A]">
-                  {validMarkup &&
-                  selectedItem.production_cost !== null &&
-                  selectedItem.production_cost !== undefined
+                  {validMarkup && hasMinimumPrice
                     ? formatCurrency(calculatedPrice)
                     : "—"}
                 </p>
 
                 <p className="mt-2 text-xs text-gray-600">
-                  Production Cost × (1 + Markup ÷ 100)
+                  Finance Minimum Selling Price × (1 + Markup ÷ 100)
                 </p>
               </div>
 
@@ -570,8 +583,7 @@ export default function SellingPricesPage() {
                   disabled={
                     saving ||
                     !validMarkup ||
-                    selectedItem.production_cost === null ||
-                    selectedItem.production_cost === undefined
+                    !hasMinimumPrice
                   }
                   className="w-full rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#315F46] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-2.5"
                 >
