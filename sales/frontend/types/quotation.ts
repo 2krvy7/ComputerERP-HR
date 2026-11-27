@@ -49,5 +49,10 @@ export interface QuotationCatalogItem {
   IM_ID: number;
   SKU: string;
   Item_Name: string;
-  Price: number | string | null;
+  Category: string | null;
+  Brand: string | null;
+  ItemType: string | null;
+  unit_of_measure: string | null;
+  Price: number;
+  status: string | boolean | number;
 }
