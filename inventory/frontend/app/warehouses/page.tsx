@@ -38,6 +38,12 @@ export default function WarehousesPage() {
   const [stockLoading, setStockLoading] = useState(false);
   const [stockError, setStockError] = useState("");
 
+    // Warehouse Stock Search and Filters
+  const [stockSearchTerm, setStockSearchTerm] = useState("");
+  const [selectedStockWarehouse, setSelectedStockWarehouse] = useState("All");
+  const [selectedItemType, setSelectedItemType] = useState("All");
+  const [selectedStockStatus, setSelectedStockStatus] = useState("All");
+
   // Edit Reorder Level states
   const [editingStockId, setEditingStockId] = useState<number | null>(null);
   const [editReorderLevel, setEditReorderLevel] = useState("");
@@ -122,7 +128,7 @@ export default function WarehousesPage() {
       setSavingReorderLevel(true);
       setStockError("");
 
-      const response = await fetch(
+      const response = await apiFetch(
         `/orders/stock/${stockId}/reorder-level`,
         {
           method: "PUT",
@@ -290,6 +296,34 @@ export default function WarehousesPage() {
     );
   });
 
+  // Filter Warehouse Stock records
+const filteredWarehouseStock = warehouseStock.filter((stock) => {
+const search = stockSearchTerm.toLowerCase().trim();
+
+  const matchesSearch =
+    stock.item_name.toLowerCase().includes(search) ||
+    stock.sku.toLowerCase().includes(search);
+
+  const matchesWarehouse =
+    selectedStockWarehouse === "All" ||
+    String(stock.wh_id) === selectedStockWarehouse;
+
+  const matchesItemType =
+    selectedItemType === "All" ||
+    stock.item_type === selectedItemType;
+
+  const matchesStockStatus =
+    selectedStockStatus === "All" ||
+    stock.stock_status === selectedStockStatus;
+
+  return (
+    matchesSearch &&
+    matchesWarehouse &&
+    matchesItemType &&
+    matchesStockStatus
+  );
+});
+
   return (
     <DashboardLayout
       title="Warehouses"
@@ -308,7 +342,7 @@ export default function WarehousesPage() {
             className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               activeView === "list"
                 ? "bg-[#35636B] text-white"
-                : "border border-[#DCE7EA] bg-white text-[#587176] hover:bg-[#F2F7F8]"
+                : "border border-[#DCE7EA] bg-white text-[#3F595E] hover:bg-[#F2F7F8]"
             }`}
           >
             Warehouse List
@@ -326,7 +360,7 @@ export default function WarehousesPage() {
             className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
               activeView === "stock"
                 ? "bg-[#35636B] text-white"
-                : "border border-[#DCE7EA] bg-white text-[#587176] hover:bg-[#F2F7F8]"
+                : "border border-[#DCE7EA] bg-white text-[#3F595E] hover:bg-[#F2F7F8]"
             }`}
           >
             Warehouse Stock
@@ -339,10 +373,10 @@ export default function WarehousesPage() {
             {/* Warehouse Header */}
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-[#1F3338]">
+                <h2 className="text-lg font-bold text-[#172D32]">
                   Warehouse List
                 </h2>
-                <p className="mt-1 text-sm text-[#587176]">
+                <p className="mt-1 text-sm text-[#3F595E]">
                   View and manage registered warehouse locations.
                 </p>
               </div>
@@ -361,6 +395,7 @@ export default function WarehousesPage() {
               </button>
             </div>
 
+
             {/* Error Message */}
             {error && (
               <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
@@ -374,13 +409,13 @@ export default function WarehousesPage() {
                 onSubmit={handleAddWarehouse}
                 className="mb-6 rounded-xl border border-[#DCE7EA] bg-[#F2F7F8] p-5"
               >
-                <h3 className="mb-4 font-bold text-[#1F3338]">
+                <h3 className="mb-4 font-bold text-[#172D32]">
                   Add New Warehouse
                 </h3>
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1F3338]">
+                    <label className="mb-2 block text-sm font-medium text-[#172D32]">
                       Warehouse Name *
                     </label>
                     <input
@@ -390,12 +425,12 @@ export default function WarehousesPage() {
                       placeholder="Enter warehouse name"
                       required
                       maxLength={255}
-                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#35636B]"
+                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm text-[#172D32] focus:border-[#35636B]"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1F3338]">
+                    <label className="mb-2 block text-sm font-medium text-[#172D32]">
                       Location
                     </label>
                     <input
@@ -403,7 +438,7 @@ export default function WarehousesPage() {
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                       placeholder="Enter warehouse location"
-                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#35636B]"
+                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm text-[#172D32] focus:border-[#35636B]"
                     />
                   </div>
                 </div>
@@ -413,7 +448,7 @@ export default function WarehousesPage() {
                     type="button"
                     onClick={handleCancelAdd}
                     disabled={saving}
-                    className="rounded-lg border border-[#DCE7EA] bg-white px-4 py-2 text-sm font-medium text-[#587176] hover:bg-gray-50 disabled:opacity-50"
+                    className="rounded-lg border border-[#DCE7EA] bg-white px-4 py-2 text-sm font-medium text-[#3F595E] hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -488,17 +523,17 @@ export default function WarehousesPage() {
                 }}
                 className="mb-6 rounded-xl border border-[#DCE7EA] bg-[#F2F7F8] p-5"
               >
-                <h3 className="mb-4 font-bold text-[#1F3338]">
+                <h3 className="mb-4 font-bold text-[#172D32]">
                   Edit Warehouse
                 </h3>
 
-                <p className="mb-4 text-xs text-[#587176]">
+                <p className="mb-4 text-xs text-[#3F595E]">
                   Warehouse ID: {selectedWarehouse.WH_ID}
                 </p>
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1F3338]">
+                    <label className="mb-2 block text-sm font-medium text-[#172D32]">
                       Warehouse Name *
                     </label>
                     <input
@@ -510,12 +545,12 @@ export default function WarehousesPage() {
                       placeholder="Enter warehouse name"
                       required
                       maxLength={255}
-                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#35636B]"
+                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm text-[#172D32] focus:border-[#35636B]"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-[#1F3338]">
+                    <label className="mb-2 block text-sm font-medium text-[#172D32]">
                       Location
                     </label>
                     <input
@@ -525,7 +560,7 @@ export default function WarehousesPage() {
                         setEditLocation(e.target.value)
                       }
                       placeholder="Enter warehouse location"
-                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#35636B]"
+                      className="w-full rounded-lg border border-[#DCE7EA] bg-white px-3 py-2.5 text-sm text-[#172D32] focus:border-[#35636B]"
                     />
                   </div>
                 </div>
@@ -535,7 +570,7 @@ export default function WarehousesPage() {
                     type="button"
                     onClick={handleCancelEdit}
                     disabled={saving}
-                    className="rounded-lg border border-[#DCE7EA] bg-white px-4 py-2 text-sm font-medium text-[#587176] hover:bg-gray-50 disabled:opacity-50"
+                    className="rounded-lg border border-[#DCE7EA] bg-white px-4 py-2 text-sm font-medium text-[#3F595E] hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -558,17 +593,17 @@ export default function WarehousesPage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search by warehouse name or location..."
-                className="w-full rounded-xl border border-[#DCE7EA] bg-white px-4 py-3 text-sm text-[#1F3338] outline-none focus:border-[#35636B] sm:max-w-md"
+                className="w-full rounded-xl border border-[#DCE7EA] bg-white px-4 py-3 text-sm text-[#172D32] outline-none focus:border-[#35636B] sm:max-w-md"
               />
             </div>
 
             {/* Warehouse Table */}
             {loading ? (
-              <p className="text-sm text-[#587176]">
+              <p className="text-sm text-[#3F595E]">
                 Loading warehouses...
               </p>
             ) : filteredWarehouses.length === 0 ? (
-              <p className="text-sm text-[#587176]">
+              <p className="text-sm text-[#3F595E]">
                 {searchTerm.trim()
                   ? "No matching warehouses found."
                   : "No warehouse records found."}
@@ -577,7 +612,7 @@ export default function WarehousesPage() {
               <div className="overflow-x-auto">
                 <table className="w-full table-fixed text-left text-sm">
                   <thead>
-                    <tr className="border-b border-[#DCE7EA] text-[#587176]">
+                    <tr className="border-b border-[#DCE7EA] bg-[#F2F7F8] text-[#263D42] font-bold">
                       <th className="w-[22%] px-4 py-3">
                         Warehouse ID
                       </th>
@@ -599,15 +634,15 @@ export default function WarehousesPage() {
                         key={warehouse.WH_ID}
                         className="border-b border-[#DCE7EA] last:border-0"
                       >
-                        <td className="px-4 py-4 text-[#587176]">
+                        <td className="px-4 py-4 text-[#3F595E]">
                           {warehouse.WH_ID}
                         </td>
 
-                        <td className="px-4 py-4 font-medium text-[#1F3338]">
+                        <td className="px-4 py-4 font-medium text-[#172D32]">
                           {warehouse.Warehouse_Name}
                         </td>
 
-                        <td className="px-4 py-4 text-[#587176]">
+                        <td className="px-4 py-4 text-[#3F595E]">
                           {warehouse.Location || "—"}
                         </td>
 
@@ -640,39 +675,132 @@ export default function WarehousesPage() {
         )}
 
         {/* ================= WAREHOUSE STOCK ================= */}
-        {activeView === "stock" && (
-          <div>
-            {/* Warehouse Stock Header */}
-            <div className="mb-5">
-              <h2 className="text-lg font-bold text-[#1F3338]">
-                Warehouse Stock
-              </h2>
-              <p className="mt-1 text-sm text-[#587176]">
-                View the quantity of items stored in each warehouse.
-              </p>
-            </div>
+        
+{activeView === "stock" && (
+  <div>
+    {/* Warehouse Stock Header */}
+    <div className="mb-5">
+      <h2 className="text-lg font-bold text-[#172D32]">
+        Warehouse Stock
+      </h2>
+      <p className="mt-1 text-sm text-[#3F595E]">
+        View the quantity of items stored in each warehouse.
+      </p>
+    </div>
 
-            {/* Error Message */}
+    {/* Warehouse Stock Search and Filters */}
+    <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Search Bar */}
+      <div className="sm:col-span-2">
+        <label className="mb-2 block text-sm font-medium text-[#172D32]">
+          Search Item
+        </label>
+        <input
+          type="text"
+          value={stockSearchTerm}
+          onChange={(e) => setStockSearchTerm(e.target.value)}
+          placeholder="Search by item name or SKU..."
+          className="w-full rounded-xl border border-[#DCE7EA] bg-white px-4 py-3 text-sm text-[#172D32] placeholder:text-[#687D82] outline-none focus:border-[#35636B]"
+        />
+      </div>
+
+      {/* Warehouse Filter */}
+      <div>
+        <label className="mb-2 block text-sm font-medium text-[#172D32]">
+          Warehouse
+        </label>
+        <select
+          value={selectedStockWarehouse}
+          onChange={(e) => setSelectedStockWarehouse(e.target.value)}
+          className="w-full rounded-xl border border-[#DCE7EA] bg-white px-3 py-3 text-sm text-[#172D32] outline-none focus:border-[#35636B]"
+        >
+          <option value="All">All Warehouses</option>
+          {warehouses.map((warehouse) => (
+            <option
+              key={warehouse.WH_ID}
+              value={String(warehouse.WH_ID)}
+            >
+              {warehouse.Warehouse_Name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Item Type Filter */}
+      <div>
+        <label className="mb-2 block text-sm font-medium text-[#172D32]">
+          Item Type
+        </label>
+        <select
+          value={selectedItemType}
+          onChange={(e) => setSelectedItemType(e.target.value)}
+          className="w-full rounded-xl border border-[#DCE7EA] bg-white px-3 py-3 text-sm text-[#172D32] outline-none focus:border-[#35636B]"
+        >
+          <option value="All">All Types</option>
+          <option value="Raw">Raw Materials</option>
+          <option value="Finished">Finished Goods</option>
+        </select>
+      </div>
+
+      {/* Stock Status Filter */}
+      <div>
+        <label className="mb-2 block text-sm font-medium text-[#172D32]">
+          Stock Status
+        </label>
+        <select
+          value={selectedStockStatus}
+          onChange={(e) => setSelectedStockStatus(e.target.value)}
+          className="w-full rounded-xl border border-[#DCE7EA] bg-white px-3 py-3 text-sm text-[#172D32] outline-none focus:border-[#35636B]"
+        >
+          <option value="All">All Status</option>
+          <option value="Normal">Normal</option>
+          <option value="Low Stock">Low Stock</option>
+        </select>
+      </div>
+
+      {/* Reset Filters */}
+      <div className="flex items-end">
+        <button
+          type="button"
+          onClick={() => {
+            setStockSearchTerm("");
+            setSelectedStockWarehouse("All");
+            setSelectedItemType("All");
+            setSelectedStockStatus("All");
+          }}
+          className="w-full rounded-xl border border-[#35636B] bg-white px-4 py-3 text-sm font-semibold text-[#172D32] hover:bg-[#F2F7F8]"
+        >
+          Reset Filters
+        </button>
+      </div>
+    </div>
+
+    {/* Error Message */}
+
             {stockError && (
               <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">
                 {stockError}
               </div>
             )}
 
-            {/* Loading */}
-            {stockLoading ? (
-              <p className="text-sm text-[#587176]">
-                Loading warehouse stock...
-              </p>
-            ) : warehouseStock.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-[#DCE7EA] bg-[#F2F7F8] p-6 text-center text-sm text-[#587176]">
-                No stock records found. Stock information will appear here once items are assigned to warehouses.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+            {/* Loading and Stock Table */}
+{stockLoading ? (
+  <p className="text-sm text-[#3F595E]">
+    Loading warehouse stock...
+  </p>
+) : warehouseStock.length === 0 ? (
+  <p className="text-sm text-[#3F595E]">
+    No warehouse stock records found.
+  </p>
+) : filteredWarehouseStock.length === 0 ? (
+  <p className="rounded-xl border border-dashed border-[#DCE7EA] bg-[#F2F7F8] p-6 text-center text-sm font-medium text-[#172D32]">
+    No matching stock records found. Try changing your search or filters.
+  </p>
+) : (
+  <div className="overflow-x-auto"> 
+                <table className="w-full text-left text-sm text-[#172D32]">
                   <thead>
-                    <tr className="border-b border-[#DCE7EA] text-[#587176]">
+                    <tr className="border-b border-[#DCE7EA] bg-[#F2F7F8] text-[#263D42] font-bold">
                       <th className="px-4 py-3">SKU</th>
                       <th className="px-4 py-3">Item Name</th>
                       <th className="px-4 py-3">Item Type</th>
@@ -685,10 +813,10 @@ export default function WarehousesPage() {
                   </thead>
 
                   <tbody>
-                    {warehouseStock.map((stock) => (
+                    {filteredWarehouseStock.map((stock) => (
                       <tr
                         key={stock.stock_id}
-                        className="border-b border-[#DCE7EA]"
+                        className="border-b border-[#DCE7EA] text-[#172D32] hover:bg-[#F7FAFA]"
                       >
                         <td className="px-4 py-4">{stock.sku}</td>
 
@@ -735,7 +863,7 @@ export default function WarehousesPage() {
                                 onChange={(e) =>
                                   setEditReorderLevel(e.target.value)
                                 }
-                                className="w-24 rounded-lg border border-[#DCE7EA] px-2 py-1.5 text-sm outline-none focus:border-[#35636B]"
+                                className="w-24 rounded-lg border border-[#DCE7EA] px-2 py-1.5 text-sm text-[#172D32] placeholder:text-[#687D82] outline-none focus:border-[#35636B]"
                               />
 
                               <button
@@ -757,7 +885,7 @@ export default function WarehousesPage() {
                                   setStockError("");
                                 }}
                                 disabled={savingReorderLevel}
-                                className="rounded-lg border border-[#DCE7EA] px-3 py-1.5 text-xs font-semibold text-[#587176] hover:bg-[#F2F7F8] disabled:opacity-50"
+                                className="rounded-lg border border-[#DCE7EA] px-3 py-1.5 text-xs font-semibold text-[#3F595E] hover:bg-[#F2F7F8] disabled:opacity-50"
                               >
                                 Cancel
                               </button>

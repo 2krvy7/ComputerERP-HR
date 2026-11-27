@@ -1,0 +1,26 @@
+* [33m6decafa[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32minventory[m[33m)[m updates
+* [33ma0b65de[m[33m ([m[1;31morigin/inventory[m[33m)[m updates in inventory
+[31m|[m * [33mf32df14[m[33m ([m[1;31morigin/sales_branch[m[33m)[m warehouse fixing
+[31m|[m * [33m51f2759[m delivery fixation
+[31m|[m * [33mac90899[m ready
+[31m|[m * [33mf21ce81[m update
+[31m|[m * [33m8bdcf1a[m Fix sales order status validation
+[31m|[m * [33md87df35[m Make sales orders inventory-accepted requests
+[31m|[m * [33md30f822[m Include VAT and installment interest in quotations
+[31m|[m * [33m9998785[m Capture installment terms on sales orders
+[31m|[m * [33mbe1c606[m Limit quotation status flow and approve pickup orders
+[31m|[m * [33ma356519[m Display account role from role ID
+[31m|[m * [33m135b895[m Save order tax and use it on sales invoices
+[31m|[m * [33m85da64b[m Limit delivery warehouses to finished goods A and B
+[31m|[m * [33mb1b3c87[m Restrict delivery status updates by department
+[31m|[m * [33m89513db[m Validate invoice prices against Finance floor
+[31m|[m [32m|[m *   [33mc0f4923[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #54 from InkNOOB/finance
+[31m|[m [32m|[m [33m|[m[34m\[m  
+[31m|[m [32m|[m [33m|[m *   [33m10721df[m[33m ([m[1;31morigin/finance[m[33m)[m Merge branch 'finance' of https://github.com/InkNOOB/ComputerERP into finance
+[31m|[m [32m|[m [33m|[m [35m|[m[36m\[m  
+[31m|[m [32m|[m [33m|[m [35m|[m * [33m9ef1c6f[m fixed main.py
+[31m|[m [32m|[m [33m|[m * [36m|[m   [33mb753f96[m nabdjba
+[31m|[m [32m|[m [33m|[m [36m|[m[33m\[m [36m\[m  
+[31m|[m [32m|[m [33m|[m [36m|[m[33m/[m [36m/[m  
+[31m|[m [32m|[m [33m|[m[33m/[m[36m|[m [36m/[m   
+[31m|[m [32m|[m [33m|[m [36m|[m[36m/[m    
