@@ -33,6 +33,7 @@ INSTALLMENT_INTEREST_RATES = {
 }
 
 
+
 # Retrieve products that can be added to a quotation.
 
 @router.get("/items")
@@ -181,6 +182,21 @@ def create_quotation(
         db.rollback()
         raise
 
+# Retrieve all quotations.
+@router.get(
+    "",
+    response_model=list[SalesQuotationResponse],
+)
+def get_quotations(
+    db: Session = Depends(get_db),
+):
+    quotations = db.scalars(
+        select(SalesQuotation)
+        .options(selectinload(SalesQuotation.details))
+        .order_by(SalesQuotation.quotation_id.desc())
+    ).all()
+
+    return quotations
 
 # Retrieve one quotation.
 @router.get(
