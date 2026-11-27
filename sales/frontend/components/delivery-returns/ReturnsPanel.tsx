@@ -1,20 +1,24 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   customerAPI,
+  deliveryAPI,
   invoiceAPI,
   salesOrderAPI,
   salesReturnAPI,
 } from "../../lib/api";
 
 import type { Customer } from "../../types/customer";
+import type { Delivery } from "../../types/delivery";
 import type { SalesInvoice } from "../../types/invoice";
 import type {
   SalesOrder,
   SalesOrderDetail,
   SalesOrderItem,
+  FinishedGoodItem,
 } from "../../types/order";
 import type { SalesReturn, SalesReturnCreate } from "../../types/return";
 
@@ -49,6 +53,29 @@ function formatDate(value: string) {
   });
 }
 
+function normalizeStatus(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s]+/g, "-");
+}
+
+function isCustomerReceived(status: string | null | undefined) {
+  const normalized = normalizeStatus(status);
+
+  return (
+    normalized === "received-customer" ||
+    normalized === "received-by-customer" ||
+    normalized === "received-by-the-customer" ||
+    normalized === "delivered" ||
+    normalized === "delivered-sales"
+  );
+}
+
+function isFinishedGood(itemType: string | null | undefined) {
+  return normalizeStatus(itemType) === "finished-goods";
+}
+
 function SummaryCard({
   label,
   value,
@@ -79,6 +106,8 @@ export default function ReturnsPanel() {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesOrderItem[]>([]);
+  const [finishedGoods, setFinishedGoods] = useState<FinishedGoodItem[]>([]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
 
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -109,12 +138,16 @@ export default function ReturnsPanel() {
         invoiceData,
         customerData,
         itemData,
+        finishedGoodData,
+        deliveryData,
       ] = await Promise.all([
         salesReturnAPI.getAll(),
         salesOrderAPI.getAll(),
         invoiceAPI.getAll(),
         customerAPI.getAll(),
         salesOrderAPI.getItems(),
+        salesOrderAPI.getFinishedGoods(),
+        deliveryAPI.getAll(),
       ]);
 
       setReturns(returnData);
@@ -122,6 +155,8 @@ export default function ReturnsPanel() {
       setInvoices(invoiceData);
       setCustomers(customerData);
       setItems(itemData);
+      setFinishedGoods(finishedGoodData);
+      setDeliveries(deliveryData);
     } catch (err) {
       setError(
         err instanceof Error
@@ -155,9 +190,29 @@ export default function ReturnsPanel() {
     [items]
   );
 
+  const finishedGoodMap = useMemo(
+    () =>
+      new Map(
+        finishedGoods
+          .filter((item) => isFinishedGood(item.ItemType))
+          .map((item) => [item.IM_ID, item])
+      ),
+    [finishedGoods]
+  );
+
   const invoiceMap = useMemo(
     () => new Map(invoices.map((invoice) => [invoice.order_id, invoice])),
     [invoices]
+  );
+
+  const customerReceivedOrderIds = useMemo(
+    () =>
+      new Set(
+        deliveries
+          .filter((delivery) => isCustomerReceived(delivery.status))
+          .map((delivery) => delivery.order_id)
+      ),
+    [deliveries]
   );
 
   const detailMap = useMemo(() => {
@@ -201,8 +256,12 @@ export default function ReturnsPanel() {
       orders
         .filter((order) => invoiceMap.has(order.order_id))
         .filter((order) => order.status !== "Cancelled")
+        .filter((order) =>
+          customerReceivedOrderIds.has(order.order_id)
+        )
         .flatMap((order) =>
           order.details
+            .filter((detail) => finishedGoodMap.has(detail.IM_ID))
             .map((detail) => {
               const returned =
                 returnedQuantities.get(detail.order_detail_id) ?? 0;
@@ -215,7 +274,13 @@ export default function ReturnsPanel() {
             })
             .filter((detail) => detail.remaining > 0)
         ),
-    [orders, invoiceMap, returnedQuantities]
+    [
+      orders,
+      invoiceMap,
+      customerReceivedOrderIds,
+      finishedGoodMap,
+      returnedQuantities,
+    ]
   );
 
   const selectedDetail = availableDetails.find(
@@ -224,6 +289,10 @@ export default function ReturnsPanel() {
 
   const selectedInvoice = selectedDetail
     ? invoiceMap.get(selectedDetail.order_id)
+    : undefined;
+
+  const selectedItem = selectedDetail
+    ? finishedGoodMap.get(selectedDetail.IM_ID)
     : undefined;
 
   const returnQuantity = Number(quantity);
@@ -262,7 +331,9 @@ export default function ReturnsPanel() {
         : "";
 
       const itemName = relatedDetail
-        ? itemMap.get(relatedDetail.IM_ID)?.Item_Name ?? ""
+        ? itemMap.get(relatedDetail.IM_ID)?.Item_Name ??
+          finishedGoodMap.get(relatedDetail.IM_ID)?.Item_Name ??
+          ""
         : "";
 
       return (
@@ -273,7 +344,14 @@ export default function ReturnsPanel() {
         itemName.toLowerCase().includes(term)
       );
     });
-  }, [returns, detailMap, customerMap, itemMap, search]);
+  }, [
+    returns,
+    detailMap,
+    customerMap,
+    itemMap,
+    finishedGoodMap,
+    search,
+  ]);
 
   const totalPages = Math.max(
     1,
@@ -316,7 +394,19 @@ export default function ReturnsPanel() {
     setError("");
 
     if (!selectedDetail || !selectedInvoice) {
-      setError("Please select an available sales order item.");
+      setError("Please select an available finished good from a customer-received delivery.");
+      return;
+    }
+
+    if (!customerReceivedOrderIds.has(selectedDetail.order_id)) {
+      setError(
+        "This order is not eligible for return because the customer has not received the delivery."
+      );
+      return;
+    }
+
+    if (!finishedGoodMap.has(selectedDetail.IM_ID)) {
+      setError("Only finished goods can be returned.");
       return;
     }
 
@@ -384,7 +474,8 @@ export default function ReturnsPanel() {
       : undefined;
 
     const item = relatedDetail
-      ? itemMap.get(relatedDetail.IM_ID)
+      ? itemMap.get(relatedDetail.IM_ID) ??
+        finishedGoodMap.get(relatedDetail.IM_ID)
       : undefined;
 
     return {
@@ -475,7 +566,6 @@ export default function ReturnsPanel() {
               {paginatedReturns.map((record) => {
                 const {
                   relatedOrder,
-                  relatedDetail,
                   customer,
                   item,
                 } = getReturnRowDetails(record);
@@ -524,8 +614,7 @@ export default function ReturnsPanel() {
                           Returned Item
                         </p>
                         <p className="mt-1 break-words text-sm font-medium text-slate-900">
-                          {item?.Item_Name ??
-                            `Item #${relatedDetail?.IM_ID ?? "—"}`}
+                          {item?.Item_Name ?? "Item name unavailable"}
                         </p>
                         {item?.SKU && (
                           <p className="mt-1 text-xs text-slate-500">
@@ -601,7 +690,6 @@ export default function ReturnsPanel() {
                   {paginatedReturns.map((record) => {
                     const {
                       relatedOrder,
-                      relatedDetail,
                       customer,
                       item,
                     } = getReturnRowDetails(record);
@@ -627,8 +715,7 @@ export default function ReturnsPanel() {
 
                         <td className="px-5 py-4 text-slate-700">
                           <p className="font-medium text-slate-900">
-                            {item?.Item_Name ??
-                              `Item #${relatedDetail?.IM_ID ?? "—"}`}
+                            {item?.Item_Name ?? "Item name unavailable"}
                           </p>
                           {item?.SKU && (
                             <p className="mt-1 text-xs text-slate-500">
@@ -742,7 +829,7 @@ export default function ReturnsPanel() {
                   <option value="">Select order item</option>
 
                   {availableDetails.map((detail) => {
-                    const item = itemMap.get(detail.IM_ID);
+                    const item = finishedGoodMap.get(detail.IM_ID);
 
                     return (
                       <option
@@ -751,7 +838,7 @@ export default function ReturnsPanel() {
                       >
                         SO-{String(detail.order.order_id).padStart(4, "0")}
                         {" — "}
-                        {item?.Item_Name ?? `Item #${detail.IM_ID}`}
+                        {item?.Item_Name ?? "Item name unavailable"}
                         {" — "}
                         {detail.remaining} remaining
                       </option>
@@ -763,13 +850,18 @@ export default function ReturnsPanel() {
               {selectedDetail && (
                 <div className="rounded-lg border border-[#D1D5DB] bg-[#F3F4F6] p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Selected Item
+                    Selected Finished Good
                   </p>
 
                   <p className="mt-1 break-words font-semibold text-slate-900">
-                    {itemMap.get(selectedDetail.IM_ID)?.Item_Name ??
-                      `Item #${selectedDetail.IM_ID}`}
+                    {selectedItem?.Item_Name ?? "Item name unavailable"}
                   </p>
+
+                  {selectedItem?.SKU && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      SKU: {selectedItem.SKU}
+                    </p>
+                  )}
 
                   <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                     <div>

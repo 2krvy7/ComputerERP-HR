@@ -72,20 +72,6 @@ export interface FinishedGoodItem {
   ItemType: string | null;
   unit_of_measure: string | null;
   production_cost: string | number | null;
-  markup_percentage: string | number | null;
-  Price: string | number | null;
-  status: string | null;
-}
-
-export interface FinishedGoodItem {
-  IM_ID: number;
-  SKU: string;
-  Item_Name: string;
-  Category: string | null;
-  Brand: string | null;
-  ItemType: string | null;
-  unit_of_measure: string | null;
-  production_cost: string | number | null;
   minimum_selling_price: string | number | null;
   markup_percentage: string | number | null;
   Price: string | number | null;

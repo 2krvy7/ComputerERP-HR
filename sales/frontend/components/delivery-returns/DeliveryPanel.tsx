@@ -444,57 +444,59 @@ export default function DeliveryPanel() {
       .join(", ");
   }
 
-  function renderStatusControls(delivery: Delivery) {
-    const normalizedStatus = normalizeDeliveryStatus(delivery.status);
+  
+function renderStatusControls(delivery: Delivery) {
+  const normalizedStatus = normalizeDeliveryStatus(delivery.status);
 
-    const availableStatuses = getAvailableTransitions(
-      normalizedStatus,
-      currentUser
-    );
+  const availableStatuses = getAvailableTransitions(
+    normalizedStatus,
+    currentUser
+  );
 
-    return (
-      <div className="flex min-w-0 flex-col gap-2">
-        <span
-          className={`inline-flex w-fit max-w-full items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
-            statusStyles[normalizedStatus]
-          }`}
+  return (
+    <div className="flex w-full min-w-0 flex-col items-center justify-center gap-2 text-center">
+      <span
+        className={`inline-flex items-center justify-center whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold ${
+          statusStyles[normalizedStatus]
+        }`}
+      >
+        {displayStatus(normalizedStatus)}
+      </span>
+
+      {availableStatuses.length > 0 && (
+        <select
+          value=""
+          disabled={updatingId !== null}
+          onChange={(e) => {
+            if (e.target.value) {
+              void handleStatusChange(
+                delivery,
+                e.target.value as DeliveryStatus
+              );
+            }
+          }}
+          className="min-h-10 w-full max-w-[190px] rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60"
+          aria-label={`Update delivery status for record ${delivery.delivery_id}`}
         >
-          {displayStatus(normalizedStatus)}
-        </span>
+          <option value="">Update status</option>
 
-        {availableStatuses.length > 0 && (
-          <select
-            value=""
-            disabled={updatingId !== null}
-            onChange={(e) => {
-              if (e.target.value) {
-                void handleStatusChange(
-                  delivery,
-                  e.target.value as DeliveryStatus
-                );
-              }
-            }}
-            className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-700 outline-none transition focus:border-[#4F8585] focus:ring-2 focus:ring-[#4F8585]/20 disabled:cursor-wait disabled:opacity-60 sm:w-[190px]"
-            aria-label={`Update delivery status for record ${delivery.delivery_id}`}
-          >
-            <option value="">Update status</option>
+          {availableStatuses.map((nextStatus) => (
+            <option key={nextStatus} value={nextStatus}>
+              {displayStatus(nextStatus)}
+            </option>
+          ))}
+        </select>
+      )}
 
-            {availableStatuses.map((nextStatus) => (
-              <option key={nextStatus} value={nextStatus}>
-                {displayStatus(nextStatus)}
-              </option>
-            ))}
-          </select>
-        )}
+      {updatingId === delivery.delivery_id && (
+        <p className="text-center text-xs font-medium text-[#4F8585]">
+          Saving...
+        </p>
+      )}
+    </div>
+  );
+}
 
-        {updatingId === delivery.delivery_id && (
-          <p className="text-xs font-medium text-[#4F8585]">
-            Saving...
-          </p>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="min-w-0 w-full space-y-5 bg-gray text-slate-800">
@@ -660,9 +662,9 @@ export default function DeliveryPanel() {
                     </div>
 
                     <div className="mt-4 border-t border-slate-200 pt-3">
-                      <p className="mb-2 text-xs font-medium text-slate-500">
-                        Delivery Status
-                      </p>
+                      <p className="mb-2 text-center text-xs font-medium text-slate-500">
+  Delivery Status
+</p>
 
                       {renderStatusControls(delivery)}
                     </div>
@@ -754,11 +756,9 @@ export default function DeliveryPanel() {
                           )}
                         </td>
 
-                        <td className="px-5 py-4">
-                          <div className="flex min-w-[230px] flex-col items-center justify-center gap-2">
-                            {renderStatusControls(delivery)}
-                          </div>
-                        </td>
+                        <td className="px-5 py-4 text-center align-middle">
+  {renderStatusControls(delivery)}
+</td>
                       </tr>
                     );
                   })}
