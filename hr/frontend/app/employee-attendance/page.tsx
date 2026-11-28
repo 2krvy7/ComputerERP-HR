@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
+import { getUser } from "../../components/AuthGate";
 import "./employee-attendance.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL!;
 
-// Temporary employee ID.
-// Later, this will come from the logged-in employee.
-const CURRENT_EMPLOYEE_ID = 2;
-
 type Employee = {
   employee_id: number;
+  userid: string | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -45,10 +43,12 @@ export default function EmployeeAttendancePage() {
     "success" | "error" | ""
   >("");
 
-  // Current date is stored in state so it is not
-  // calculated directly during prerender.
   const [currentDate, setCurrentDate] = useState("");
   const [todayString, setTodayString] = useState("");
+
+  // ==========================
+  // FETCH EMPLOYEE + ATTENDANCE
+  // ==========================
 
   useEffect(() => {
     const updateDate = () => {
@@ -76,74 +76,104 @@ export default function EmployeeAttendancePage() {
     };
 
     updateDate();
-    fetchEmployee();
-    fetchAttendance();
+    fetchEmployeeAttendance();
   }, []);
 
   // ==========================
-  // FETCH CURRENT EMPLOYEE
+  // FETCH LOGGED-IN EMPLOYEE
   // ==========================
 
-  const fetchEmployee = async () => {
+  const fetchEmployeeAttendance = async () => {
     try {
-      const response = await fetch(`${API}/employees/`);
+      const loggedInUser = getUser();
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch employees");
+      if (!loggedInUser || !loggedInUser.sub) {
+        throw new Error(
+          "Logged-in user information could not be found."
+        );
       }
 
-      const employees = await response.json();
+      const loggedInUserId = String(loggedInUser.sub);
 
-      const currentEmployee = employees.find(
+      // Fetch employees and attendance
+      const [
+        employeesResponse,
+        attendanceResponse,
+      ] = await Promise.all([
+        fetch(`${API}/employees/`),
+        fetch(`${API}/attendance/`),
+      ]);
+
+      if (
+        !employeesResponse.ok ||
+        !attendanceResponse.ok
+      ) {
+        throw new Error(
+          "Failed to load employee attendance."
+        );
+      }
+
+      const [
+        employeesData,
+        attendanceData,
+      ] = await Promise.all([
+        employeesResponse.json(),
+        attendanceResponse.json(),
+      ]);
+
+      // Find the employee connected to the logged-in UserID
+      const currentEmployee = employeesData.find(
         (emp: Employee) =>
-          Number(emp.employee_id) === CURRENT_EMPLOYEE_ID
+          String(emp.userid ?? "") === loggedInUserId
       );
 
-      setEmployee(currentEmployee || null);
-    } catch (error) {
-      console.error("Error fetching employee:", error);
-    }
-  };
-
-  // ==========================
-  // FETCH ATTENDANCE
-  // ==========================
-
-  const fetchAttendance = async () => {
-    try {
-      const response = await fetch(`${API}/attendance/`);
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch attendance");
+      if (!currentEmployee) {
+        throw new Error(
+          `Employee record not found for UserID ${loggedInUserId}.`
+        );
       }
 
-      const data = await response.json();
-
-      const myAttendance = data.filter(
-        (record: Attendance) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
+      const currentEmployeeId = Number(
+        currentEmployee.employee_id
       );
 
+      // Only get attendance belonging to the logged-in employee
+      const myAttendance = attendanceData.filter(
+        (record: Attendance) =>
+          Number(record.employee_id) === currentEmployeeId
+      );
+
+      setEmployee(currentEmployee);
       setAttendance(myAttendance);
     } catch (error) {
-      console.error("Error fetching attendance:", error);
+      console.error(
+        "Error loading employee attendance:",
+        error
+      );
 
-      setMessage("Failed to load attendance records.");
+      setEmployee(null);
+      setAttendance([]);
+
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Failed to load attendance records."
+      );
+
       setMessageType("error");
     } finally {
       setLoading(false);
     }
   };
 
-  /*
-   * Find today's attendance record.
-   *
-   * The todayString comes from state and is generated
-   * using Asia/Manila timezone.
-   */
+  // ==========================
+  // FIND TODAY'S ATTENDANCE
+  // ==========================
+
   const todayAttendance = attendance.find(
     (record) =>
-      String(record.date).substring(0, 10) === todayString
+      String(record.date).substring(0, 10) ===
+      todayString
   );
 
   const hasTimedIn = !!todayAttendance?.time_in;
@@ -154,6 +184,14 @@ export default function EmployeeAttendancePage() {
   // ==========================
 
   const handleTimeIn = async () => {
+    if (!employee) {
+      setMessage(
+        "Employee information could not be found."
+      );
+      setMessageType("error");
+      return;
+    }
+
     setTimeInLoading(true);
     setMessage("");
     setMessageType("");
@@ -167,7 +205,7 @@ export default function EmployeeAttendancePage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            employee_id: CURRENT_EMPLOYEE_ID,
+            employee_id: employee.employee_id,
           }),
         }
       );
@@ -180,10 +218,13 @@ export default function EmployeeAttendancePage() {
         );
       }
 
-      setMessage("Time In recorded successfully.");
+      setMessage(
+        "Time In recorded successfully."
+      );
       setMessageType("success");
 
-      await fetchAttendance();
+      // Refresh attendance data after Time In
+      await fetchEmployeeAttendance();
     } catch (error) {
       console.error("Time In error:", error);
 
@@ -246,10 +287,13 @@ export default function EmployeeAttendancePage() {
         );
       }
 
-      setMessage("Time Out recorded successfully.");
+      setMessage(
+        "Time Out recorded successfully."
+      );
       setMessageType("success");
 
-      await fetchAttendance();
+      // Refresh attendance data after Time Out
+      await fetchEmployeeAttendance();
     } catch (error) {
       console.error("Time Out error:", error);
 
@@ -397,7 +441,7 @@ export default function EmployeeAttendancePage() {
         userId={
           employee
             ? `EMP-${String(employee.employee_id).padStart(3, "0")}`
-            : `EMP-${String(CURRENT_EMPLOYEE_ID).padStart(3, "0")}`
+            : "EMP-000"
         }
         role="Employee"
       />
