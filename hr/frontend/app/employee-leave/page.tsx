@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
+import { getUser } from "../../components/AuthGate";
 import "./employee-leave.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL!;
 
-// Temporary employee ID.
-// Later this will come from the logged-in employee.
-const CURRENT_EMPLOYEE_ID = 2;
+type Employee = {
+  employee_id: number;
+  userid: string | null;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  contact_no: string;
+  address: string;
+  hire_date: string;
+  employment_status: string;
+};
 
 type Leave = {
   leave_id: number;
@@ -29,71 +38,189 @@ type LeaveForm = {
 };
 
 export default function EmployeeLeavePage() {
-  const [leaves, setLeaves] = useState<Leave[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [employee, setEmployee] =
+    useState<Employee | null>(null);
+
+  const [leaves, setLeaves] =
+    useState<Leave[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
 
   // Current date
-  const [currentDate, setCurrentDate] = useState("");
+  const [currentDate, setCurrentDate] =
+    useState("");
 
-  const [showModal, setShowModal] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [showModal, setShowModal] =
+    useState(false);
 
-  const [form, setForm] = useState<LeaveForm>({
-    leave_type: "Vacation Leave",
-    start_date: "",
-    end_date: "",
-    reason: "",
-  });
+  const [saving, setSaving] =
+    useState(false);
+
+  const [form, setForm] =
+    useState<LeaveForm>({
+      leave_type: "Vacation Leave",
+      start_date: "",
+      end_date: "",
+      reason: "",
+    });
+
+  // ==========================
+  // INITIAL LOAD
+  // ==========================
 
   useEffect(() => {
-    // Set current date after the component has mounted.
+    // Set current date after the component
+    // has mounted.
     setCurrentDate(
-      new Date().toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })
+      new Date().toLocaleDateString(
+        "en-US",
+        {
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }
+      )
     );
 
-    fetchLeaves();
+    fetchEmployeeAndLeaves();
   }, []);
 
-  const fetchLeaves = async () => {
-    try {
-      const response = await fetch(`${API}/leave/`);
+  // ==========================
+  // FETCH CURRENT EMPLOYEE
+  // AND LEAVE RECORDS
+  // ==========================
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch leave records");
+  const fetchEmployeeAndLeaves =
+    async () => {
+      try {
+        // Get logged-in user
+        const loggedInUser =
+          getUser();
+
+        if (!loggedInUser) {
+          console.error(
+            "No logged-in user found."
+          );
+
+          setLoading(false);
+          return;
+        }
+
+        const loggedInUserId =
+          String(loggedInUser.sub);
+
+        // ==========================
+        // GET EMPLOYEES
+        // ==========================
+
+        const employeeResponse =
+          await fetch(
+            `${API}/employees/`
+          );
+
+        if (!employeeResponse.ok) {
+          throw new Error(
+            "Failed to fetch employees"
+          );
+        }
+
+        const employees: Employee[] =
+          await employeeResponse.json();
+
+        // Find the employee connected
+        // to the logged-in UserID
+        const currentEmployee =
+          employees.find(
+            (emp) =>
+              String(
+                emp.userid ?? ""
+              ) === loggedInUserId
+          );
+
+        if (!currentEmployee) {
+          console.error(
+            "No employee record found for the logged-in user."
+          );
+
+          setEmployee(null);
+          setLeaves([]);
+          setLoading(false);
+          return;
+        }
+
+        setEmployee(currentEmployee);
+
+        const currentEmployeeId =
+          Number(
+            currentEmployee.employee_id
+          );
+
+        // ==========================
+        // GET LEAVE RECORDS
+        // ==========================
+
+        const leaveResponse =
+          await fetch(
+            `${API}/leave/`
+          );
+
+        if (!leaveResponse.ok) {
+          throw new Error(
+            "Failed to fetch leave records"
+          );
+        }
+
+        const data: Leave[] =
+          await leaveResponse.json();
+
+        // Only show leave records
+        // belonging to the logged-in employee
+        const myLeaves =
+          data.filter(
+            (record) =>
+              Number(
+                record.employee_id
+              ) === currentEmployeeId
+          );
+
+        setLeaves(myLeaves);
+      } catch (error) {
+        console.error(
+          "Error fetching leave records:",
+          error
+        );
+      } finally {
+        setLoading(false);
       }
+    };
 
-      const data = await response.json();
-
-      const myLeaves = data.filter(
-        (record: Leave) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
-      );
-
-      setLeaves(myLeaves);
-    } catch (error) {
-      console.error("Error fetching leave records:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ==========================
+  // FORM CHANGE
+  // ==========================
 
   const handleChange = (
     e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      HTMLInputElement |
+        HTMLTextAreaElement |
+        HTMLSelectElement
     >
   ) => {
     setForm({
       ...form,
-      [e.target.name]: e.target.value,
+      [e.target.name]:
+        e.target.value,
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // ==========================
+  // SUBMIT LEAVE
+  // ==========================
+
+  const handleSubmit = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
 
     if (
@@ -101,45 +228,96 @@ export default function EmployeeLeavePage() {
       !form.end_date ||
       !form.reason.trim()
     ) {
-      alert("Please complete all required fields.");
+      alert(
+        "Please complete all required fields."
+      );
+
       return;
     }
 
-    if (form.end_date < form.start_date) {
-      alert("End date cannot be earlier than the start date.");
+    if (
+      form.end_date <
+      form.start_date
+    ) {
+      alert(
+        "End date cannot be earlier than the start date."
+      );
+
+      return;
+    }
+
+    // Make sure we have the logged-in
+    // employee before submitting.
+    if (!employee) {
+      alert(
+        "Employee information could not be found."
+      );
+
       return;
     }
 
     setSaving(true);
 
     try {
-      const response = await fetch(`${API}/leave/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          employee_id: CURRENT_EMPLOYEE_ID,
-          leave_type: form.leave_type,
-          start_date: form.start_date,
-          end_date: form.end_date,
-          reason: form.reason,
-          status: "Pending",
-        }),
-      });
+      const currentEmployeeId =
+        Number(
+          employee.employee_id
+        );
+
+      const response =
+        await fetch(
+          `${API}/leave/`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              employee_id:
+                currentEmployeeId,
+
+              leave_type:
+                form.leave_type,
+
+              start_date:
+                form.start_date,
+
+              end_date:
+                form.end_date,
+
+              reason:
+                form.reason,
+
+              status: "Pending",
+            }),
+          }
+        );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+        const errorData =
+          await response
+            .json()
+            .catch(
+              () => null
+            );
 
         throw new Error(
-          errorData?.detail || "Failed to submit leave request"
+          errorData?.detail ||
+            "Failed to submit leave request"
         );
       }
 
-      alert("Leave request submitted successfully!");
+      alert(
+        "Leave request submitted successfully!"
+      );
 
       setForm({
-        leave_type: "Vacation Leave",
+        leave_type:
+          "Vacation Leave",
+
         start_date: "",
         end_date: "",
         reason: "",
@@ -147,9 +325,14 @@ export default function EmployeeLeavePage() {
 
       setShowModal(false);
 
-      await fetchLeaves();
+      // Refresh the employee's
+      // leave records
+      await fetchEmployeeAndLeaves();
     } catch (error) {
-      console.error("Error submitting leave request:", error);
+      console.error(
+        "Error submitting leave request:",
+        error
+      );
 
       alert(
         error instanceof Error
@@ -161,50 +344,89 @@ export default function EmployeeLeavePage() {
     }
   };
 
-  const pendingLeaves = leaves.filter(
-    (leave) =>
-      leave.status?.toLowerCase() === "pending"
-  ).length;
+  // ==========================
+  // LEAVE COUNTS
+  // ==========================
 
-  const approvedLeaves = leaves.filter(
-    (leave) =>
-      leave.status?.toLowerCase() === "approved"
-  ).length;
+  const pendingLeaves =
+    leaves.filter(
+      (leave) =>
+        leave.status?.toLowerCase() ===
+        "pending"
+    ).length;
 
-  const rejectedLeaves = leaves.filter(
-    (leave) =>
-      leave.status?.toLowerCase() === "rejected"
-  ).length;
+  const approvedLeaves =
+    leaves.filter(
+      (leave) =>
+        leave.status?.toLowerCase() ===
+        "approved"
+    ).length;
 
-  const formatDate = (date: string) => {
+  const rejectedLeaves =
+    leaves.filter(
+      (leave) =>
+        leave.status?.toLowerCase() ===
+        "rejected"
+    ).length;
+
+  // ==========================
+  // FORMAT DATE
+  // ==========================
+
+  const formatDate = (
+    date: string
+  ) => {
     if (!date) return "--";
 
-    const dateOnly = String(date).substring(0, 10);
-    const parts = dateOnly.split("-");
-
-    if (parts.length === 3) {
-      const year = Number(parts[0]);
-      const month = Number(parts[1]);
-      const day = Number(parts[2]);
-
-      const localDate = new Date(
-        year,
-        month - 1,
-        day
+    const dateOnly =
+      String(date).substring(
+        0,
+        10
       );
 
-      return localDate.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      });
+    const parts =
+      dateOnly.split("-");
+
+    if (parts.length === 3) {
+      const year =
+        Number(parts[0]);
+
+      const month =
+        Number(parts[1]);
+
+      const day =
+        Number(parts[2]);
+
+      const localDate =
+        new Date(
+          year,
+          month - 1,
+          day
+        );
+
+      return localDate.toLocaleDateString(
+        "en-US",
+        {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }
+      );
     }
 
     return date;
   };
 
-  const getStatusClass = (status: string) => {
-    switch (status?.toLowerCase()) {
+  // ==========================
+  // STATUS CLASS
+  // ==========================
+
+  const getStatusClass = (
+    status: string
+  ) => {
+    switch (
+      status?.toLowerCase()
+    ) {
       case "pending":
         return "status-pending";
 
@@ -222,25 +444,50 @@ export default function EmployeeLeavePage() {
   return (
     <div className="employee-page">
 
-      {/* SHARED EMPLOYEE SIDEBAR */}
+      {/* ==========================
+          SHARED EMPLOYEE SIDEBAR
+      ========================== */}
+
       <EmployeeSidebar
-        username="Employee User"
-        userId={`EMP-${String(CURRENT_EMPLOYEE_ID).padStart(3, "0")}`}
+        username={
+          employee
+            ? `${employee.first_name} ${employee.last_name}`
+            : "Employee"
+        }
+        userId={
+          employee
+            ? `EMP-${String(
+                employee.employee_id
+              ).padStart(3, "0")}`
+            : "Employee"
+        }
         role="Employee"
       />
 
-      {/* MAIN CONTENT */}
+      {/* ==========================
+          MAIN CONTENT
+      ========================== */}
+
       <main className="employee-main">
 
-        {/* HEADER */}
+        {/* ==========================
+            HEADER
+        ========================== */}
+
         <header className="employee-header">
 
           <div>
-            <h1>My Leave</h1>
+
+            <h1>
+              My Leave
+            </h1>
 
             <p>
-              View your leave requests and submit a new leave application.
+              View your leave requests
+              and submit a new leave
+              application.
             </p>
+
           </div>
 
           <div className="employee-date">
@@ -249,70 +496,130 @@ export default function EmployeeLeavePage() {
 
         </header>
 
-        {/* STATS */}
+        {/* ==========================
+            STATS
+        ========================== */}
+
         <section className="leave-stats">
 
           <div className="leave-stat-card">
-            <div className="stat-icon">📋</div>
+
+            <div className="stat-icon">
+              📋
+            </div>
 
             <div>
-              <span>Total Requests</span>
-              <strong>{leaves.length}</strong>
+
+              <span>
+                Total Requests
+              </span>
+
+              <strong>
+                {leaves.length}
+              </strong>
+
             </div>
+
           </div>
 
           <div className="leave-stat-card">
-            <div className="stat-icon">⏳</div>
+
+            <div className="stat-icon">
+              ⏳
+            </div>
 
             <div>
-              <span>Pending</span>
-              <strong>{pendingLeaves}</strong>
+
+              <span>
+                Pending
+              </span>
+
+              <strong>
+                {pendingLeaves}
+              </strong>
+
             </div>
+
           </div>
 
           <div className="leave-stat-card">
-            <div className="stat-icon">✓</div>
+
+            <div className="stat-icon">
+              ✓
+            </div>
 
             <div>
-              <span>Approved</span>
-              <strong>{approvedLeaves}</strong>
+
+              <span>
+                Approved
+              </span>
+
+              <strong>
+                {approvedLeaves}
+              </strong>
+
             </div>
+
           </div>
 
           <div className="leave-stat-card">
-            <div className="stat-icon">✕</div>
+
+            <div className="stat-icon">
+              ✕
+            </div>
 
             <div>
-              <span>Rejected</span>
-              <strong>{rejectedLeaves}</strong>
+
+              <span>
+                Rejected
+              </span>
+
+              <strong>
+                {rejectedLeaves}
+              </strong>
+
             </div>
+
           </div>
 
         </section>
 
-        {/* RECORD CARD */}
+        {/* ==========================
+            RECORD CARD
+        ========================== */}
+
         <section className="leave-record-card">
 
           <div className="record-header">
 
             <div>
-              <h2>My Leave Requests</h2>
+
+              <h2>
+                My Leave Requests
+              </h2>
 
               <p>
-                Your submitted leave applications
+                Your submitted leave
+                applications
               </p>
+
             </div>
 
             <button
               className="apply-leave-button"
-              onClick={() => setShowModal(true)}
+              onClick={() =>
+                setShowModal(true)
+              }
             >
               + Apply for Leave
             </button>
 
           </div>
 
-          {/* TABLE */}
+          {/* ==========================
+              TABLE
+          ========================== */}
+
           {loading ? (
 
             <div className="leave-empty">
@@ -338,7 +645,8 @@ export default function EmployeeLeavePage() {
               </h3>
 
               <p>
-                You have not submitted any leave requests yet.
+                You have not submitted
+                any leave requests yet.
               </p>
 
             </div>
@@ -350,62 +658,102 @@ export default function EmployeeLeavePage() {
               <table className="leave-table">
 
                 <thead>
+
                   <tr>
-                    <th>LEAVE TYPE</th>
-                    <th>START DATE</th>
-                    <th>END DATE</th>
-                    <th>REASON</th>
-                    <th>STATUS</th>
+
+                    <th>
+                      LEAVE TYPE
+                    </th>
+
+                    <th>
+                      START DATE
+                    </th>
+
+                    <th>
+                      END DATE
+                    </th>
+
+                    <th>
+                      REASON
+                    </th>
+
+                    <th>
+                      STATUS
+                    </th>
+
                   </tr>
+
                 </thead>
 
                 <tbody>
 
-                  {leaves.map((leave) => (
+                  {leaves.map(
+                    (leave) => (
 
-                    <tr key={leave.leave_id}>
+                      <tr
+                        key={
+                          leave.leave_id
+                        }
+                      >
 
-                      <td>
-                        <div className="leave-type-cell">
+                        <td>
 
-                          <div className="leave-icon">
-                            📅
+                          <div className="leave-type-cell">
+
+                            <div className="leave-icon">
+                              📅
+                            </div>
+
+                            <strong>
+                              {
+                                leave.leave_type
+                              }
+                            </strong>
+
                           </div>
 
-                          <strong>
-                            {leave.leave_type}
-                          </strong>
+                        </td>
 
-                        </div>
-                      </td>
+                        <td>
+                          {formatDate(
+                            leave.start_date
+                          )}
+                        </td>
 
-                      <td>
-                        {formatDate(leave.start_date)}
-                      </td>
+                        <td>
+                          {formatDate(
+                            leave.end_date
+                          )}
+                        </td>
 
-                      <td>
-                        {formatDate(leave.end_date)}
-                      </td>
+                        <td>
 
-                      <td>
-                        <div className="reason-cell">
-                          {leave.reason}
-                        </div>
-                      </td>
+                          <div className="reason-cell">
+                            {
+                              leave.reason
+                            }
+                          </div>
 
-                      <td>
-                        <span
-                          className={`leave-status ${getStatusClass(
-                            leave.status
-                          )}`}
-                        >
-                          {leave.status}
-                        </span>
-                      </td>
+                        </td>
 
-                    </tr>
+                        <td>
 
-                  ))}
+                          <span
+                            className={`leave-status ${getStatusClass(
+                              leave.status
+                            )}`}
+                          >
+                            {
+                              leave.status
+                            }
+                          </span>
+
+                        </td>
+
+                      </tr>
+
+                    )
+                  )}
 
                 </tbody>
 
@@ -419,36 +767,52 @@ export default function EmployeeLeavePage() {
 
       </main>
 
-      {/* APPLY LEAVE MODAL */}
+      {/* ==========================
+          APPLY LEAVE MODAL
+      ========================== */}
+
       {showModal && (
 
         <div
           className="modal-overlay"
           onClick={() => {
             if (!saving) {
-              setShowModal(false);
+              setShowModal(
+                false
+              );
             }
           }}
         >
 
           <div
             className="leave-modal"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) =>
+              e.stopPropagation()
+            }
           >
 
             <div className="modal-header">
 
               <div>
-                <h2>Apply for Leave</h2>
+
+                <h2>
+                  Apply for Leave
+                </h2>
 
                 <p>
-                  Submit a new leave request.
+                  Submit a new leave
+                  request.
                 </p>
+
               </div>
 
               <button
                 className="close-button"
-                onClick={() => setShowModal(false)}
+                onClick={() =>
+                  setShowModal(
+                    false
+                  )
+                }
                 disabled={saving}
               >
                 ×
@@ -456,7 +820,11 @@ export default function EmployeeLeavePage() {
 
             </div>
 
-            <form onSubmit={handleSubmit}>
+            <form
+              onSubmit={
+                handleSubmit
+              }
+            >
 
               <div className="form-group">
 
@@ -466,9 +834,14 @@ export default function EmployeeLeavePage() {
 
                 <select
                   name="leave_type"
-                  value={form.leave_type}
-                  onChange={handleChange}
+                  value={
+                    form.leave_type
+                  }
+                  onChange={
+                    handleChange
+                  }
                 >
+
                   <option value="Vacation Leave">
                     Vacation Leave
                   </option>
@@ -488,6 +861,7 @@ export default function EmployeeLeavePage() {
                   <option value="Other">
                     Other
                   </option>
+
                 </select>
 
               </div>
@@ -503,8 +877,12 @@ export default function EmployeeLeavePage() {
                   <input
                     type="date"
                     name="start_date"
-                    value={form.start_date}
-                    onChange={handleChange}
+                    value={
+                      form.start_date
+                    }
+                    onChange={
+                      handleChange
+                    }
                     required
                   />
 
@@ -519,8 +897,12 @@ export default function EmployeeLeavePage() {
                   <input
                     type="date"
                     name="end_date"
-                    value={form.end_date}
-                    onChange={handleChange}
+                    value={
+                      form.end_date
+                    }
+                    onChange={
+                      handleChange
+                    }
                     required
                   />
 
@@ -536,8 +918,12 @@ export default function EmployeeLeavePage() {
 
                 <textarea
                   name="reason"
-                  value={form.reason}
-                  onChange={handleChange}
+                  value={
+                    form.reason
+                  }
+                  onChange={
+                    handleChange
+                  }
                   placeholder="Enter the reason for your leave..."
                   rows={4}
                   required
@@ -546,9 +932,17 @@ export default function EmployeeLeavePage() {
               </div>
 
               <div className="form-note">
-                Your leave request will be submitted with a
-                <strong> Pending </strong>
-                status for HR approval.
+
+                Your leave request
+                will be submitted
+                with a
+                <strong>
+                  {" "}
+                  Pending{" "}
+                </strong>
+                status for HR
+                approval.
+
               </div>
 
               <div className="modal-actions">
@@ -556,7 +950,11 @@ export default function EmployeeLeavePage() {
                 <button
                   type="button"
                   className="cancel-button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() =>
+                    setShowModal(
+                      false
+                    )
+                  }
                   disabled={saving}
                 >
                   Cancel
