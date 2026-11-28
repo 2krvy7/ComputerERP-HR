@@ -1225,7 +1225,10 @@ const displayedSalesOrders =
                   </thead>
 
                   <tbody>
-                    {upcomingRequests.map((item) => (
+                    {upcomingRequests.map((item) => {
+                      console.log("Item Type:", item.ItemType);
+
+                      return (
                       <tr
                         key={item.STOCK_ID}
                         className="border-t border-[#DCE7EA] text-[#1F3338]"
@@ -1309,7 +1312,8 @@ const displayedSalesOrders =
                           </button>
                         </td>
                       </tr>
-                    ))}
+                       );
+})}
                   </tbody>
                 </table>
               )}
@@ -1665,10 +1669,7 @@ const displayedSalesOrders =
           <tbody>
             {finishedGoods.map((record) => (
               <Fragment key={record.Production_ID}>
-              <tr
-                key={record.Production_ID}
-                className="border-t border-[#DCE7EA] text-[#1F3338]"
-              >
+              <tr className="border-t border-[#DCE7EA] text-[#1F3338]">
                 <td className="p-3">{record.Production_ID}</td>
                 <td className="p-3 font-medium">{record.Item_Name}</td>
                 <td className="p-3">{record.SKU}</td>
@@ -2598,7 +2599,8 @@ const displayedSalesOrders =
                 (
                   activeSection === "Material Requests" ||
                   activeSection === "Material Release" ||
-                  activeSection === "Production Updates"
+                  activeSection === "Production Updates" ||
+                  activeSection === "Finished Goods Received"
                 )
               ) && !(
                 activeDepartment === "Sales" &&
