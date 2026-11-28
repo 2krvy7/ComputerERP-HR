@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
+import { getUser } from "../../components/AuthGate";
 import "./employee-profile.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL!;
 
-// Temporary employee ID for testing
-const CURRENT_EMPLOYEE_ID = 2;
-
 type Employee = {
   employee_id: number;
-  userid: string;
+  userid: string | null;
   position_id: number | null;
   first_name: string;
   last_name: string;
@@ -36,45 +34,89 @@ export default function EmployeeProfile() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        // Get employees
-        const employeeResponse = await fetch(`${API}/employees/`);
+        // ==========================
+        // GET LOGGED-IN USER
+        // ==========================
+
+        const loggedInUser = getUser();
+
+        if (!loggedInUser) {
+          console.error("No logged-in user found.");
+          setLoading(false);
+          return;
+        }
+
+        const loggedInUserId = String(loggedInUser.sub);
+
+        // ==========================
+        // GET EMPLOYEES
+        // ==========================
+
+        const employeeResponse = await fetch(
+          `${API}/employees/`
+        );
 
         if (!employeeResponse.ok) {
           throw new Error("Failed to fetch employees");
         }
 
-        const employees = await employeeResponse.json();
+        const employees: Employee[] =
+          await employeeResponse.json();
 
+        // Find the employee connected to the
+        // logged-in user's UserID
         const currentEmployee = employees.find(
-          (emp: Employee) =>
-            emp.employee_id === CURRENT_EMPLOYEE_ID
+          (emp) =>
+            String(emp.userid ?? "") === loggedInUserId
         );
 
         setEmployee(currentEmployee || null);
 
-        // Get positions
-        const positionResponse = await fetch(`${API}/positions/`);
+        // ==========================
+        // GET POSITION
+        // ==========================
 
-        if (positionResponse.ok && currentEmployee?.position_id) {
-          const positions = await positionResponse.json();
-
-          const currentPosition = positions.find(
-            (pos: Position) =>
-              pos.position_id === currentEmployee.position_id
+        if (
+          currentEmployee?.position_id
+        ) {
+          const positionResponse = await fetch(
+            `${API}/positions/`
           );
 
-          setPosition(currentPosition || null);
+          if (positionResponse.ok) {
+            const positions: Position[] =
+              await positionResponse.json();
+
+            const currentPosition =
+              positions.find(
+                (pos) =>
+                  pos.position_id ===
+                  currentEmployee.position_id
+              );
+
+            setPosition(
+              currentPosition || null
+            );
+          }
         }
 
         setLoading(false);
       } catch (error) {
-        console.error(error);
+        console.error(
+          "Error loading profile:",
+          error
+        );
+
         setLoading(false);
       }
     };
 
     fetchProfile();
   }, []);
+
+  // ==========================
+  // FORMAT DATE
+  // ==========================
 
   const formatDate = (date: string) => {
     if (!date) return "Not provided";
@@ -85,55 +127,73 @@ export default function EmployeeProfile() {
       return date;
     }
 
-    return parsed.toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
+    return parsed.toLocaleDateString(
+      "en-US",
+      {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }
+    );
   };
 
-  /*
-   * Loading
-   */
+  // ==========================
+  // LOADING
+  // ==========================
+
   if (loading) {
     return (
       <div className="employee-layout">
+
         <EmployeeSidebar
           username="Employee"
-          userId={`EMP-${String(CURRENT_EMPLOYEE_ID).padStart(3, "0")}`}
+          userId="Employee"
           role="Employee"
         />
 
         <main className="employee-main">
+
           <div className="loading">
             Loading profile...
           </div>
+
         </main>
+
       </div>
     );
   }
 
-  /*
-   * Employee not found
-   */
+  // ==========================
+  // EMPLOYEE NOT FOUND
+  // ==========================
+
   if (!employee) {
     return (
       <div className="employee-layout">
+
         <EmployeeSidebar
           username="Employee"
-          userId={`EMP-${String(CURRENT_EMPLOYEE_ID).padStart(3, "0")}`}
+          userId="Employee"
           role="Employee"
         />
 
         <main className="employee-main">
+
           <div className="empty-profile">
-            <h2>Employee Not Found</h2>
+
+            <h2>
+              Employee Not Found
+            </h2>
 
             <p>
-              No employee record was found for the current employee ID.
+              No employee record was found
+              for the logged-in user.
             </p>
+
           </div>
+
         </main>
+
       </div>
     );
   }
@@ -141,62 +201,95 @@ export default function EmployeeProfile() {
   return (
     <div className="employee-layout">
 
-      {/* SHARED EMPLOYEE SIDEBAR */}
+      {/* ==========================
+          SHARED EMPLOYEE SIDEBAR
+      ========================== */}
+
       <EmployeeSidebar
         username={`${employee.first_name} ${employee.last_name}`}
-        userId={`EMP-${String(employee.employee_id).padStart(3, "0")}`}
+        userId={`EMP-${String(
+          employee.employee_id
+        ).padStart(3, "0")}`}
         role="Employee"
       />
 
-      {/* MAIN CONTENT */}
+      {/* ==========================
+          MAIN CONTENT
+      ========================== */}
+
       <main className="employee-main">
 
+        {/* ==========================
+            HEADER
+        ========================== */}
+
         <header className="employee-header">
+
           <div>
-            <h1>My Profile</h1>
+
+            <h1>
+              My Profile
+            </h1>
 
             <p>
-              View your personal and employment information
+              View your personal and employment
+              information
             </p>
+
           </div>
 
           <div className="current-date">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })}
+            {new Date().toLocaleDateString(
+              "en-US",
+              {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              }
+            )}
           </div>
+
         </header>
 
-        {/* PROFILE HEADER */}
+        {/* ==========================
+            PROFILE HEADER
+        ========================== */}
+
         <section className="profile-card">
 
           <div className="profile-avatar">
+
             {employee.first_name.charAt(0)}
             {employee.last_name.charAt(0)}
+
           </div>
 
           <div className="profile-name">
 
             <h2>
-              {employee.first_name} {employee.last_name}
+              {employee.first_name}{" "}
+              {employee.last_name}
             </h2>
 
             <p>
-              Employee ID: {employee.employee_id}
+              Employee ID:{" "}
+              {employee.employee_id}
             </p>
 
             <p>
-              {position?.position_name || "Position not assigned"}
+              {position?.position_name ||
+                "Position not assigned"}
             </p>
 
             <span
               className={`status-badge ${
-                employee.employment_status?.toLowerCase() === "active"
+                employee.employment_status
+                  ?.toLowerCase() === "active"
                   ? "active"
-                  : employee.employment_status?.toLowerCase() === "on leave"
+                  : employee.employment_status
+                      ?.toLowerCase() ===
+                    "on leave"
                   ? "leave"
                   : "inactive"
               }`}
@@ -208,145 +301,226 @@ export default function EmployeeProfile() {
 
         </section>
 
-        {/* PERSONAL INFORMATION */}
+        {/* ==========================
+            PERSONAL INFORMATION
+        ========================== */}
+
         <section className="info-card">
 
           <div className="section-title">
-            <h2>Personal Information</h2>
+
+            <h2>
+              Personal Information
+            </h2>
 
             <p>
               Your basic personal information
             </p>
+
           </div>
 
           <div className="info-grid">
 
             <div className="info-item">
-              <label>First Name</label>
+
+              <label>
+                First Name
+              </label>
 
               <div>
-                {employee.first_name || "Not provided"}
+                {employee.first_name ||
+                  "Not provided"}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Last Name</label>
+
+              <label>
+                Last Name
+              </label>
 
               <div>
-                {employee.last_name || "Not provided"}
+                {employee.last_name ||
+                  "Not provided"}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Birth Date</label>
+
+              <label>
+                Birth Date
+              </label>
 
               <div>
-                {formatDate(employee.birth_date)}
+                {formatDate(
+                  employee.birth_date
+                )}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Contact Number</label>
+
+              <label>
+                Contact Number
+              </label>
 
               <div>
-                {employee.contact_no || "Not provided"}
+                {employee.contact_no ||
+                  "Not provided"}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Email</label>
+
+              <label>
+                Email
+              </label>
 
               <div>
-                {employee.email || "Not provided"}
+                {employee.email ||
+                  "Not provided"}
               </div>
+
             </div>
 
             <div className="info-item full-width">
-              <label>Address</label>
+
+              <label>
+                Address
+              </label>
 
               <div>
-                {employee.address || "Not provided"}
+                {employee.address ||
+                  "Not provided"}
               </div>
+
             </div>
 
           </div>
 
         </section>
 
-        {/* EMPLOYMENT INFORMATION */}
+        {/* ==========================
+            EMPLOYMENT INFORMATION
+        ========================== */}
+
         <section className="info-card">
 
           <div className="section-title">
-            <h2>Employment Information</h2>
+
+            <h2>
+              Employment Information
+            </h2>
 
             <p>
               Your employment details
             </p>
+
           </div>
 
           <div className="info-grid">
 
             <div className="info-item">
-              <label>Employee ID</label>
+
+              <label>
+                Employee ID
+              </label>
 
               <div>
                 {employee.employee_id}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>User ID</label>
+
+              <label>
+                User ID
+              </label>
 
               <div>
-                {employee.userid}
+                {employee.userid ||
+                  "Not assigned"}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Position</label>
+
+              <label>
+                Position
+              </label>
 
               <div>
-                {position?.position_name || "Position not assigned"}
+                {position?.position_name ||
+                  "Position not assigned"}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Hire Date</label>
+
+              <label>
+                Hire Date
+              </label>
 
               <div>
-                {formatDate(employee.hire_date)}
+                {formatDate(
+                  employee.hire_date
+                )}
               </div>
+
             </div>
 
             <div className="info-item">
-              <label>Employment Status</label>
+
+              <label>
+                Employment Status
+              </label>
 
               <div>
                 {employee.employment_status}
               </div>
+
             </div>
 
           </div>
 
         </section>
 
-        {/* INFORMATION NOTE */}
+        {/* ==========================
+            INFORMATION NOTE
+        ========================== */}
+
         <div className="profile-note">
 
-          <span>ℹ️</span>
+          <span>
+            ℹ️
+          </span>
 
           <div>
-            <strong>Profile Information</strong>
+
+            <strong>
+              Profile Information
+            </strong>
 
             <p>
-              Your profile information is managed by the HR department.
-              If you need to update any information, please contact HR.
+              Your profile information is
+              managed by the HR department.
+              If you need to update any
+              information, please contact HR.
             </p>
+
           </div>
 
         </div>
 
       </main>
+
     </div>
   );
 }
