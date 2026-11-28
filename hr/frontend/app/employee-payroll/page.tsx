@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
+import { getUser } from "../../components/AuthGate";
 import "./employee-payroll.css";
 
 const API = process.env.NEXT_PUBLIC_API_URL!;
 
-// Temporary employee ID.
-// Later this will come from the logged-in employee.
-const CURRENT_EMPLOYEE_ID = 2;
+type Employee = {
+  employee_id: number;
+  userid: string | null;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  contact_no: string;
+  address: string;
+  hire_date: string;
+  employment_status: string;
+};
 
 type Payroll = {
   payroll_id: number;
@@ -28,77 +37,173 @@ type Payroll = {
 };
 
 export default function EmployeePayrollPage() {
-  const [payroll, setPayroll] = useState<Payroll[]>([]);
+  const [employee, setEmployee] =
+    useState<Employee | null>(null);
+
+  const [payroll, setPayroll] =
+    useState<Payroll[]>([]);
+
   const [loading, setLoading] = useState(true);
 
   // Current date is set after the component mounts
   // to prevent the Next.js prerender error.
-  const [currentDate, setCurrentDate] = useState("");
+  const [currentDate, setCurrentDate] =
+    useState("");
 
   useEffect(() => {
     const updateCurrentDate = () => {
       const now = new Date();
 
-      const displayDate = new Intl.DateTimeFormat("en-PH", {
-        timeZone: "Asia/Manila",
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }).format(now);
+      const displayDate = new Intl.DateTimeFormat(
+        "en-PH",
+        {
+          timeZone: "Asia/Manila",
+          weekday: "long",
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        }
+      ).format(now);
 
       setCurrentDate(displayDate);
     };
 
     updateCurrentDate();
-    fetchPayroll();
+    fetchEmployeeAndPayroll();
   }, []);
 
-  const fetchPayroll = async () => {
-    try {
-      const response = await fetch(`${API}/payroll/`);
+  // ==========================
+  // FETCH CURRENT EMPLOYEE
+  // ==========================
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch payroll records");
+  const fetchEmployeeAndPayroll = async () => {
+    try {
+      // Get logged-in user from JWT
+      const loggedInUser = getUser();
+
+      if (!loggedInUser) {
+        console.error(
+          "No logged-in user found."
+        );
+        setLoading(false);
+        return;
       }
 
-      const data = await response.json();
+      const loggedInUserId = String(
+        loggedInUser.sub
+      );
 
+      // ==========================
+      // GET EMPLOYEES
+      // ==========================
+
+      const employeeResponse = await fetch(
+        `${API}/employees/`
+      );
+
+      if (!employeeResponse.ok) {
+        throw new Error(
+          "Failed to fetch employees"
+        );
+      }
+
+      const employees: Employee[] =
+        await employeeResponse.json();
+
+      // Find the employee connected to
+      // the logged-in user's UserID
+      const currentEmployee =
+        employees.find(
+          (emp) =>
+            String(emp.userid ?? "") ===
+            loggedInUserId
+        );
+
+      if (!currentEmployee) {
+        console.error(
+          "No employee record found for the logged-in user."
+        );
+
+        setEmployee(null);
+        setPayroll([]);
+        setLoading(false);
+        return;
+      }
+
+      setEmployee(currentEmployee);
+
+      const currentEmployeeId =
+        Number(currentEmployee.employee_id);
+
+      // ==========================
+      // GET PAYROLL
+      // ==========================
+
+      const payrollResponse = await fetch(
+        `${API}/payroll/`
+      );
+
+      if (!payrollResponse.ok) {
+        throw new Error(
+          "Failed to fetch payroll records"
+        );
+      }
+
+      const data: Payroll[] =
+        await payrollResponse.json();
+
+      // Only show payroll belonging to
+      // the logged-in employee
       const myPayroll = data.filter(
-        (record: Payroll) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
+        (record) =>
+          Number(record.employee_id) ===
+          currentEmployeeId
       );
 
       setPayroll(myPayroll);
     } catch (error) {
-      console.error("Error fetching payroll:", error);
+      console.error(
+        "Error fetching payroll:",
+        error
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ==========================
+  // FORMAT CURRENCY
+  // ==========================
+
   const formatCurrency = (
     amount: number | null | undefined
   ) => {
-    return `₱${Number(amount || 0).toLocaleString(
-      "en-PH",
-      {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }
-    )}`;
+    return `₱${Number(
+      amount || 0
+    ).toLocaleString("en-PH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
   };
+
+  // ==========================
+  // FORMAT DATE
+  // ==========================
 
   /*
    * Safely formats YYYY-MM-DD dates.
    * This avoids timezone issues and Invalid Date.
    */
-  const formatDate = (date: string | null) => {
+  const formatDate = (
+    date: string | null
+  ) => {
     if (!date) {
       return "--";
     }
 
-    const dateOnly = String(date).substring(0, 10);
+    const dateOnly =
+      String(date).substring(0, 10);
+
     const parts = dateOnly.split("-");
 
     if (parts.length === 3) {
@@ -131,8 +236,16 @@ export default function EmployeePayrollPage() {
     return String(date);
   };
 
-  const getStatusClass = (status: string) => {
-    switch (status?.toLowerCase()) {
+  // ==========================
+  // STATUS CLASS
+  // ==========================
+
+  const getStatusClass = (
+    status: string
+  ) => {
+    switch (
+      status?.toLowerCase()
+    ) {
       case "paid":
         return "status-paid";
 
@@ -147,62 +260,171 @@ export default function EmployeePayrollPage() {
     }
   };
 
+  // ==========================
+  // SORT PAYROLL
+  // ==========================
+
   // Sort newest payroll first.
-  const sortedPayroll = [...payroll].sort(
-    (a, b) => b.payroll_id - a.payroll_id
+  const sortedPayroll = [
+    ...payroll,
+  ].sort(
+    (a, b) =>
+      b.payroll_id - a.payroll_id
   );
 
-  const latestPayroll = sortedPayroll[0];
+  const latestPayroll =
+    sortedPayroll[0];
 
-  const totalNetSalary = payroll.reduce(
-    (total, record) =>
-      total + Number(record.net_salary || 0),
-    0
-  );
+  // ==========================
+  // PAYROLL TOTALS
+  // ==========================
 
-  const totalGrossSalary = payroll.reduce(
-    (total, record) =>
-      total + Number(record.gross_salary || 0),
-    0
-  );
+  const totalNetSalary =
+    payroll.reduce(
+      (total, record) =>
+        total +
+        Number(
+          record.net_salary || 0
+        ),
+      0
+    );
 
-  const totalDeductions = payroll.reduce(
-    (total, record) =>
-      total +
-      Number(record.sss || 0) +
-      Number(record.philhealth || 0) +
-      Number(record.pag_ibig || 0) +
-      Number(record.deductions || 0),
-    0
-  );
+  const totalGrossSalary =
+    payroll.reduce(
+      (total, record) =>
+        total +
+        Number(
+          record.gross_salary || 0
+        ),
+      0
+    );
+
+  const totalDeductions =
+    payroll.reduce(
+      (total, record) =>
+        total +
+        Number(record.sss || 0) +
+        Number(
+          record.philhealth || 0
+        ) +
+        Number(
+          record.pag_ibig || 0
+        ) +
+        Number(
+          record.deductions || 0
+        ),
+      0
+    );
+
+  // ==========================
+  // LOADING
+  // ==========================
+
+  if (loading) {
+    return (
+      <div className="employee-page">
+
+        <EmployeeSidebar
+          username="Employee"
+          userId="Employee"
+          role="Employee"
+        />
+
+        <main className="employee-main">
+
+          <div className="payroll-empty">
+
+            <div className="loading-spinner"></div>
+
+            <p>
+              Loading payroll records...
+            </p>
+
+          </div>
+
+        </main>
+
+      </div>
+    );
+  }
+
+  // ==========================
+  // EMPLOYEE NOT FOUND
+  // ==========================
+
+  if (!employee) {
+    return (
+      <div className="employee-page">
+
+        <EmployeeSidebar
+          username="Employee"
+          userId="Employee"
+          role="Employee"
+        />
+
+        <main className="employee-main">
+
+          <div className="payroll-empty">
+
+            <div className="empty-icon">
+              👤
+            </div>
+
+            <h3>
+              Employee Not Found
+            </h3>
+
+            <p>
+              No employee record was found
+              for the logged-in user.
+            </p>
+
+          </div>
+
+        </main>
+
+      </div>
+    );
+  }
 
   return (
     <div className="employee-page">
 
-      {/* SHARED EMPLOYEE SIDEBAR */}
+      {/* ==========================
+          SHARED EMPLOYEE SIDEBAR
+      ========================== */}
 
       <EmployeeSidebar
-        username="Employee User"
+        username={`${employee.first_name} ${employee.last_name}`}
         userId={`EMP-${String(
-          CURRENT_EMPLOYEE_ID
+          employee.employee_id
         ).padStart(3, "0")}`}
         role="Employee"
       />
 
-      {/* MAIN CONTENT */}
+      {/* ==========================
+          MAIN CONTENT
+      ========================== */}
 
       <main className="employee-main">
 
-        {/* HEADER */}
+        {/* ==========================
+            HEADER
+        ========================== */}
 
         <header className="employee-header">
 
           <div>
-            <h1>My Payroll</h1>
+
+            <h1>
+              My Payroll
+            </h1>
 
             <p>
-              View your salary and payroll history.
+              View your salary and payroll
+              history.
             </p>
+
           </div>
 
           <div className="employee-date">
@@ -211,7 +433,9 @@ export default function EmployeePayrollPage() {
 
         </header>
 
-        {/* SUMMARY CARDS */}
+        {/* ==========================
+            SUMMARY CARDS
+        ========================== */}
 
         <section className="payroll-stats">
 
@@ -222,11 +446,15 @@ export default function EmployeePayrollPage() {
             </div>
 
             <div>
-              <span>Payroll Records</span>
+
+              <span>
+                Payroll Records
+              </span>
 
               <strong>
                 {payroll.length}
               </strong>
+
             </div>
 
           </div>
@@ -238,7 +466,10 @@ export default function EmployeePayrollPage() {
             </div>
 
             <div>
-              <span>Latest Net Salary</span>
+
+              <span>
+                Latest Net Salary
+              </span>
 
               <strong className="salary-value">
                 {latestPayroll
@@ -247,6 +478,7 @@ export default function EmployeePayrollPage() {
                     )
                   : "₱0.00"}
               </strong>
+
             </div>
 
           </div>
@@ -258,13 +490,17 @@ export default function EmployeePayrollPage() {
             </div>
 
             <div>
-              <span>Total Gross</span>
+
+              <span>
+                Total Gross
+              </span>
 
               <strong className="salary-value">
                 {formatCurrency(
                   totalGrossSalary
                 )}
               </strong>
+
             </div>
 
           </div>
@@ -276,20 +512,26 @@ export default function EmployeePayrollPage() {
             </div>
 
             <div>
-              <span>Total Deductions</span>
+
+              <span>
+                Total Deductions
+              </span>
 
               <strong className="salary-value">
                 {formatCurrency(
                   totalDeductions
                 )}
               </strong>
+
             </div>
 
           </div>
 
         </section>
 
-        {/* LATEST PAYROLL */}
+        {/* ==========================
+            LATEST PAYROLL
+        ========================== */}
 
         {latestPayroll && (
           <section className="latest-payroll-card">
@@ -297,11 +539,15 @@ export default function EmployeePayrollPage() {
             <div className="latest-header">
 
               <div>
-                <h2>Latest Payroll</h2>
+
+                <h2>
+                  Latest Payroll
+                </h2>
 
                 <p>
                   {latestPayroll.pay_period}
                 </p>
+
               </div>
 
               <span
@@ -309,7 +555,9 @@ export default function EmployeePayrollPage() {
                   latestPayroll.payroll_status
                 )}`}
               >
-                {latestPayroll.payroll_status}
+                {
+                  latestPayroll.payroll_status
+                }
               </span>
 
             </div>
@@ -317,33 +565,45 @@ export default function EmployeePayrollPage() {
             <div className="salary-highlight">
 
               <div>
-                <span>Net Salary</span>
+
+                <span>
+                  Net Salary
+                </span>
 
                 <strong>
                   {formatCurrency(
                     latestPayroll.net_salary
                   )}
                 </strong>
+
               </div>
 
               <div>
-                <span>Gross Salary</span>
+
+                <span>
+                  Gross Salary
+                </span>
 
                 <strong>
                   {formatCurrency(
                     latestPayroll.gross_salary
                   )}
                 </strong>
+
               </div>
 
               <div>
-                <span>Payment Date</span>
+
+                <span>
+                  Payment Date
+                </span>
 
                 <strong>
                   {formatDate(
                     latestPayroll.payment_date
                   )}
                 </strong>
+
               </div>
 
             </div>
@@ -351,35 +611,30 @@ export default function EmployeePayrollPage() {
           </section>
         )}
 
-        {/* PAYROLL HISTORY */}
+        {/* ==========================
+            PAYROLL HISTORY
+        ========================== */}
 
         <section className="payroll-record-card">
 
           <div className="record-header">
 
             <div>
-              <h2>Payroll History</h2>
+
+              <h2>
+                Payroll History
+              </h2>
 
               <p>
-                Your semi-monthly payroll records
+                Your semi-monthly payroll
+                records
               </p>
+
             </div>
 
           </div>
 
-          {loading ? (
-
-            <div className="payroll-empty">
-
-              <div className="loading-spinner"></div>
-
-              <p>
-                Loading payroll records...
-              </p>
-
-            </div>
-
-          ) : payroll.length === 0 ? (
+          {payroll.length === 0 ? (
 
             <div className="payroll-empty">
 
@@ -392,7 +647,8 @@ export default function EmployeePayrollPage() {
               </h3>
 
               <p>
-                You don't have any payroll records yet.
+                You don't have any payroll
+                records yet.
               </p>
 
             </div>
@@ -406,107 +662,146 @@ export default function EmployeePayrollPage() {
                 <thead>
 
                   <tr>
-                    <th>PAY PERIOD</th>
-                    <th>OVERTIME</th>
-                    <th>GROSS SALARY</th>
-                    <th>SSS</th>
-                    <th>PHILHEALTH</th>
-                    <th>PAG-IBIG</th>
-                    <th>DEDUCTIONS</th>
-                    <th>NET SALARY</th>
-                    <th>STATUS</th>
-                    <th>PAYMENT DATE</th>
+
+                    <th>
+                      PAY PERIOD
+                    </th>
+
+                    <th>
+                      OVERTIME
+                    </th>
+
+                    <th>
+                      GROSS SALARY
+                    </th>
+
+                    <th>
+                      SSS
+                    </th>
+
+                    <th>
+                      PHILHEALTH
+                    </th>
+
+                    <th>
+                      PAG-IBIG
+                    </th>
+
+                    <th>
+                      DEDUCTIONS
+                    </th>
+
+                    <th>
+                      NET SALARY
+                    </th>
+
+                    <th>
+                      STATUS
+                    </th>
+
+                    <th>
+                      PAYMENT DATE
+                    </th>
+
                   </tr>
 
                 </thead>
 
                 <tbody>
 
-                  {sortedPayroll.map((record) => (
+                  {sortedPayroll.map(
+                    (record) => (
 
-                    <tr
-                      key={record.payroll_id}
-                    >
+                      <tr
+                        key={
+                          record.payroll_id
+                        }
+                      >
 
-                      <td>
+                        <td>
 
-                        <div className="pay-period-cell">
+                          <div className="pay-period-cell">
 
-                          <div className="pay-period-icon">
-                            💰
+                            <div className="pay-period-icon">
+                              💰
+                            </div>
+
+                            <strong>
+                              {
+                                record.pay_period
+                              }
+                            </strong>
+
                           </div>
 
-                          <strong>
-                            {record.pay_period}
-                          </strong>
+                        </td>
 
-                        </div>
+                        <td>
+                          {formatCurrency(
+                            record.overtime
+                          )}
+                        </td>
 
-                      </td>
+                        <td className="gross-cell">
+                          {formatCurrency(
+                            record.gross_salary
+                          )}
+                        </td>
 
-                      <td>
-                        {formatCurrency(
-                          record.overtime
-                        )}
-                      </td>
+                        <td>
+                          {formatCurrency(
+                            record.sss
+                          )}
+                        </td>
 
-                      <td className="gross-cell">
-                        {formatCurrency(
-                          record.gross_salary
-                        )}
-                      </td>
+                        <td>
+                          {formatCurrency(
+                            record.philhealth
+                          )}
+                        </td>
 
-                      <td>
-                        {formatCurrency(
-                          record.sss
-                        )}
-                      </td>
+                        <td>
+                          {formatCurrency(
+                            record.pag_ibig
+                          )}
+                        </td>
 
-                      <td>
-                        {formatCurrency(
-                          record.philhealth
-                        )}
-                      </td>
+                        <td>
+                          {formatCurrency(
+                            record.deductions
+                          )}
+                        </td>
 
-                      <td>
-                        {formatCurrency(
-                          record.pag_ibig
-                        )}
-                      </td>
+                        <td className="net-cell">
+                          {formatCurrency(
+                            record.net_salary
+                          )}
+                        </td>
 
-                      <td>
-                        {formatCurrency(
-                          record.deductions
-                        )}
-                      </td>
+                        <td>
 
-                      <td className="net-cell">
-                        {formatCurrency(
-                          record.net_salary
-                        )}
-                      </td>
+                          <span
+                            className={`payroll-status ${getStatusClass(
+                              record.payroll_status
+                            )}`}
+                          >
+                            {
+                              record.payroll_status
+                            }
+                          </span>
 
-                      <td>
+                        </td>
 
-                        <span
-                          className={`payroll-status ${getStatusClass(
-                            record.payroll_status
-                          )}`}
-                        >
-                          {record.payroll_status}
-                        </span>
+                        <td>
+                          {formatDate(
+                            record.payment_date
+                          )}
+                        </td>
 
-                      </td>
+                      </tr>
 
-                      <td>
-                        {formatDate(
-                          record.payment_date
-                        )}
-                      </td>
-
-                    </tr>
-
-                  ))}
+                    )
+                  )}
 
                 </tbody>
 
@@ -518,7 +813,9 @@ export default function EmployeePayrollPage() {
 
         </section>
 
-        {/* PAYROLL INFORMATION */}
+        {/* ==========================
+            PAYROLL INFORMATION
+        ========================== */}
 
         <section className="payroll-info-card">
 
@@ -533,10 +830,12 @@ export default function EmployeePayrollPage() {
             </h3>
 
             <p>
-              Your salary is processed semi-monthly.
-              Your payroll includes overtime, attendance
-              deductions, government contributions, and
-              other applicable deductions.
+              Your salary is processed
+              semi-monthly. Your payroll
+              includes overtime, attendance
+              deductions, government
+              contributions, and other
+              applicable deductions.
             </p>
 
           </div>
