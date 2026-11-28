@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react";
 import EmployeeSidebar from "../../components/EmployeeSidebar";
+import { getUser } from "../../components/AuthGate";
 import "./employee-dashboard.css";
 
-const API = "http://127.0.0.1:8000";
-
-// Temporary employee ID.
-// Later, this can come from the logged-in user's account.
-const CURRENT_EMPLOYEE_ID = 2;
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 type Employee = {
   employee_id: number;
+  userid: string | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -73,9 +71,24 @@ export default function EmployeeDashboard() {
 
   /*
    * Fetch all employee dashboard information.
+   *
+   * The logged-in user's UserID comes from the JWT.
+   * We use that UserID to find the matching EmployeeRecords row.
    */
   const fetchEmployeeDashboard = async () => {
     try {
+      // Get the currently logged-in user from the JWT.
+      const loggedInUser = getUser();
+
+      if (!loggedInUser || !loggedInUser.sub) {
+        throw new Error(
+          "Logged-in user information could not be found."
+        );
+      }
+
+      // JWT "sub" contains the UserID.
+      const loggedInUserId = String(loggedInUser.sub);
+
       const [
         employeesResponse,
         attendanceResponse,
@@ -109,27 +122,64 @@ export default function EmployeeDashboard() {
         payrollResponse.json(),
       ]);
 
+      /*
+       * Find the EmployeeRecords row belonging
+       * to the logged-in UserID.
+       *
+       * Example:
+       *
+       * JWT:
+       * sub = "005"
+       *
+       * EmployeeRecords:
+       * UserID = "005"
+       * employee_id = 5
+       *
+       * Therefore currentEmployeeId = 5
+       */
       const currentEmployee = employeesData.find(
         (emp: Employee) =>
-          Number(emp.employee_id) === CURRENT_EMPLOYEE_ID
+          String(emp.userid ?? "") === loggedInUserId
       );
 
+      if (!currentEmployee) {
+        throw new Error(
+          `Employee record not found for UserID ${loggedInUserId}.`
+        );
+      }
+
+      const currentEmployeeId = Number(
+        currentEmployee.employee_id
+      );
+
+      /*
+       * Only get attendance belonging to
+       * the logged-in employee.
+       */
       const myAttendance = attendanceData.filter(
         (record: Attendance) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
+          Number(record.employee_id) === currentEmployeeId
       );
 
+      /*
+       * Only get leave records belonging to
+       * the logged-in employee.
+       */
       const myLeave = leaveData.filter(
         (record: LeaveRecord) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
+          Number(record.employee_id) === currentEmployeeId
       );
 
+      /*
+       * Only get payroll records belonging to
+       * the logged-in employee.
+       */
       const myPayroll = payrollData.filter(
         (record: Payroll) =>
-          Number(record.employee_id) === CURRENT_EMPLOYEE_ID
+          Number(record.employee_id) === currentEmployeeId
       );
 
-      setEmployee(currentEmployee || null);
+      setEmployee(currentEmployee);
       setAttendance(myAttendance);
       setLeaveRecords(myLeave);
       setPayroll(myPayroll);
@@ -138,17 +188,18 @@ export default function EmployeeDashboard() {
         "Error loading employee dashboard:",
         error
       );
+
+      setEmployee(null);
     } finally {
       setLoading(false);
     }
   };
 
   /*
-   * Initial load + automatic refresh.
+   * Initial load.
    *
-   * The employee can Time In/Time Out from
-   * Employee Attendance, so the dashboard
-   * refreshes every 3 seconds.
+   * The dashboard loads its data once when the page opens.
+   * Automatic 3-second refresh has been removed.
    */
   useEffect(() => {
     const updateDate = () => {
@@ -175,13 +226,6 @@ export default function EmployeeDashboard() {
 
     updateDate();
     fetchEmployeeDashboard();
-
-    const interval = setInterval(() => {
-      updateDate();
-      fetchEmployeeDashboard();
-    }, 3000);
-
-    return () => clearInterval(interval);
   }, []);
 
   /* =========================

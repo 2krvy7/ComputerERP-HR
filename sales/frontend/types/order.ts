@@ -2,11 +2,14 @@
 export type SalesOrderStatus =
   | "Pending"
   | "Accepted"
+  | "Waiting for Stock"
+  | "Preparing"
+  | "Released to Sales"
+  | "Completed"
+  | "Cancelled"
   // Historical statuses returned for existing orders.
   | "Approved"
-  | "Processing"
-  | "Completed"
-  | "Cancelled";
+  | "Processing";
 
 export interface SalesOrderDetail {
   order_detail_id: number;
@@ -69,6 +72,7 @@ export interface FinishedGoodItem {
   ItemType: string | null;
   unit_of_measure: string | null;
   production_cost: string | number | null;
+  minimum_selling_price: string | number | null;
   markup_percentage: string | number | null;
   Price: string | number | null;
   status: string | null;

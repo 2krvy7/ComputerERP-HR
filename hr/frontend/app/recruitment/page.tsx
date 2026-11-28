@@ -4,7 +4,7 @@ import HRISSidebar from "@/components/HRISSidebar";
 import { useEffect, useState } from "react";
 import "./recruitment.css";
 
-const API = "http://127.0.0.1:8000";
+const API = process.env.NEXT_PUBLIC_API_URL!;
 
 type Applicant = {
   applicant_id: number;

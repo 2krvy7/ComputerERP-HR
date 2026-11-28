@@ -4,6 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+
 from app.database import DATABASE_URL
 
 # Models
@@ -19,6 +20,8 @@ from app.models.sales_invoice import SalesInvoice
 from app.models.accounts_receivable import AccountsReceivable
 from app.models.payment_collection import PaymentCollection
 from app.models.sales_return import SalesReturn
+from app.models.finance_payment_sync import FinancePaymentSync
+from app.models.stock import Stock
 
 # Authentication models
 from app.models.user import User
@@ -32,6 +35,8 @@ from app.routers.sales_invoice import router as invoice_router
 from app.routers.accounts_receivable import router as accounts_receivable_router
 from app.routers.payment_collection import router as payment_collection_router
 from app.routers.sales_return import router as sales_return_router
+from app.routers.stock import router as stock_router
+
 
 # Authentication routers
 from app.routers.auth import router as auth_router
@@ -46,6 +51,7 @@ app = FastAPI(
 
 
 # CORS configuration
+
 DEFAULT_ALLOWED_ORIGINS = [
     "https://sales-kenethvivas22.vercel.app",
     "https://sales-pink-iota.vercel.app",
@@ -65,6 +71,17 @@ ALLOWED_ORIGINS = list(
         if origin.strip()
     )
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
+    max_age=600,
+)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -106,6 +123,7 @@ app.include_router(invoice_router)
 app.include_router(accounts_receivable_router)
 app.include_router(payment_collection_router)
 app.include_router(sales_return_router)
+app.include_router(stock_router)
 
 
 @app.get("/")

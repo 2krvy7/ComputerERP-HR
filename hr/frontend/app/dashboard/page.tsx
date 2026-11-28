@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import HRISSidebar from "@/components/HRISSidebar";
 import "./dashboard.css";
 
-const API = "http://127.0.0.1:8000";
+const API =
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 type Employee = {
   employee_id: number;
@@ -14,6 +15,7 @@ type Employee = {
   position_id?: number;
   position_name?: string;
   employment_status: string;
+  hire_date?: string;
 };
 
 type Position = {
@@ -109,8 +111,6 @@ export default function Dashboard() {
     // INITIAL DATA LOAD
     // =========================
 
-    // Fetch data once when the Dashboard page loads.
-    // Data will be fetched again when the browser/page is refreshed.
     fetchDashboardData(true);
   }, []);
 
@@ -119,8 +119,6 @@ export default function Dashboard() {
   // =========================
 
   const fetchDashboardData = async (showLoading = false) => {
-    // Prevent another fetch from starting while
-    // the previous dashboard request is still running.
     if (isFetching) {
       return;
     }
@@ -405,26 +403,40 @@ export default function Dashboard() {
   // RECENT EMPLOYEES
   // =========================
 
+  /*
+   * Archived employees are hidden.
+   *
+   * Employees are sorted by hire_date so the
+   * newest recruited employee appears first.
+   *
+   * If two employees have the same hire date,
+   * employee_id is used as the fallback.
+   */
   const recentEmployees = [...employees]
     .filter(
       (employee) =>
         employee.employment_status?.toLowerCase() !== "archived"
     )
-    .sort((a, b) => b.employee_id - a.employee_id)
-    .slice(0, 4);
+    .sort((a, b) => {
+      const dateA = a.hire_date
+        ? new Date(a.hire_date).getTime()
+        : 0;
+
+      const dateB = b.hire_date
+        ? new Date(b.hire_date).getTime()
+        : 0;
+
+      if (dateB !== dateA) {
+        return dateB - dateA;
+      }
+
+      return b.employee_id - a.employee_id;
+    });
 
   // =========================
   // PAYROLL
   // =========================
 
-  /*
-   * Get the ending date of a payroll period.
-   *
-   * Examples:
-   * November 1-15, 2026  -> November 15, 2026
-   * November 16-30, 2026 -> November 30, 2026
-   * November 17-19, 2026 -> November 19, 2026
-   */
   const getPayPeriodEndDate = (payPeriod: string) => {
     if (!payPeriod) return 0;
 
@@ -451,9 +463,6 @@ export default function Dashboard() {
     ).getTime();
   };
 
-  /*
-   * Get the start date of a payroll period.
-   */
   const getPayPeriodStartDate = (payPeriod: string) => {
     if (!payPeriod) return 0;
 
@@ -480,10 +489,6 @@ export default function Dashboard() {
     ).getTime();
   };
 
-  /*
-   * Find the latest payroll period available
-   * in the database.
-   */
   const latestPayroll = [...payroll].sort((a, b) => {
     const dateDifference =
       getPayPeriodEndDate(b.pay_period) -
@@ -501,48 +506,21 @@ export default function Dashboard() {
       ? latestPayroll[0].pay_period
       : "";
 
-  /*
-   * Get the latest payroll period records.
-   *
-   * This is used as the default Month view.
-   */
   const latestPeriodPayroll = payroll.filter(
     (item) =>
       item.pay_period === latestPayPeriod
   );
 
-  /*
-   * Get the latest payroll period's end date.
-   */
   const latestPeriodEnd =
     latestPayPeriod
       ? getPayPeriodEndDate(latestPayPeriod)
       : 0;
 
-  /*
-   * Get the latest payroll period's start date.
-   */
   const latestPeriodStart =
     latestPayPeriod
       ? getPayPeriodStartDate(latestPayPeriod)
       : 0;
 
-  /*
-   * Determine which payroll records should be
-   * displayed depending on the selected button.
-   *
-   * Week:
-   * Shows payroll records whose payroll period
-   * overlaps the latest payroll period's week.
-   *
-   * Month:
-   * Shows payroll records from the same month
-   * as the latest payroll period.
-   *
-   * Year:
-   * Shows payroll records from the same year
-   * as the latest payroll period.
-   */
   const filteredPayroll = payroll.filter((item) => {
     const startDate = getPayPeriodStartDate(
       item.pay_period
@@ -673,14 +651,6 @@ export default function Dashboard() {
     return false;
   });
 
-  /*
-   * If Month is selected and there are no records
-   * matching the month filter, fall back to the
-   * latest payroll period.
-   *
-   * This prevents the Dashboard from showing
-   * ₱0.00 when payroll records actually exist.
-   */
   const displayedPayroll =
     filteredPayroll.length > 0
       ? filteredPayroll
@@ -688,17 +658,6 @@ export default function Dashboard() {
       ? latestPeriodPayroll
       : [];
 
-  /*
-   * TOTAL PAYROLL
-   *
-   * The Dashboard now uses NET SALARY instead
-   * of GROSS SALARY.
-   *
-   * This means the amount shown here is the
-   * actual payroll after SSS, PhilHealth,
-   * Pag-IBIG, attendance deductions, and
-   * other deductions.
-   */
   const totalPayroll = displayedPayroll.reduce(
     (total, item) =>
       total +
@@ -706,10 +665,6 @@ export default function Dashboard() {
     0
   );
 
-  /*
-   * The chart uses the same payroll records
-   * and NET SALARY values as Total Payroll.
-   */
   const recentPayroll = [...displayedPayroll]
     .sort((a, b) => {
       const dateDifference =
@@ -724,9 +679,6 @@ export default function Dashboard() {
     })
     .slice(0, 4);
 
-  /*
-   * Label shown underneath Total Payroll.
-   */
   const payrollSummaryLabel =
     payrollPeriodFilter === "week"
       ? "Weekly payroll overview"
@@ -813,77 +765,81 @@ export default function Dashboard() {
 
         </div>
 
-        {/* =========================
-            SUMMARY CARDS
-        ========================= */}
+       {/* =========================
+              SUMMARY CARDS
+          ========================= */}
 
-        <div className="stats-grid">
+          <div className="stats-grid">
 
-          <div className="stat-card">
+            <Link
+              href="/employees"
+              className="stat-card stat-card-link"
+            >
+              <div className="stat-title">
+                TOTAL EMPLOYEES
+              </div>
 
-            <div className="stat-title">
-              TOTAL EMPLOYEES
-            </div>
+              <div className="stat-number">
+                {loading ? "..." : totalEmployees}
+              </div>
 
-            <div className="stat-number">
-              {loading ? "..." : totalEmployees}
-            </div>
+              <div className="stat-description">
+                {activeEmployees} active employees
+              </div>
+            </Link>
 
-            <div className="stat-description">
-              {activeEmployees} active employees
-            </div>
+            <Link
+              href="/recruitment"
+              className="stat-card stat-card-link"
+            >
+              <div className="stat-title">
+                PENDING APPLICANTS
+              </div>
+
+              <div className="stat-number">
+                {loading ? "..." : pendingApplicants}
+              </div>
+
+              <div className="stat-description">
+                Applications to review
+              </div>
+            </Link>
+
+            <Link
+              href="/attendance"
+              className="stat-card stat-card-link"
+            >
+              <div className="stat-title">
+                TODAY'S ATTENDANCE
+              </div>
+
+              <div className="stat-number">
+                {loading ? "..." : presentToday}
+              </div>
+
+              <div className="stat-description">
+                Present today
+              </div>
+            </Link>
+
+            <Link
+              href="/leave"
+              className="stat-card stat-card-link"
+            >
+              <div className="stat-title">
+                PENDING LEAVE
+              </div>
+
+              <div className="stat-number">
+                {loading ? "..." : pendingLeave}
+              </div>
+
+              <div className="stat-description">
+                Requests awaiting approval
+              </div>
+            </Link>
 
           </div>
-
-          <div className="stat-card">
-
-            <div className="stat-title">
-              PENDING APPLICANTS
-            </div>
-
-            <div className="stat-number">
-              {loading ? "..." : pendingApplicants}
-            </div>
-
-            <div className="stat-description">
-              Applications to review
-            </div>
-
-          </div>
-
-          <div className="stat-card">
-
-            <div className="stat-title">
-              TODAY'S ATTENDANCE
-            </div>
-
-            <div className="stat-number">
-              {loading ? "..." : presentToday}
-            </div>
-
-            <div className="stat-description">
-              Present today
-            </div>
-
-          </div>
-
-          <div className="stat-card">
-
-            <div className="stat-title">
-              PENDING LEAVE
-            </div>
-
-            <div className="stat-number">
-              {loading ? "..." : pendingLeave}
-            </div>
-
-            <div className="stat-description">
-              Requests awaiting approval
-            </div>
-
-          </div>
-
-        </div>
 
         {/* =========================
             MIDDLE SECTION
@@ -916,7 +872,17 @@ export default function Dashboard() {
 
             </div>
 
-            <div className="table-wrapper">
+            {/* SCROLLABLE RECENT EMPLOYEES */}
+
+            <div
+              className="table-wrapper"
+              style={{
+                maxHeight: "320px",
+                overflowY: "auto",
+                paddingBottom: "10px",
+                boxSizing: "border-box",
+              }}
+            >
 
               <table>
 
@@ -1106,10 +1072,6 @@ export default function Dashboard() {
 
                 recentPayroll.map((item, index) => {
 
-                  /*
-                   * Use NET SALARY for the chart
-                   * instead of GROSS SALARY.
-                   */
                   const maxPayroll =
                     Math.max(
                       ...recentPayroll.map(

@@ -16,6 +16,10 @@ import type { SalesInvoice } from "../../types/invoice";
 import type { SalesOrder } from "../../types/order";
 import type { Customer } from "../../types/customer";
 
+type ReceivableOption = AccountsReceivable & {
+  customer_name: string;
+};
+
 type CollectionRow = Collection & {
   customer_name: string;
   invoice_id: number | null;
@@ -63,7 +67,7 @@ const createEmptyForm = (): CollectionCreate => ({
 
 export default function CollectionsPage() {
   const [records, setRecords] = useState<CollectionRow[]>([]);
-  const [receivables, setReceivables] = useState<AccountsReceivable[]>([]);
+  const [receivables, setReceivables] = useState<ReceivableOption[]>([]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
@@ -74,6 +78,9 @@ export default function CollectionsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [formError, setFormError] = useState("");
+
+  const [arSearch, setArSearch] = useState("");
+  const [arDropdownOpen, setArDropdownOpen] = useState(false);
 
   const [form, setForm] = useState<CollectionCreate>({
     AR_ID: 0,
@@ -137,6 +144,23 @@ export default function CollectionsPage() {
         ])
       );
 
+      const arRows: ReceivableOption[] = arData.map(
+        (record: AccountsReceivable) => {
+          const invoice = invoiceMap.get(record.invoice_id);
+          const order = invoice
+            ? orderMap.get(invoice.order_id)
+            : undefined;
+          const customer = order
+            ? customerMap.get(order.customer_id)
+            : undefined;
+
+          return {
+            ...record,
+            customer_name: customer?.name ?? "Unknown Customer",
+          };
+        }
+      );
+
       const rows: CollectionRow[] = paymentData.map(
         (payment: Collection) => {
           const ar = arMap.get(payment.AR_ID);
@@ -162,7 +186,7 @@ export default function CollectionsPage() {
       );
 
       setRecords(rows);
-      setReceivables(arData);
+      setReceivables(arRows);
     } catch (err) {
       setError(
         err instanceof Error
@@ -214,6 +238,22 @@ export default function CollectionsPage() {
     [receivables]
   );
 
+  const filteredReceivables = useMemo(() => {
+    const keyword = arSearch.trim().toLowerCase();
+
+    if (!keyword) return unpaidReceivables;
+
+    return unpaidReceivables.filter((record) => {
+      return (
+        String(record.AR_ID).includes(keyword) ||
+        String(record.invoice_id).includes(keyword) ||
+        record.customer_name.toLowerCase().includes(keyword) ||
+        String(record.balance).includes(keyword) ||
+        money(record.balance).toLowerCase().includes(keyword)
+      );
+    });
+  }, [unpaidReceivables, arSearch]);
+
   const totalPages = Math.max(
     1,
     Math.ceil(filteredRecords.length / PAGE_SIZE)
@@ -247,6 +287,8 @@ export default function CollectionsPage() {
 
   const openModal = () => {
     setForm(createEmptyForm());
+    setArSearch("");
+    setArDropdownOpen(false);
     setFormError("");
     setError("");
     setSuccess("");
@@ -257,6 +299,23 @@ export default function CollectionsPage() {
     if (saving) return;
 
     setModalOpen(false);
+    setArSearch("");
+    setArDropdownOpen(false);
+    setFormError("");
+  };
+
+  const selectReceivable = (record: ReceivableOption) => {
+    setForm((current) => ({
+      ...current,
+      AR_ID: record.AR_ID,
+      amount_paid: 0,
+    }));
+
+    setArSearch(
+      `AR-${record.AR_ID} · INV-${record.invoice_id} · ${record.customer_name}`
+    );
+
+    setArDropdownOpen(false);
     setFormError("");
   };
 
@@ -332,6 +391,8 @@ export default function CollectionsPage() {
       setModalOpen(false);
       setSuccess("Payment successfully recorded.");
       setForm(createEmptyForm());
+      setArSearch("");
+      setArDropdownOpen(false);
       setPage(1);
 
       await loadData();
@@ -415,7 +476,7 @@ export default function CollectionsPage() {
                 type="button"
                 onClick={openModal}
                 disabled={loading || !hasOutstandingAccounts}
-                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <span className="text-lg leading-none">+</span>
                 Add New Payment
@@ -515,30 +576,14 @@ export default function CollectionsPage() {
                     <table className="w-full min-w-[1050px] text-left text-sm">
                       <thead className="border-b border-[#D1D5DB] bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-600">
                         <tr>
-                          <th className="px-4 py-3 text-center">
-                            Payment No.
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            AR No.
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Invoice No.
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Customer
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Payment Date
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Amount
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Method
-                          </th>
-                          <th className="px-4 py-3 text-center">
-                            Transaction No.
-                          </th>
+                          <th className="px-4 py-3 text-center">Payment No.</th>
+                          <th className="px-4 py-3 text-center">AR No.</th>
+                          <th className="px-4 py-3 text-center">Invoice No.</th>
+                          <th className="px-4 py-3 text-center">Customer</th>
+                          <th className="px-4 py-3 text-center">Payment Date</th>
+                          <th className="px-4 py-3 text-center">Amount</th>
+                          <th className="px-4 py-3 text-center">Method</th>
+                          <th className="px-4 py-3 text-center">Transaction No.</th>
                         </tr>
                       </thead>
 
@@ -594,16 +639,16 @@ export default function CollectionsPage() {
                   Showing{" "}
                   <span className="font-semibold text-slate-800">
                     {startRecord}
-                  </span>
-                  {" "}to{" "}
+                  </span>{" "}
+                  to{" "}
                   <span className="font-semibold text-slate-800">
                     {endRecord}
-                  </span>
-                  {" "}of{" "}
+                  </span>{" "}
+                  of{" "}
                   <span className="font-semibold text-slate-800">
                     {filteredRecords.length}
-                  </span>
-                  {" "}payments
+                  </span>{" "}
+                  payments
                 </p>
 
                 <div className="flex items-center justify-center gap-2">
@@ -680,7 +725,7 @@ export default function CollectionsPage() {
               className="flex min-h-0 flex-1 flex-col"
             >
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-                <div>
+                <div className="relative">
                   <label
                     htmlFor="payment-ar"
                     className="mb-1.5 block text-sm font-medium text-slate-700"
@@ -688,36 +733,134 @@ export default function CollectionsPage() {
                     Accounts Receivable
                   </label>
 
-                  <select
-                    id="payment-ar"
-                    value={form.AR_ID || ""}
-                    onChange={(event) => {
-                      setForm({
-                        ...form,
-                        AR_ID: Number(event.target.value),
-                      });
-                      setFormError("");
-                    }}
-                    required
-                    disabled={!hasOutstandingAccounts}
-                    className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
-                  >
-                    <option value="">
-                      {hasOutstandingAccounts
-                        ? "Select an account"
-                        : "No outstanding accounts"}
-                    </option>
+                  <div className="relative">
+                    <input
+                      id="payment-ar"
+                      type="text"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-expanded={arDropdownOpen}
+                      aria-controls="payment-ar-suggestions"
+                      autoComplete="off"
+                      value={
+                        arSearch ||
+                        (selectedAR
+                          ? `AR-${selectedAR.AR_ID} · INV-${selectedAR.invoice_id} · ${selectedAR.customer_name}`
+                          : "")
+                      }
+                      onFocus={(event) => {
+                        setArSearch("");
+                        setArDropdownOpen(true);
+                        event.currentTarget.select();
+                      }}
+                      onBlur={() => {
+                        setArDropdownOpen(false);
+                      }}
+                      onChange={(event) => {
+                        setArSearch(event.target.value);
+                        setArDropdownOpen(true);
 
-                    {unpaidReceivables.map((record) => (
-                      <option
-                        key={record.AR_ID}
-                        value={record.AR_ID}
+                        setForm((current) => ({
+                          ...current,
+                          AR_ID: 0,
+                          amount_paid: 0,
+                        }));
+
+                        setFormError("");
+                      }}
+                      placeholder={
+                        hasOutstandingAccounts
+                          ? "Search AR number, invoice, or customer..."
+                          : "No outstanding accounts"
+                      }
+                      disabled={!hasOutstandingAccounts}
+                      className="min-h-11 w-full rounded-lg border border-[#D1D5DB] bg-white py-2.5 pl-3 pr-10 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100"
+                    />
+
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       >
-                        AR-{record.AR_ID} · Invoice #{record.invoice_id} · Balance:{" "}
-                        {money(record.balance)}
-                      </option>
-                    ))}
-                  </select>
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.35-4.35" />
+                      </svg>
+                    </span>
+                  </div>
+
+                  {arDropdownOpen && hasOutstandingAccounts && (
+                    <div
+                      id="payment-ar-suggestions"
+                      role="listbox"
+                      className="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-[#D1D5DB] bg-white shadow-lg"
+                    >
+                      {filteredReceivables.length === 0 ? (
+                        <div className="px-4 py-5 text-center text-sm text-slate-500">
+                          No matching accounts receivable found.
+                        </div>
+                      ) : (
+                        filteredReceivables.map((record) => (
+                          <button
+                            key={record.AR_ID}
+                            type="button"
+                            role="option"
+                            aria-selected={form.AR_ID === record.AR_ID}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                            }}
+                            onClick={() => selectReceivable(record)}
+                            className={`block w-full border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-blue-50 ${
+                              form.AR_ID === record.AR_ID
+                                ? "bg-blue-50"
+                                : "bg-white"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-900">
+                                    AR-{record.AR_ID}
+                                  </span>
+
+                                  <span className="text-xs font-medium text-blue-700">
+                                    INV-{record.invoice_id}
+                                  </span>
+                                </div>
+
+                                <p className="mt-1 truncate text-sm text-slate-700">
+                                  {record.customer_name}
+                                </p>
+                              </div>
+
+                              <div className="shrink-0 sm:text-right">
+                                <p className="text-xs text-slate-500">
+                                  Outstanding Balance
+                                </p>
+
+                                <p className="mt-0.5 text-sm font-bold tabular-nums text-slate-900">
+                                  {money(record.balance)}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {selectedAR && !arDropdownOpen && (
+                    <p className="mt-1.5 text-xs text-green-700">
+                      <span className="font-semibold">Selected:</span>{" "}
+                      AR-{selectedAR.AR_ID} · Invoice #{selectedAR.invoice_id}
+                    </p>
+                  )}
                 </div>
 
                 <div>

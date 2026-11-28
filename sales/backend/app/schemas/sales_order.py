@@ -4,27 +4,29 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.services.finance import (
+    get_finance_minimum_selling_price,
+)
 
 
 SalesOrderStatus = Literal[
     "Pending",
     "Accepted",
-    "Approved",
-    "Processing",
+    "Waiting for Stock",
+    "Preparing",
+    "Released to Sales",
     "Completed",
     "Cancelled",
-    "Released to Sales",
+    # Historical statuses
+    "Approved",
+    "Processing",
 ]
 
 
 class SalesOrderDetailCreate(BaseModel):
     IM_ID: int = Field(gt=0)
     quantity: int = Field(gt=0)
-    discount: Decimal = Field(
-        default=Decimal("0"),
-        ge=0,
-        le=100,
-    )
+    discount: Decimal = Field(default=Decimal("0"), ge=0, le=100)
 
 
 class SalesOrderCreate(BaseModel):
@@ -42,8 +44,15 @@ class SalesOrderCreate(BaseModel):
             self.tax_rate = Decimal("12.00")
         elif self.tax_type in ("Non-VAT", "Tax-Exempt"):
             self.tax_rate = Decimal("0.00")
-        elif self.tax_rate is None or self.tax_rate < 0 or self.tax_rate > 100:
-            raise ValueError("Custom tax rate must be between 0 and 100.")
+        elif (
+            self.tax_rate is None
+            or self.tax_rate < 0
+            or self.tax_rate > 100
+        ):
+            raise ValueError(
+                "Custom tax rate must be between 0 and 100."
+            )
+
         return self
 
 
@@ -76,4 +85,11 @@ class SalesOrderResponse(BaseModel):
 
 
 class SalesOrderStatusUpdate(BaseModel):
-    status: Literal["Accepted"]
+    status: Literal[
+        "Accepted",
+        "Preparing",
+        "Waiting for Stock",
+        "Released to Sales",
+        "Completed",
+        "Cancelled",
+    ]

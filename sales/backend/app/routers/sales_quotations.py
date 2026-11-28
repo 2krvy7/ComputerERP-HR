@@ -33,7 +33,9 @@ INSTALLMENT_INTEREST_RATES = {
 }
 
 
+
 # Retrieve products that can be added to a quotation.
+
 @router.get("/items")
 def get_quotation_items(
     search: str | None = Query(default=None, max_length=150),
@@ -59,30 +61,13 @@ def get_quotation_items(
             "Item_Name": item.Item_Name,
             "Category": item.Category,
             "Brand": item.Brand,
+            "ItemType": item.ItemType,
             "unit_of_measure": item.unit_of_measure,
             "Price": item.Price,
             "status": item.status,
         }
         for item in items
     ]
-
-
-# Retrieve all quotations.
-@router.get("", response_model=list[SalesQuotationResponse])
-def get_quotations(
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
-):
-    statement = (
-        select(SalesQuotation)
-        .options(selectinload(SalesQuotation.details))
-        .order_by(SalesQuotation.quotation_id.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-
-    return db.scalars(statement).all()
 
 
 # Create a quotation with multiple items.
@@ -197,6 +182,21 @@ def create_quotation(
         db.rollback()
         raise
 
+# Retrieve all quotations.
+@router.get(
+    "",
+    response_model=list[SalesQuotationResponse],
+)
+def get_quotations(
+    db: Session = Depends(get_db),
+):
+    quotations = db.scalars(
+        select(SalesQuotation)
+        .options(selectinload(SalesQuotation.details))
+        .order_by(SalesQuotation.quotation_id.desc())
+    ).all()
+
+    return quotations
 
 # Retrieve one quotation.
 @router.get(

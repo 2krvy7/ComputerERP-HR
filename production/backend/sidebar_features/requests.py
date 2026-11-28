@@ -91,8 +91,8 @@ def get_production_requests():
                     ON pm."IM_ID" = im."IM_ID"
                 LEFT JOIN public."ProductionOrder" AS po
                     ON rr."RR_ID" = po."RR_ID"
-                WHERE rr."status" = 'Approved'
-                  AND im."ItemType" = 'Finished'
+                WHERE LOWER(rr."status") = 'approved'
+                  AND LOWER(im."ItemType") = 'finished'
                 ORDER BY rr."RR_ID" DESC;
                 """
             )
@@ -244,8 +244,8 @@ def accept_production_request(rr_id: int):
                 INNER JOIN public."ITEM_MASTER" AS im
                     ON pm."IM_ID" = im."IM_ID"
                 WHERE rr."RR_ID" = %s
-                  AND rr."status" = 'Approved'
-                  AND im."ItemType" = 'Finished'
+                  AND LOWER(rr."status") = 'approved'
+                  AND LOWER(im."ItemType") = 'finished'
                 FOR UPDATE OF rr;
                 """,
                 (rr_id,)

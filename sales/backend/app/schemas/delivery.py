@@ -1,5 +1,4 @@
-
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import (
@@ -11,11 +10,10 @@ from pydantic import (
 
 
 DeliveryStatus = Literal[
-    "Pending",
-    "Preparing",
-    "Released",
-    "Delivered",
-    "Cancelled",
+    "pending-sales",
+    "released-inventory",
+    "received-sales",
+    "received-customer",
 ]
 
 
@@ -26,15 +24,20 @@ def normalize_delivery_status(value):
     normalized = value.strip().lower()
 
     status_mapping = {
-        "pending": "Pending",
-        "preparing": "Preparing",
-        "released": "Released",
-        "shipped": "Released",
-        "released by inventory": "Released",
-        "released to sales": "Released",
-        "delivered": "Delivered",
-        "cancelled": "Cancelled",
-        "canceled": "Cancelled",
+        "pending": "pending-sales",
+        "pending-sales": "pending-sales",
+        "preparing": "pending-sales",
+        "released": "released-inventory",
+        "shipped": "released-inventory",
+        "released by inventory": "released-inventory",
+        "released to sales": "released-inventory",
+        "released-inventory": "released-inventory",
+        "received by sales": "received-sales",
+        "received-sales": "received-sales",
+        "delivered": "received-customer",
+        "delivered-sales": "received-customer",
+        "received by customer": "received-customer",
+        "received-customer": "received-customer",
     }
 
     return status_mapping.get(normalized, value)
@@ -42,9 +45,14 @@ def normalize_delivery_status(value):
 
 class DeliveryCreate(BaseModel):
     order_id: int = Field(gt=0)
-    WH_ID: int = Field(gt=0)
+    WH_ID: int | None = Field(default=None, gt=0)
     delivery_date: date | None = None
     delivery_address: str = ""
+
+
+class DeliveryWarehouseAllocationResponse(BaseModel):
+    WH_ID: int
+    quantity: int
 
 
 class DeliveryResponse(BaseModel):
@@ -56,6 +64,11 @@ class DeliveryResponse(BaseModel):
     delivery_date: date | None
     delivery_address: str
     status: DeliveryStatus
+    received_by: str | None = None
+    received_at: datetime | None = None
+    warehouse_allocations: list[
+        DeliveryWarehouseAllocationResponse
+    ] = Field(default_factory=list)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -70,4 +83,4 @@ class DeliveryResponse(BaseModel):
 
 class DeliveryStatusUpdate(BaseModel):
     status: DeliveryStatus
-    received_by: str | None = None
+    received_by: str | None = Field(default=None, max_length=150)

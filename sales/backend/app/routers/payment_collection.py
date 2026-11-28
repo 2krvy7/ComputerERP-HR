@@ -9,6 +9,7 @@ from app.database import get_db
 from app.dependencies.auth import require_password_change_completed
 from app.models.accounts_receivable import AccountsReceivable
 from app.models.payment_collection import PaymentCollection
+from app.models.finance_payment_sync import FinancePaymentSync
 from app.schemas.payment_collection import (
     PaymentCollectionCreate,
     PaymentCollectionResponse,
@@ -21,18 +22,15 @@ router = APIRouter(
 )
 
 
-# Retrieve all payment collections.
 @router.get("", response_model=list[PaymentCollectionResponse])
 def get_payment_collections(db: Session = Depends(get_db)):
     statement = (
         select(PaymentCollection)
         .order_by(PaymentCollection.payment_id.desc())
     )
-
     return db.scalars(statement).all()
 
 
-# Retrieve one payment collection.
 @router.get("/{payment_id}", response_model=PaymentCollectionResponse)
 def get_payment_collection(
     payment_id: int,
@@ -49,7 +47,6 @@ def get_payment_collection(
     return payment
 
 
-# Record a payment and update its Accounts Receivable balance.
 @router.post(
     "",
     response_model=PaymentCollectionResponse,
@@ -81,16 +78,16 @@ def create_payment_collection(
         )
 
     payment = PaymentCollection(
-    AR_ID=payment_data.AR_ID,
-    payment_date=payment_data.payment_date,
-    payment_method=payment_data.payment_method,
-    transaction_number=payment_data.transaction_number,
-    amount_paid=payment_amount,
-)
+        AR_ID=payment_data.AR_ID,
+        payment_date=payment_data.payment_date,
+        payment_method=payment_data.payment_method,
+        transaction_number=payment_data.transaction_number,
+        amount_paid=payment_amount,
+    )
+
     ar_record.amount_paid = (
         Decimal(str(ar_record.amount_paid)) + payment_amount
     )
-
     ar_record.balance = current_balance - payment_amount
 
     if ar_record.balance == Decimal("0"):
@@ -100,6 +97,20 @@ def create_payment_collection(
 
     try:
         db.add(payment)
+
+        # Generate the payment ID before creating its sync record.
+        db.flush()
+
+        # Record that this payment is waiting for Finance.
+        sync_record = FinancePaymentSync(
+            payment_id=payment.payment_id,
+            sync_status="Pending",
+            attempts=0,
+        )
+
+        db.add(sync_record)
+
+        # Save the payment, AR update, and sync record together.
         db.commit()
         db.refresh(payment)
 

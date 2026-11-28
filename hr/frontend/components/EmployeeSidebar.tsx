@@ -11,8 +11,11 @@ import {
   Wallet,
   LogOut,
 } from "lucide-react";
+import { logout, getUser } from "@/components/AuthGate";
 
-const API = "http://127.0.0.1:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 const COLORS = {
   sidebar: "#365f68",
@@ -21,37 +24,18 @@ const COLORS = {
 };
 
 const NAV = [
-  {
-    label: "Dashboard",
-    href: "/employee-dashboard",
-    Icon: LayoutDashboard,
-  },
-  {
-    label: "My Profile",
-    href: "/employee-profile",
-    Icon: CircleUser,
-  },
-  {
-    label: "My Attendance",
-    href: "/employee-attendance",
-    Icon: Clock3,
-  },
-  {
-    label: "My Leave",
-    href: "/employee-leave",
-    Icon: CalendarDays,
-  },
-  {
-    label: "My Payroll",
-    href: "/employee-payroll",
-    Icon: Wallet,
-  },
+  { label: "Dashboard", href: "/employee-dashboard", Icon: LayoutDashboard },
+  { label: "My Profile", href: "/employee-profile", Icon: CircleUser },
+  { label: "My Attendance", href: "/employee-attendance", Icon: Clock3 },
+  { label: "My Leave", href: "/employee-leave", Icon: CalendarDays },
+  { label: "My Payroll", href: "/employee-payroll", Icon: Wallet },
 ];
 
 type Props = {
   username?: string;
   userId?: string;
   role?: string;
+  // Kept so pages that still pass it don't break; logout always uses AuthGate
   onLogout?: () => void;
 };
 
@@ -65,14 +49,26 @@ export default function EmployeeSidebar({
   username = "Employee",
   userId = "EMP-001",
   role = "Employee",
-  onLogout,
 }: Props) {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [hoverUser, setHoverUser] = useState(false);
+  const [hoverLogout, setHoverLogout] = useState(false);
 
-  // Use the username passed by the page initially.
-  const [displayUsername, setDisplayUsername] =
-    useState(username);
+  const [displayUsername, setDisplayUsername] = useState(username);
+  const [displayRole, setDisplayRole] = useState(role);
+
+  // ==========================
+  // SESSION INFO (from token)
+  // ==========================
+
+  useEffect(() => {
+    const user = getUser();
+    if (!user) return;
+
+    if (user.username) setDisplayUsername(user.username);
+    if (user.role) setDisplayRole(user.role);
+  }, []);
 
   // ==========================
   // GET CURRENT EMPLOYEE NAME
@@ -81,42 +77,26 @@ export default function EmployeeSidebar({
   useEffect(() => {
     const fetchEmployeeName = async () => {
       try {
-        /*
-         * Convert:
-         * EMP-002
-         *
-         * into:
-         * 2
-         */
+        // EMP-002 -> 2
         const employeeId = Number(
-          String(userId)
-            .replace("EMP-", "")
-            .trim()
+          String(userId).replace("EMP-", "").trim()
         );
 
         if (!employeeId) {
           return;
         }
 
-        const response = await fetch(
-          `${API}/employees/`
-        );
+        const response = await fetch(`${API_URL}/employees/`);
 
         if (!response.ok) {
-          throw new Error(
-            "Failed to fetch employees"
-          );
+          throw new Error("Failed to fetch employees");
         }
 
-        const employees: Employee[] =
-          await response.json();
+        const employees: Employee[] = await response.json();
 
-        const currentEmployee =
-          employees.find(
-            (employee) =>
-              Number(employee.employee_id) ===
-              employeeId
-          );
+        const currentEmployee = employees.find(
+          (employee) => Number(employee.employee_id) === employeeId
+        );
 
         if (currentEmployee) {
           setDisplayUsername(
@@ -124,19 +104,17 @@ export default function EmployeeSidebar({
           );
         }
       } catch (error) {
-        console.error(
-          "Error fetching employee name:",
-          error
-        );
-
-        // Keep the username originally passed
-        // by the page if the request fails.
-        setDisplayUsername(username);
+        // Keep the name already shown if the request fails
+        console.error("Error fetching employee name:", error);
       }
     };
 
     fetchEmployeeName();
-  }, [userId, username]);
+  }, [userId]);
+
+  const handleLogout = () => {
+    logout();
+  };
 
   return (
     <aside
@@ -157,9 +135,7 @@ export default function EmployeeSidebar({
         fontFamily: "Inter, system-ui, sans-serif",
       }}
     >
-
       {/* Logo + title */}
-
       <div
         style={{
           display: "flex",
@@ -169,7 +145,6 @@ export default function EmployeeSidebar({
           marginBottom: "1.15vw",
         }}
       >
-
         <div
           style={{
             width: "2.65vw",
@@ -197,11 +172,9 @@ export default function EmployeeSidebar({
         >
           HRIS & PAYROLL
         </span>
-
       </div>
 
       {/* Navigation */}
-
       <nav
         style={{
           display: "flex",
@@ -209,79 +182,58 @@ export default function EmployeeSidebar({
           gap: "0.5vw",
         }}
       >
+        {NAV.map(({ label, href, Icon }) => {
+          const active = pathname?.startsWith(href);
+          const hover = hovered === href && !active;
 
-        {NAV.map(
-          ({ label, href, Icon }) => {
-
-            const active =
-              pathname?.startsWith(href);
-
-            const hover =
-              hovered === href &&
-              !active;
-
-            return (
-              <Link
-                key={href}
-                href={href}
-                onMouseEnter={() =>
-                  setHovered(href)
-                }
-                onMouseLeave={() =>
-                  setHovered(null)
-                }
-                style={{
-                  position: "relative",
-                  height: "3.15vw",
-                  borderRadius: "99vw",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.75vw",
-                  fontWeight: 500,
-                  textDecoration: "none",
-                  color: active
-                    ? COLORS.sidebar
-                    : "white",
-                  backgroundColor: active
-                    ? "#ffffff"
-                    : hover
+          return (
+            <Link
+              key={href}
+              href={href}
+              onMouseEnter={() => setHovered(href)}
+              onMouseLeave={() => setHovered(null)}
+              style={{
+                position: "relative",
+                height: "3.15vw",
+                borderRadius: "99vw",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.75vw",
+                fontWeight: 500,
+                textDecoration: "none",
+                color: active ? COLORS.sidebar : "white",
+                backgroundColor: active
+                  ? "#ffffff"
+                  : hover
                     ? COLORS.light
                     : "transparent",
-                  transition:
-                    "background-color 0.15s",
+                transition: "background-color 0.15s",
+              }}
+            >
+              <Icon
+                style={{
+                  position: "absolute",
+                  left: "1.5vw",
+                  width: "1.65vw",
+                  height: "1.65vw",
                 }}
-              >
+              />
 
-                <Icon
-                  style={{
-                    position: "absolute",
-                    left: "1.5vw",
-                    width: "1.65vw",
-                    height: "1.65vw",
-                  }}
-                />
-
-                {label}
-
-              </Link>
-            );
-          }
-        )}
-
+              {label}
+            </Link>
+          );
+        })}
       </nav>
 
       {/* Push user section to bottom */}
+      <div style={{ flexGrow: 1 }} />
 
-      <div
-        style={{
-          flexGrow: 1,
-        }}
-      />
-
-      {/* User card */}
-
-      <div
+      {/* User card (opens My Profile) */}
+      <Link
+        href="/employee-profile"
+        onMouseEnter={() => setHoverUser(true)}
+        onMouseLeave={() => setHoverUser(false)}
         style={{
           height: "5.2vw",
           borderRadius: "1vw",
@@ -290,9 +242,12 @@ export default function EmployeeSidebar({
           alignItems: "center",
           gap: "1vw",
           padding: "0 1.64vw",
+          textDecoration: "none",
+          color: "white",
+          filter: hoverUser ? "brightness(1.08)" : "none",
+          transition: "filter 0.15s",
         }}
       >
-
         <CircleUser
           style={{
             width: "1.5vw",
@@ -306,13 +261,16 @@ export default function EmployeeSidebar({
             display: "flex",
             flexDirection: "column",
             lineHeight: 1.3,
+            minWidth: 0,
           }}
         >
-
           <span
             style={{
               fontSize: "0.78vw",
               fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
             {displayUsername}
@@ -333,18 +291,17 @@ export default function EmployeeSidebar({
               opacity: 0.8,
             }}
           >
-            {role}
+            {displayRole}
           </span>
-
         </div>
-
-      </div>
+      </Link>
 
       {/* Logout */}
-
       <button
         type="button"
-        onClick={onLogout}
+        onClick={handleLogout}
+        onMouseEnter={() => setHoverLogout(true)}
+        onMouseLeave={() => setHoverLogout(false)}
         style={{
           marginTop: "0.65vw",
           height: "3vw",
@@ -359,9 +316,10 @@ export default function EmployeeSidebar({
           fontSize: "0.75vw",
           fontFamily: "inherit",
           cursor: "pointer",
+          filter: hoverLogout ? "brightness(1.12)" : "none",
+          transition: "filter 0.15s",
         }}
       >
-
         <LogOut
           style={{
             width: "1.5vw",
@@ -370,9 +328,7 @@ export default function EmployeeSidebar({
         />
 
         Logout
-
       </button>
-
     </aside>
   );
 }

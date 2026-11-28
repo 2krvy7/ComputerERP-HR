@@ -1,211 +1,32 @@
-.ap-aging-page {
-  padding: 24px;
-  background: #f6f8fc;
-  min-height: 100vh;
-}
-
-/* Header */
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
-}
-
-.page-header h1 {
-  font-size: 32px;
-  color: #1f2937;
-  margin-bottom: 6px;
-}
-
-.page-header p {
-  color: #6b7280;
-}
-
-.header-actions {
-  display: flex;
-  gap: 10px;
-}
-
-/* Buttons */
-.btn {
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.btn-primary {
-  background: #4169e1;
-  color: white;
-}
-
-.btn-secondary {
-  background: white;
-  border: 1px solid #d8dde8;
-  color: #374151;
-}
-
-/* Filters */
-.filters {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-}
-
-.filters button {
-  background: white;
-  border: 1px solid #d8dde8;
-  border-radius: 8px;
-  padding: 8px 14px;
-  cursor: pointer;
-}
-
-/* Cards */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
-  margin-bottom: 24px;
-}
-
-.summary-card {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  border: 1px solid #edf0f5;
-}
-
-.summary-card span {
-  color: #6b7280;
-  font-size: 14px;
-}
-
-.summary-card h2 {
-  margin: 10px 0;
-  color: #111827;
-  font-size: 32px;
-}
-
-.summary-card small {
-  color: #9ca3af;
-}
-
-/* Aging Section */
-.aging-section {
-  background: white;
-  border-radius: 12px;
-  padding: 22px;
-  border: 1px solid #edf0f5;
-  margin-bottom: 24px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.section-header h3 {
-  margin: 0;
-}
-
-.section-header span {
-  color: #6b7280;
-}
-
-.aging-bar {
-  display: flex;
-  height: 12px;
-  overflow: hidden;
-  border-radius: 999px;
-  margin-bottom: 20px;
-}
-
-.current {
-  width: 84%;
-  background: #355cf4;
-}
-
-.days30 {
-  width: 8%;
-  background: #7d9cff;
-}
-
-.days60 {
-  width: 5%;
-  background: #9ec0ff;
-}
-
-.days90 {
-  width: 2%;
-  background: #f59e0b;
-}
-
-.days120 {
-  width: 1%;
-  background: #ef4444;
-}
-
-.aging-legend {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-}
-
-.aging-legend div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.blue {
-  background: #355cf4;
-}
-
-.light-blue {
-  background: #7d9cff;
-}
-
-.sky {
-  background: #9ec0ff;
-}
-
-.orange {
-  background: #f59e0b;
-}
-
-.red {
-  background: #ef4444;
-}
-
-/* Table */
+/* =====================================================
+   5. AGING SCHEDULE TABLE (CENTERED)
+===================================================== */
 .table-section {
-  background: white;
-  border: 1px solid #edf0f5;
-  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
   overflow: hidden;
 }
 
 .table-header {
-  padding: 20px;
+  padding: 18px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.table-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
 }
 
 .table-header p {
   color: #6b7280;
-  margin-top: 5px;
+  font-size: 13px;
+  margin-top: 4px;
 }
 
 table {
@@ -220,21 +41,71 @@ thead {
 th,
 td {
   padding: 14px;
-  text-align: left;
-  border-top: 1px solid #edf0f5;
+  text-align: center;
+  border-top: 1px solid #f1f5f9;
+  font-size: 14px;
+  color: #1e293b;
 }
 
 th {
-  color: #6b7280;
-  font-size: 13px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tbody tr:hover {
+  background: #f9fafb;
 }
 
 .total-row {
-  background: #eef3ff;
-  font-weight: 600;
+  background: #eef2ff;
+  font-weight: 700;
+  color: #111827;
 }
 
-/* Responsive */
+.table-footer {
+  padding: 14px 20px;
+  background: #f8fafc;
+  color: #6b7280;
+  font-size: 13px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.notes-section {
+  margin-top: 18px;
+  color: #6b7280;
+  font-size: 13.5px;
+}
+
+.notes-section p {
+  margin-bottom: 10px;
+  line-height: 1.6;
+}
+
+/* =====================================================
+   6. PRINT & RESPONSIVE RULES
+===================================================== */
+@media print {
+  .sidebar,
+  .header-actions,
+  .filters {
+    display: none !important;
+  }
+
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  .ap-aging-page {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+}
+
 @media (max-width: 1200px) {
   .summary-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -250,29 +121,11 @@ th {
   .section-header,
   .table-header {
     flex-direction: column;
-    gap: 16px;
+    align-items: flex-start;
+    gap: 12px;
   }
 
   .aging-legend {
-    gap: 20px;
+    gap: 16px;
   }
-}
-
-.notes-section {
-  margin-top: 20px;
-  color: #6b7280;
-  font-size: 14px;
-}
-
-.notes-section p {
-  margin-bottom: 12px;
-  line-height: 1.6;
-}
-
-.table-footer {
-  padding: 16px;
-  background: #f8fafc;
-  color: #6b7280;
-  font-size: 13px;
-  border-top: 1px solid #e5e7eb;
 }

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 type ProductionOrder = {
   Production_ID: number;
@@ -225,86 +226,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* QUICK ACTIONS */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <h2 className="text-lg font-semibold text-gray-800 mb-1">
-              Quick Actions
-            </h2>
-
-            <p className="text-sm text-gray-500 mb-5">
-              Quickly navigate to production functions.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <a
-                href="/products"
-                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
-              >
-                <p className="font-medium text-gray-800">Products</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  View and manage products
-                </p>
-              </a>
-
-              <a
-                href="/orders"
-                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
-              >
-                <p className="font-medium text-gray-800">
-                  Production Orders
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  View and manage orders
-                </p>
-              </a>
-
-              <a
-                href="/requests"
-                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
-              >
-                <p className="font-medium text-gray-800">
-                  Material Requests
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  View material requirements
-                </p>
-              </a>
-
-              <a
-                href="/reports"
-                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
-              >
-                <p className="font-medium text-gray-800">
-                  Production Reports
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Review production performance
-                </p>
-              </a>
-            </div>
-          </div>
-
-          {/* PENDING REQUESTS */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <h2 className="text-lg font-semibold text-gray-800 mb-1">
-              Pending Requests
-            </h2>
-
-            <p className="text-sm text-gray-500 mb-5">
-              Review incoming production requests from Inventory.
-            </p>
-
-            <div className="py-10 text-center border border-dashed border-gray-300 rounded-lg">
-              <p className="text-gray-500 text-sm">
-                No pending requests to display.
-              </p>
-
-              <p className="text-gray-400 text-xs mt-1">
-                Incoming requests will appear here.
-              </p>
-            </div>
-          </div>
-
           {/* UPCOMING DEADLINES */}
           <div className="bg-white border border-gray-200 rounded-xl p-5">
             <h2 className="text-lg font-semibold text-gray-800 mb-1">
@@ -361,27 +282,6 @@ export default function Home() {
                 No pending production deadlines.
               </p>
             )}
-          </div>
-
-          {/* PROCESSING RELEASE ORDERS */}
-          <div className="bg-white border border-gray-200 rounded-xl p-5">
-            <h2 className="text-lg font-semibold text-gray-800 mb-1">
-              Processing Release Orders
-            </h2>
-
-            <p className="text-sm text-gray-500 mb-5">
-              Completed production batches awaiting handoff to Inventory.
-            </p>
-
-            <div className="py-10 text-center border border-dashed border-gray-300 rounded-lg">
-              <p className="text-gray-500 text-sm">
-                No release orders to display.
-              </p>
-
-              <p className="text-gray-400 text-xs mt-1">
-                Completed batches awaiting Inventory handoff will appear here.
-              </p>
-            </div>
           </div>
         </>
       )}

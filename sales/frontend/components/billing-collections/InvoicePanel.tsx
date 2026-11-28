@@ -804,7 +804,7 @@ export default function InvoicePanel() {
               setShowForm(true);
             }}
             disabled={availableOrders.length === 0 || loading || !today}
-            className="whitespace-nowrap rounded-lg bg-green-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-lg bg-green-900 px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
           >
             + Add Sales Invoice
           </button>

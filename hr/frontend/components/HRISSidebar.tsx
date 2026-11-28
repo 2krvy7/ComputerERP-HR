@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -14,6 +14,7 @@ import {
   CircleUser,
   LogOut,
 } from "lucide-react";
+import { logout, getUser } from "@/components/AuthGate";
 
 const COLORS = {
   sidebar: "#365f68",
@@ -22,47 +23,20 @@ const COLORS = {
 };
 
 const NAV = [
-  {
-    label: "Dashboard",
-    href: "/dashboard",
-    Icon: LayoutDashboard,
-  },
-  {
-    label: "Employees",
-    href: "/employees",
-    Icon: Contact,
-  },
-  {
-    label: "Recruitment",
-    href: "/recruitment",
-    Icon: FileText,
-  },
-  {
-    label: "Attendance",
-    href: "/attendance",
-    Icon: ClipboardList,
-  },
-  {
-    label: "Leave Management",
-    href: "/leave",
-    Icon: CalendarDays,
-  },
-  {
-    label: "Payroll",
-    href: "/payroll",
-    Icon: Receipt,
-  },
-  {
-    label: "Reports",
-    href: "/reports",
-    Icon: BarChart3,
-  },
+  { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { label: "Employees", href: "/employees", Icon: Contact },
+  { label: "Recruitment", href: "/recruitment", Icon: FileText },
+  { label: "Attendance", href: "/attendance", Icon: ClipboardList },
+  { label: "Leave Management", href: "/leave", Icon: CalendarDays },
+  { label: "Payroll", href: "/payroll", Icon: Receipt },
+  { label: "Reports", href: "/reports", Icon: BarChart3 },
 ];
 
 type Props = {
   username?: string;
   userId?: string;
   role?: string;
+  // Kept so pages that still pass it don't break; logout always uses AuthGate
   onLogout?: () => void;
 };
 
@@ -70,10 +44,27 @@ export default function HRISSidebar({
   username = "Admin User",
   userId = "HR-001",
   role = "HR Administrator",
-  onLogout,
 }: Props) {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [hoverUser, setHoverUser] = useState(false);
+  const [hoverLogout, setHoverLogout] = useState(false);
+
+  const [displayName, setDisplayName] = useState(username);
+  const [displayRole, setDisplayRole] = useState(role);
+
+  // Show the signed-in user's info from the session
+  useEffect(() => {
+    const user = getUser();
+    if (!user) return;
+
+    if (user.username) setDisplayName(user.username);
+    if (user.role) setDisplayRole(user.role);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+  };
 
   return (
     <aside
@@ -192,6 +183,8 @@ export default function HRISSidebar({
 
       {/* User Card */}
       <div
+        onMouseEnter={() => setHoverUser(true)}
+        onMouseLeave={() => setHoverUser(false)}
         style={{
           height: "5.2vw",
           borderRadius: "1vw",
@@ -200,6 +193,8 @@ export default function HRISSidebar({
           alignItems: "center",
           gap: "1vw",
           padding: "0 1.64vw",
+          filter: hoverUser ? "brightness(1.08)" : "none",
+          transition: "filter 0.15s",
         }}
       >
         <CircleUser
@@ -215,15 +210,19 @@ export default function HRISSidebar({
             display: "flex",
             flexDirection: "column",
             lineHeight: 1.3,
+            minWidth: 0,
           }}
         >
           <span
             style={{
               fontSize: "0.78vw",
               fontWeight: 600,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
-            {username}
+            {displayName}
           </span>
 
           <span
@@ -241,7 +240,7 @@ export default function HRISSidebar({
               opacity: 0.8,
             }}
           >
-            {role}
+            {displayRole}
           </span>
         </div>
       </div>
@@ -249,7 +248,9 @@ export default function HRISSidebar({
       {/* Logout */}
       <button
         type="button"
-        onClick={onLogout}
+        onClick={handleLogout}
+        onMouseEnter={() => setHoverLogout(true)}
+        onMouseLeave={() => setHoverLogout(false)}
         style={{
           marginTop: "0.65vw",
           height: "3vw",
@@ -264,6 +265,8 @@ export default function HRISSidebar({
           fontSize: "0.75vw",
           fontFamily: "inherit",
           cursor: "pointer",
+          filter: hoverLogout ? "brightness(1.12)" : "none",
+          transition: "filter 0.15s",
         }}
       >
         <LogOut

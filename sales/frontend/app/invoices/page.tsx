@@ -20,7 +20,7 @@ export default function BillingCollectionsPage() {
   const tabClass = (tab: BillingTab) =>
     `min-h-11 shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${
       activeTab === tab
-        ? "bg-blue-600 text-white shadow-sm"
+        ? "bg-green-900 text-white shadow-sm"
         : "text-slate-600 hover:bg-white hover:text-blue-700"
     }`;
 

@@ -10,6 +10,7 @@ export default function APPayments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("ALL");
 
   // Record Payment Modal States
   const [showModal, setShowModal] = useState(false);
@@ -20,34 +21,33 @@ export default function APPayments() {
   const [submitting, setSubmitting] = useState(false);
 
   const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
 
   async function fetchData() {
     setLoading(true);
     setError(null);
     try {
       const [payRes, optRes, invRes, bankRes] = await Promise.all([
-        // FETCH 1: GET http://127.0.0
+        // FETCH 1: GET ${API_URL}/api/payments
         // Backend File: finance/backend/routers/payments.py -> get_payments()
         // Database Tables: Reads "APPayment" joined with "APInvoice", "Supplier", and "BankAccount"
         // Purpose: Loads all recorded supplier disbursements for the main register table
         fetch(`${API_URL}/api/payments`),
 
-        // FETCH 2: GET http://127.0.0options
+        // FETCH 2: GET ${API_URL}/api/payments/options
         // Backend File: finance/backend/routers/payments.py -> get_payment_options()
         // Database Tables: Reads unpaid "APInvoice" rows and registered "BankAccount" rows
         // Purpose: Populates the Record Payment modal dropdowns
         fetch(`${API_URL}/api/payments/options`),
 
-        // FETCH 3 (Fallback Invoices): GET http://127.0.0
+        // FETCH 3 (Fallback Invoices): GET ${API_URL}/api/apinvoices
         // Backend File: finance/backend/routers/apinvoices.py -> get_ap_invoices()
         // Database Tables: Reads "APInvoice" joined with "Supplier"
         // Purpose: Ensures open AP invoices still load if /options returns empty
         fetch(`${API_URL}/api/apinvoices`),
 
-        // FETCH 4 (Fallback Bank Accounts): GET http://127.0.0
+        // FETCH 4 (Fallback Bank Accounts): GET ${API_URL}/api/bank
         // Backend File: finance/backend/routers/bank.py -> get_bank_accounts()
         // Database Tables: Reads "BankAccount" with active disbursement status
         // Purpose: Ensures active disbursement bank accounts always appear in the dropdown
@@ -71,7 +71,6 @@ export default function APPayments() {
           : [];
       }
 
-      // Fallback to direct AP Invoices endpoint if options returned empty
       if (loadedInvoices.length === 0 && invRes.ok) {
         const allInv = await invRes.json();
         loadedInvoices = (Array.isArray(allInv) ? allInv : []).filter(
@@ -85,13 +84,11 @@ export default function APPayments() {
         );
       }
 
-      // Fallback to direct Bank Accounts endpoint if options returned empty
       if (loadedBanks.length === 0 && bankRes.ok) {
         const allBanks = await bankRes.json();
         loadedBanks = Array.isArray(allBanks) ? allBanks : [];
       }
 
-      // Filter strictly to ONLY active disbursement accounts (excludes BPI Sales & BPI Payroll)
       const activeDisbursementBanks = loadedBanks.filter(
         (b: any) => b.isDisbursement !== false && b.isdisbursement !== false
       );
@@ -99,7 +96,6 @@ export default function APPayments() {
       setOpenInvoices(loadedInvoices);
       setBankAccounts(activeDisbursementBanks);
 
-      // Auto-select the active disbursement bank if only one exists (e.g., BDO Corporate Checking)
       if (activeDisbursementBanks.length === 1) {
         setSelectedBankId(String(activeDisbursementBanks[0].bankAccountID));
       }
@@ -115,10 +111,13 @@ export default function APPayments() {
     fetchData();
   }, []);
 
+  // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Number(val || 0));
 
   const formatDate = (dateStr?: string) => {
@@ -130,7 +129,6 @@ export default function APPayments() {
     });
   };
 
-  // Find currently selected invoice object so we can show remaining balance
   const activeInvoice = useMemo(() => {
     if (!selectedInvoiceId) return null;
     return (
@@ -149,7 +147,6 @@ export default function APPayments() {
         String(inv.apInvoiceID ?? inv.apinvoiceid) === String(invId)
     );
     if (found) {
-      // Pre-fill with remaining balance while keeping the input completely typable
       setPaymentAmount(
         String(
           found.remainingBalance ??
@@ -181,7 +178,7 @@ export default function APPayments() {
 
     setSubmitting(true);
     try {
-      // FETCH 5: POST http://127.0.0
+      // FETCH 5: POST ${API_URL}/api/payments
       // Backend File: finance/backend/routers/payments.py -> create_payment()
       // Database Tables: Inserts into "APPayment" and updates "APInvoice" (totalPaid, remainingBalance, status)
       // Purpose: Records supplier payment and deducts cash outflow from the chosen BankAccount
@@ -230,35 +227,46 @@ export default function APPayments() {
     [openInvoices]
   );
 
+  // Unique supplier list for the dropdown filter
+  const availableSuppliers = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of payments) {
+      if (p.supplier_name) set.add(String(p.supplier_name));
+    }
+    return Array.from(set).sort();
+  }, [payments]);
+
+  // Filter by supplier dropdown + search text, sorted newest payment on top
   const filteredPayments = useMemo(() => {
     const q = search.toLowerCase();
-    return payments.filter((p) => {
-      const payId = `pay-${String(p.paymentID).padStart(4, "0")}`;
-      const billId = `bill-${String(p.apInvoiceID).padStart(4, "0")}`;
-      const supplier = String(p.supplier_name || "").toLowerCase();
-      const bank = String(p.bank_name || "").toLowerCase();
-      return (
-        payId.includes(q) ||
-        billId.includes(q) ||
-        supplier.includes(q) ||
-        bank.includes(q)
-      );
-    });
-  }, [payments, search]);
+    return [...payments]
+      .sort((a, b) => Number(b.paymentID || 0) - Number(a.paymentID || 0))
+      .filter((p) => {
+        const rawSupplier = String(p.supplier_name || "");
+        if (supplierFilter !== "ALL" && rawSupplier !== supplierFilter) {
+          return false;
+        }
+        const payId = `pay-${String(p.paymentID).padStart(4, "0")}`;
+        const billId = `bill-${String(p.apInvoiceID).padStart(4, "0")}`;
+        const supplier = rawSupplier.toLowerCase();
+        const bank = String(p.bank_name || "").toLowerCase();
+        return (
+          payId.includes(q) ||
+          billId.includes(q) ||
+          supplier.includes(q) ||
+          bank.includes(q)
+        );
+      });
+  }, [payments, supplierFilter, search]);
 
-  return (
+    return (
     <div className="payments-page">
-      {/* Header */}
+      {/* Aligned Fixed Header (No subtitle, matches other pages) */}
       <div className="page-header">
-        <div>
-          <h1>AP Payments</h1>
-          <p>
-            Disburse supplier payments, track bank outflows, and settle open
-            bills.
-          </p>
-        </div>
+        <h1>AP Payments</h1>
 
         <button
+          type="button"
           className="primary-btn"
           onClick={() => {
             fetchData();
@@ -294,29 +302,44 @@ export default function APPayments() {
         </div>
       </div>
 
-      {/* Search & Refresh */}
-      <div
-        className="filter-bar"
-        style={{ margin: "1rem 0", display: "flex", gap: "0.75rem" }}
-      >
+      {/* Search Bar, Supplier Dropdown & Refresh */}
+      <div className="filter-bar">
         <input
           type="text"
+          className="filter-search-input"
           placeholder="Search payment ID, bill, supplier, or bank..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            flex: 1,
-            padding: "0.5rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-          }}
         />
-        <button className="secondary-btn" onClick={fetchData}>
+
+        <select
+          className="filter-select"
+          value={supplierFilter}
+          onChange={(e) => setSupplierFilter(e.target.value)}
+          aria-label="Filter payments by supplier"
+        >
+          <option value="ALL">All Suppliers</option>
+          {availableSuppliers.map((sup) => (
+            <option key={sup} value={sup}>
+              {sup}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          className="secondary-btn"
+          onClick={() => {
+            setSearch("");
+            setSupplierFilter("ALL");
+            fetchData();
+          }}
+        >
           Refresh
         </button>
       </div>
 
-      {/* Payment Register Table */}
+      {/* Centered Payment Register Table */}
       <div className="table-card">
         <div className="table-header">
           <div>
@@ -326,11 +349,11 @@ export default function APPayments() {
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading supplier payments...</p>
+          <p className="state-message">Loading supplier payments...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "crimson" }}>Error: {error}</p>
+          <p className="state-message error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="payments-table">
             <thead>
               <tr>
                 <th>Payment ID</th>
@@ -346,7 +369,7 @@ export default function APPayments() {
             <tbody>
               {filteredPayments.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={7} className="empty-table-cell">
                     No supplier payments recorded yet. Click{" "}
                     <strong>Record Payment</strong> to pay a bill.
                   </td>
@@ -354,16 +377,22 @@ export default function APPayments() {
               ) : (
                 filteredPayments.map((p) => (
                   <tr key={p.paymentID}>
-                    <td>PAY-{String(p.paymentID).padStart(4, "0")}</td>
+                    <td>
+                      <strong>PAY-{String(p.paymentID).padStart(4, "0")}</strong>
+                    </td>
                     <td>BILL-{String(p.apInvoiceID).padStart(4, "0")}</td>
-                    <td>{p.supplier_name || `Supplier Bill #${p.apInvoiceID}`}</td>
+                    <td>
+                      {p.supplier_name || `Supplier Bill #${p.apInvoiceID}`}
+                    </td>
                     <td>
                       {p.bank_name
                         ? `${p.bank_name} (${p.account_number})`
                         : `Bank #${p.bankAccountID}`}
                     </td>
                     <td>{formatDate(p.paymentDate)}</td>
-                    <td>{formatCurrency(p.amount)}</td>
+                    <td>
+                      <strong>{formatCurrency(p.amount)}</strong>
+                    </td>
                     <td>
                       <span className="status paid">Completed</span>
                     </td>
@@ -374,43 +403,20 @@ export default function APPayments() {
           </table>
         )}
       </div>
-
       {/* Record Payment Modal */}
       {showModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleRecordPayment}
-            style={{
-              backgroundColor: "#ffffff",
-              padding: "1.5rem",
-              borderRadius: "10px",
-              width: "440px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.85rem",
-              boxShadow: "0 10px 25px rgba(0, 0, 0, 0.15)",
-            }}
-          >
-            <h3 style={{ margin: 0 }}>Record Supplier Payment</h3>
+        <div className="modal-overlay">
+          <form className="modal-box" onSubmit={handleRecordPayment}>
+            <h3>Record Supplier Payment</h3>
 
             {/* Select Open AP Invoice */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="modal-field">
               <label>Select Open AP Invoice *</label>
               <select
+                className="modal-input"
                 required
                 value={selectedInvoiceId}
                 onChange={(e) => handleSelectInvoice(e.target.value)}
-                style={{ padding: "0.55rem", borderRadius: "6px", border: "1px solid #ccc" }}
               >
                 <option value="">
                   {openInvoices.length === 0
@@ -434,20 +440,9 @@ export default function APPayments() {
             </div>
 
             {/* Active Invoice Details Box */}
-             {activeInvoice && (
-              <div
-                style={{
-                  backgroundColor: "#f8fafc",
-                  padding: "0.75rem 0.85rem",
-                  borderRadius: "6px",
-                  border: "1px solid #e2e8f0",
-                  fontSize: "0.85rem",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.55rem",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
+            {activeInvoice && (
+              <div className="invoice-preview-box">
+                <div className="invoice-preview-row">
                   <div>
                     <strong>Supplier:</strong>{" "}
                     {activeInvoice.supplier_name ||
@@ -463,110 +458,50 @@ export default function APPayments() {
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const rem = Number(
-                        activeInvoice.remainingBalance ??
-                          activeInvoice.remainingbalance ??
-                          activeInvoice.amount ??
-                          0
-                      );
-                      setPaymentAmount(rem.toFixed(2));
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "0.4rem 0.6rem",
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                      borderRadius: "5px",
-                      border: "1px solid #2563eb",
-                      backgroundColor:
-                        Number(paymentAmount) ===
-                        Number(
-                          activeInvoice.remainingBalance ??
-                            activeInvoice.remainingbalance ??
-                            activeInvoice.amount
-                        )
-                          ? "#2563eb"
-                          : "#eff6ff",
-                      color:
-                        Number(paymentAmount) ===
-                        Number(
-                          activeInvoice.remainingBalance ??
-                            activeInvoice.remainingbalance ??
-                            activeInvoice.amount
-                        )
-                          ? "#ffffff"
-                          : "#1d4ed8",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Pay Full (100%)
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const rem = Number(
-                        activeInvoice.remainingBalance ??
-                          activeInvoice.remainingbalance ??
-                          activeInvoice.amount ??
-                          0
-                      );
-                      setPaymentAmount((rem / 2).toFixed(2));
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "0.4rem 0.6rem",
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                      borderRadius: "5px",
-                      border: "1px solid #0d9488",
-                      backgroundColor:
-                        Number(paymentAmount) ===
-                        Number(
-                          (
-                            Number(
-                              activeInvoice.remainingBalance ??
-                                activeInvoice.remainingbalance ??
-                                activeInvoice.amount
-                            ) / 2
-                          ).toFixed(2)
-                        )
-                          ? "#0d9488"
-                          : "#f0fdfa",
-                      color:
-                        Number(paymentAmount) ===
-                        Number(
-                          (
-                            Number(
-                              activeInvoice.remainingBalance ??
-                                activeInvoice.remainingbalance ??
-                                activeInvoice.amount
-                            ) / 2
-                          ).toFixed(2)
-                        )
-                          ? "#ffffff"
-                          : "#0f766e",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Pay Half (50%)
-                  </button>
+                <div className="split-btn-row">
+                  {(() => {
+                    const rem = Number(
+                      activeInvoice.remainingBalance ??
+                        activeInvoice.remainingbalance ??
+                        activeInvoice.amount ??
+                        0
+                    );
+                    const isFull = Number(paymentAmount) === rem;
+                    const isHalf =
+                      Number(paymentAmount) === Number((rem / 2).toFixed(2));
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className={`split-btn full ${isFull ? "active" : ""}`}
+                          onClick={() => setPaymentAmount(rem.toFixed(2))}
+                        >
+                          Pay Full (100%)
+                        </button>
+                        <button
+                          type="button"
+                          className={`split-btn half ${isHalf ? "active" : ""}`}
+                          onClick={() =>
+                            setPaymentAmount((rem / 2).toFixed(2))
+                          }
+                        >
+                          Pay Half (50%)
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
 
             {/* Select Bank Account */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="modal-field">
               <label>Disbursement Bank Account *</label>
               <select
+                className="modal-input"
                 required
                 value={selectedBankId}
                 onChange={(e) => setSelectedBankId(e.target.value)}
-                style={{ padding: "0.55rem", borderRadius: "6px", border: "1px solid #ccc" }}
               >
                 <option value="">
                   {bankAccounts.length === 0
@@ -582,23 +517,24 @@ export default function APPayments() {
             </div>
 
             {/* Payment Date */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="modal-field">
               <label>Payment Date *</label>
               <input
                 type="date"
+                className="modal-input"
                 required
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                style={{ padding: "0.55rem", borderRadius: "6px", border: "1px solid #ccc" }}
               />
             </div>
 
             {/* Typable Payment Amount */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+            <div className="modal-field">
               <label>Payment Amount (Typable) *</label>
               <input
                 type="text"
                 inputMode="decimal"
+                className="modal-input amount-input"
                 required
                 placeholder="Type amount e.g. 15000.00"
                 value={paymentAmount}
@@ -606,32 +542,14 @@ export default function APPayments() {
                   const cleaned = e.target.value.replace(/[^0-9.]/g, "");
                   setPaymentAmount(cleaned);
                 }}
-                style={{
-                  padding: "0.55rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                  fontSize: "1rem",
-                  fontWeight: 600,
-                }}
               />
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
+            <div className="modal-actions">
               <button
                 type="button"
+                className="cancel-btn"
                 onClick={() => setShowModal(false)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "6px",
-                  border: "1px solid #ccc",
-                }}
               >
                 Cancel
               </button>

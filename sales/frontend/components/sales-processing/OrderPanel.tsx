@@ -12,6 +12,11 @@ import type {
   SalesOrderStatus,
 } from "../../types/order";
 
+interface OrderPanelProps {
+  initialDraft: SalesOrderDraft | null;
+  onDraftHandled: () => void;
+}
+
 interface OrderLine {
   lineId: number;
   IM_ID: number;
@@ -26,7 +31,54 @@ interface StockIssue {
   available: number;
 }
 
+interface SalesOrderDraft {
+  customer_id: number;
+  installment_months: 1 | 3 | 6 | 12;
+  details: Array<{
+    IM_ID: number;
+    quantity: number;
+    discount: number;
+  }>;
+}
+
+type ItemWithEligibilityFields = SalesOrderItem & {
+  ItemType?: string | null;
+  item_type?: string | null;
+  itemType?: string | null;
+  Item_Type?: string | null;
+  itemtype?: string | null;
+  status?: string | boolean | number | null;
+};
+
 const PAGE_SIZE = 10;
+
+const isEligibleFinishedItem = (item: SalesOrderItem) => {
+  const raw = item as ItemWithEligibilityFields;
+
+  const itemStatus = String(raw.status ?? "").trim().toLowerCase();
+
+  const itemType = String(
+    raw.ItemType ??
+      raw.item_type ??
+      raw.itemType ??
+      raw.Item_Type ??
+      raw.itemtype ??
+      ""
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, " ");
+
+  const isActive = itemStatus === "active" || itemStatus === "true";
+
+  const isFinishedGood = [
+    "finished",
+    "finished good",
+    "finished goods",
+  ].includes(itemType);
+
+  return isActive && isFinishedGood;
+};
 
 const money = (amount: string | number) =>
   `₱${Number(amount || 0).toLocaleString("en-PH", {
@@ -52,12 +104,30 @@ const statusStyles: Partial<Record<SalesOrderStatus, string>> = {
   Pending: "border-amber-200 bg-amber-50 text-amber-700",
   Accepted: "border-blue-200 bg-blue-50 text-blue-700",
   Approved: "border-blue-200 bg-blue-50 text-blue-700",
+  "Waiting for Stock": "border-orange-200 bg-orange-50 text-orange-700",
+  Preparing: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  "Released to Sales": "border-purple-200 bg-purple-50 text-purple-700",
   Cancelled: "border-red-200 bg-red-50 text-red-700",
   Processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
   Completed: "border-green-200 bg-green-50 text-green-700",
 };
 
-export default function OrdersPage() {
+const statusLabels: Partial<Record<SalesOrderStatus, string>> = {
+  Pending: "Pending Inventory review",
+  Accepted: "Accepted",
+  Approved: "Accepted",
+  "Waiting for Stock": "Waiting for Stock",
+  Preparing: "Preparing",
+  "Released to Sales": "Released to Sales",
+  Processing: "Processing",
+  Completed: "Completed",
+  Cancelled: "Cancelled",
+};
+
+export default function OrdersPage({
+  initialDraft,
+  onDraftHandled,
+}: OrderPanelProps) {
   const [orders, setOrders] = useState<SalesOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [items, setItems] = useState<SalesOrderItem[]>([]);
@@ -73,15 +143,24 @@ export default function OrdersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const [customersLoaded, setCustomersLoaded] = useState(false);
+  const [itemsLoaded, setItemsLoaded] = useState(false);
+
   const [showForm, setShowForm] = useState(false);
+  const [showStockOverview, setShowStockOverview] = useState(false);
+  const [stockSearch, setStockSearch] = useState("");
+
   const [customerId, setCustomerId] = useState("");
+
   const [taxType, setTaxType] = useState<
     "VAT" | "Non-VAT" | "Tax-Exempt" | "Custom"
   >("VAT");
+
   const [customTaxRate, setCustomTaxRate] = useState("0");
   const [installmentMonths, setInstallmentMonths] = useState<1 | 3 | 6 | 12>(1);
 
   const [nextLineId, setNextLineId] = useState(2);
+
   const [lines, setLines] = useState<OrderLine[]>([
     { lineId: 1, IM_ID: 0, quantity: 1, discount: 0 },
   ]);
@@ -90,22 +169,6 @@ export default function OrdersPage() {
   const [activeItemLine, setActiveItemLine] = useState<number | null>(null);
 
   const customerSelected = customerId !== "";
-
-  const selectedTaxRate =
-    taxType === "VAT"
-      ? 12
-      : taxType === "Custom"
-        ? Number(customTaxRate)
-        : 0;
-
-  const estimatedOrderSubtotal = lines.reduce((sum, line) => {
-    const price = Number(itemCatalog[line.IM_ID]?.Price ?? 0);
-    return sum + price * line.quantity * (1 - line.discount / 100);
-  }, 0);
-
-  const estimatedTax = Number(
-    (estimatedOrderSubtotal * selectedTaxRate / 100).toFixed(2)
-  );
 
   const loadOrders = useCallback(async () => {
     setLoading(true);
@@ -131,6 +194,8 @@ export default function OrdersPage() {
       setError(
         err instanceof Error ? err.message : "Unable to load customers."
       );
+    } finally {
+      setCustomersLoaded(true);
     }
   }, []);
 
@@ -157,6 +222,7 @@ export default function OrdersPage() {
       );
     } finally {
       setLoadingItems(false);
+      setItemsLoaded(true);
     }
   }, []);
 
@@ -166,16 +232,137 @@ export default function OrdersPage() {
     void loadItems();
   }, [loadOrders, loadCustomers, loadItems]);
 
+  useEffect(() => {
+    if (showForm || showStockOverview) {
+      void loadItems();
+    }
+  }, [showForm, showStockOverview, loadItems]);
+
   const customerMap = useMemo(
     () =>
-      new Map(
+      new Map<number, string>(
         customers.map((customer) => [
-          customer.customer_id,
+          Number(customer.customer_id),
           customer.name,
         ])
       ),
     [customers]
   );
+
+  const selectItems = useMemo(
+    () => items.filter(isEligibleFinishedItem),
+    [items]
+  );
+
+  const totalFinishedGoodsStock = useMemo(
+    () =>
+      selectItems.reduce(
+        (total, item) => total + Number(item.stock_available ?? 0),
+        0
+      ),
+    [selectItems]
+  );
+
+  const filteredStockItems = useMemo(() => {
+    const term = stockSearch.trim().toLowerCase();
+
+    if (!term) return selectItems;
+
+    return selectItems.filter((item) => {
+      return (
+        String(item.Item_Name ?? "").toLowerCase().includes(term) ||
+        String(item.SKU ?? "").toLowerCase().includes(term) ||
+        String(item.IM_ID).includes(term)
+      );
+    });
+  }, [selectItems, stockSearch]);
+
+  useEffect(() => {
+    if (!initialDraft || !customersLoaded || !itemsLoaded) return;
+
+    const eligibleItems = items.filter(isEligibleFinishedItem);
+
+    const customerExists = customers.some(
+      (customer) =>
+        Number(customer.customer_id) ===
+          Number(initialDraft.customer_id) &&
+        Boolean(customer.status)
+    );
+
+    const validInstallments = [1, 3, 6, 12];
+
+    const validDetails =
+      Array.isArray(initialDraft.details) &&
+      initialDraft.details.length > 0 &&
+      initialDraft.details.every(
+        (detail) =>
+          Number.isInteger(detail.IM_ID) &&
+          detail.IM_ID > 0 &&
+          Number.isInteger(detail.quantity) &&
+          detail.quantity > 0 &&
+          Number.isFinite(detail.discount) &&
+          detail.discount >= 0 &&
+          detail.discount <= 100 &&
+          eligibleItems.some(
+            (item) => Number(item.IM_ID) === Number(detail.IM_ID)
+          )
+      );
+
+    if (
+      !customerExists ||
+      !validDetails ||
+      !validInstallments.includes(initialDraft.installment_months)
+    ) {
+      setError(
+        "Unable to load the quotation data. Please check the customer and selected items."
+      );
+
+      onDraftHandled();
+      return;
+    }
+
+    const preparedLines: OrderLine[] = initialDraft.details.map(
+      (detail, index) => ({
+        lineId: index + 1,
+        IM_ID: detail.IM_ID,
+        quantity: detail.quantity,
+        discount: detail.discount,
+      })
+    );
+
+    const preparedQueries: Record<number, string> = {};
+
+    preparedLines.forEach((line) => {
+      const item = eligibleItems.find(
+        (candidate) => candidate.IM_ID === line.IM_ID
+      );
+
+      if (item) {
+        preparedQueries[line.lineId] =
+          `${item.SKU} - ${item.Item_Name}`;
+      }
+    });
+
+    setError("");
+    setCustomerId(String(initialDraft.customer_id));
+    setTaxType("VAT");
+    setCustomTaxRate("0");
+    setInstallmentMonths(initialDraft.installment_months);
+    setLines(preparedLines);
+    setNextLineId(preparedLines.length + 1);
+    setItemQueries(preparedQueries);
+    setActiveItemLine(null);
+    setShowForm(true);
+
+    onDraftHandled();
+  }, [
+    initialDraft,
+    customersLoaded,
+    itemsLoaded,
+    customers,
+    items,
+    onDraftHandled,
+  ]);
 
   const filteredOrders = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -220,8 +407,20 @@ export default function OrdersPage() {
     (order) => order.status === "Pending"
   ).length;
 
-  const acceptedOrders = orders.filter(
-    (order) => order.status === "Accepted" || order.status === "Approved"
+  const preparingOrders = orders.filter(
+    (order) => order.status === "Preparing"
+  ).length;
+
+  const waitingForStockOrders = orders.filter(
+    (order) => order.status === "Waiting for Stock"
+  ).length;
+
+  const releasedOrders = orders.filter(
+    (order) => order.status === "Released to Sales"
+  ).length;
+
+  const completedOrders = orders.filter(
+    (order) => order.status === "Completed"
   ).length;
 
   const requestedByItem = useMemo(() => {
@@ -264,20 +463,6 @@ export default function OrdersPage() {
 
   const hasStockIssues = stockIssues.length > 0;
 
-  const selectItems = useMemo(() => {
-    const combined = new Map<number, SalesOrderItem>();
-
-    items.forEach((item) => combined.set(item.IM_ID, item));
-
-    lines.forEach((line) => {
-      if (line.IM_ID > 0 && itemCatalog[line.IM_ID]) {
-        combined.set(line.IM_ID, itemCatalog[line.IM_ID]);
-      }
-    });
-
-    return Array.from(combined.values());
-  }, [items, lines, itemCatalog]);
-
   function updateLineById(
     lineId: number,
     changes: Partial<OrderLine>
@@ -302,7 +487,7 @@ export default function OrdersPage() {
   }
 
   function chooseItem(line: OrderLine, item: SalesOrderItem) {
-    if (!customerSelected) return;
+    if (!customerSelected || !isEligibleFinishedItem(item)) return;
 
     updateLineById(line.lineId, { IM_ID: item.IM_ID });
 
@@ -381,11 +566,12 @@ export default function OrdersPage() {
           line.quantity <= 0 ||
           !Number.isFinite(line.discount) ||
           line.discount < 0 ||
-          line.discount > 100
+          line.discount > 100 ||
+          !selectItems.some((item) => item.IM_ID === line.IM_ID)
       )
     ) {
       setError(
-        "Please select valid items, whole-number quantities, and discounts between 0 and 100%."
+        "Please select Active Finished Goods items, whole-number quantities, and discounts between 0 and 100%."
       );
       return;
     }
@@ -438,7 +624,7 @@ export default function OrdersPage() {
     !customerSelected || saving || loadingItems;
 
   return (
-    <div className="min-w-0 space-y-4 bg-white text-slate-800 sm:space-y-5">
+    <div className="min-w-0 space-y-4 bg-gray text-slate-800 sm:space-y-5">
       {error && (
         <div
           role="alert"
@@ -457,7 +643,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard title="Total Orders" value={orders.length.toString()} />
         <SummaryCard title="Total Sales" value={money(totalSales)} />
 
@@ -468,10 +654,59 @@ export default function OrdersPage() {
         />
 
         <SummaryCard
-          title="Accepted Requests"
-          value={acceptedOrders.toString()}
+          title="Waiting for Stock"
+          value={waitingForStockOrders.toString()}
+          valueColor="text-orange-700"
+        />
+
+        <SummaryCard
+          title="Preparing Orders"
+          value={preparingOrders.toString()}
+          valueColor="text-indigo-700"
+        />
+
+        <SummaryCard
+          title="Released to Sales"
+          value={releasedOrders.toString()}
+          valueColor="text-purple-700"
+        />
+
+        <SummaryCard
+          title="Completed Orders"
+          value={completedOrders.toString()}
           valueColor="text-green-700"
         />
+
+        <button
+          type="button"
+          onClick={() => {
+            setStockSearch("");
+            setShowStockOverview(true);
+          }}
+          className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 text-left shadow-sm transition hover:border-[#3F7657] hover:bg-[#DDE1E5] focus:outline-none focus:ring-2 focus:ring-[#3F7657] focus:ring-offset-2 sm:p-5"
+          aria-label="View Active Finished Goods stock"
+        >
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-medium text-slate-600">
+              Active Finished Goods Stock
+            </p>
+            <span className="rounded-md bg-white px-2 py-1 text-xs font-semibold text-[#3F7657]">
+              View
+            </span>
+          </div>
+
+          <p className="mt-2 break-words text-xl font-bold text-slate-900 sm:text-2xl">
+            {loadingItems
+              ? "..."
+              : totalFinishedGoodsStock.toLocaleString("en-PH")}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            {loadingItems
+              ? "Loading stock..."
+              : `${selectItems.length} active finished goods items`}
+          </p>
+        </button>
       </section>
 
       <section className="min-w-0 overflow-hidden rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] shadow-sm">
@@ -482,12 +717,15 @@ export default function OrdersPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-600">
-              Submit requested items to Inventory and track its decision.
+              Submit requested items to Inventory and track each order through
+              preparation, release, and completion.
             </p>
           </div>
 
           <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row lg:w-auto">
             <input
+              id="sales-order-search"
+              name="sales-order-search"
               type="search"
               value={search}
               onChange={(e) => {
@@ -495,6 +733,7 @@ export default function OrdersPage() {
                 setCurrentPage(1);
               }}
               placeholder="Search order, customer, or status..."
+              aria-label="Search sales orders"
               className="min-w-0 w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-700 focus:ring-2 focus:ring-green-100 sm:py-2 sm:text-sm lg:w-72"
             />
 
@@ -523,7 +762,6 @@ export default function OrdersPage() {
           </div>
         ) : (
           <>
-            {/* Mobile order cards */}
             <div className="space-y-3 p-3 md:hidden">
               {paginatedOrders.map((order) => (
                 <div
@@ -546,11 +784,7 @@ export default function OrdersPage() {
                         "border-slate-300 bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {order.status === "Pending"
-                        ? "Pending Inventory review"
-                        : order.status === "Approved"
-                          ? "Accepted"
-                          : order.status}
+                      {statusLabels[order.status] ?? order.status}
                     </span>
                   </div>
 
@@ -590,7 +824,6 @@ export default function OrdersPage() {
               ))}
             </div>
 
-            {/* Desktop and tablet table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[850px] text-left text-sm">
                 <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
@@ -650,11 +883,7 @@ export default function OrdersPage() {
                             "border-slate-300 bg-slate-100 text-slate-600"
                           }`}
                         >
-                          {order.status === "Pending"
-                            ? "Pending Inventory review"
-                            : order.status === "Approved"
-                              ? "Accepted"
-                              : order.status}
+                          {statusLabels[order.status] ?? order.status}
                         </span>
                       </td>
                     </tr>
@@ -710,6 +939,151 @@ export default function OrdersPage() {
         )}
       </section>
 
+      {showStockOverview && (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center sm:p-4">
+          <div className="my-2 max-h-[calc(100dvh-16px)] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-xl sm:my-4 sm:max-h-[90dvh] sm:p-6">
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 sm:text-xl">
+                  Active Finished Goods Stock
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  View the latest available stock for each active finished
+                  goods item. Minimum selling prices are currently unavailable
+                  from Finance.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowStockOverview(false)}
+                className="shrink-0 rounded-lg p-2 text-slate-600 hover:bg-[#D1D5DB] hover:text-slate-900"
+                aria-label="Close stock overview"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-[#D1D5DB] bg-white p-4">
+                <p className="text-sm text-slate-600">
+                  Active Finished Goods Items
+                </p>
+                <p className="mt-1 text-2xl font-bold text-slate-900">
+                  {selectItems.length}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-[#D1D5DB] bg-white p-4">
+                <p className="text-sm text-slate-600">
+                  Total Available Stock
+                </p>
+                <p className="mt-1 text-2xl font-bold text-[#3F7657]">
+                  {totalFinishedGoodsStock.toLocaleString("en-PH")}
+                </p>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <input
+                type="search"
+                value={stockSearch}
+                onChange={(event) => setStockSearch(event.target.value)}
+                placeholder="Search item name, SKU, or item ID..."
+                aria-label="Search finished goods stock"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-green-700 focus:ring-2 focus:ring-green-100"
+              />
+            </div>
+
+            {loadingItems ? (
+              <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-10 text-center text-sm text-slate-600">
+                Loading stock information...
+              </div>
+            ) : filteredStockItems.length === 0 ? (
+              <div className="rounded-lg border border-[#D1D5DB] bg-white px-4 py-10 text-center text-sm text-slate-600">
+                {stockSearch
+                  ? "No finished goods match your search."
+                  : "No Active Finished Goods items found."}
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-[#D1D5DB] bg-white">
+                <table className="w-full min-w-[650px] text-left text-sm">
+                  <thead className="bg-[#D1D5DB] text-xs uppercase tracking-wide text-slate-700">
+                    <tr>
+                      <th className="px-4 py-3">Item</th>
+                      <th className="px-4 py-3">SKU</th>
+                      <th className="px-4 py-3 text-center">
+                        Available Stock
+                      </th>
+                      <th className="px-4 py-3">Unit</th>
+                      <th className="px-4 py-3 text-right">
+                        Minimum Selling Price
+                      </th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-[#D1D5DB]">
+                    {filteredStockItems.map((item) => {
+                      const stock = Number(item.stock_available ?? 0);
+
+                      return (
+                        <tr
+                          key={item.IM_ID}
+                          className="transition-colors hover:bg-slate-50"
+                        >
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-800">
+                              {item.Item_Name}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              Item ID: {item.IM_ID}
+                            </p>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                            {item.SKU || "—"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-center">
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                stock > 0
+                                  ? "bg-green-50 text-green-700"
+                                  : "bg-red-50 text-red-700"
+                              }`}
+                            >
+                              {stock.toLocaleString("en-PH")}
+                            </span>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                            {item.unit_of_measure || "—"}
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-slate-500">
+                            —
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-5 flex justify-end border-t border-[#D1D5DB] pt-4">
+              <button
+                type="button"
+                onClick={() => setShowStockOverview(false)}
+                className="w-full rounded-lg bg-[#3F7657] px-5 py-3 text-sm font-semibold text-white hover:bg-[#315F46] sm:w-auto"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-2 sm:items-center sm:p-4">
           <div className="my-2 max-h-[calc(100dvh-16px)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-xl sm:my-4 sm:max-h-[90dvh] sm:p-6">
@@ -721,7 +1095,7 @@ export default function OrdersPage() {
 
                 <p className="mt-1 text-xs leading-relaxed text-slate-600 sm:text-sm">
                   Select a customer and add the requested items. Inventory
-                  will review the request.
+                  will review the request and check Finished Goods stock.
                 </p>
               </div>
 
@@ -747,6 +1121,7 @@ export default function OrdersPage() {
 
                 <select
                   id="order-customer"
+                  name="order-customer"
                   value={customerId}
                   onChange={(e) => {
                     setCustomerId(e.target.value);
@@ -780,6 +1155,7 @@ export default function OrdersPage() {
 
                 <select
                   id="order-tax-type"
+                  name="order-tax-type"
                   value={taxType}
                   onChange={(event) =>
                     setTaxType(event.target.value as typeof taxType)
@@ -804,6 +1180,7 @@ export default function OrdersPage() {
 
                     <input
                       id="order-custom-tax"
+                      name="order-custom-tax"
                       type="number"
                       min="0"
                       max="100"
@@ -820,16 +1197,17 @@ export default function OrdersPage() {
 
                 <div className="mt-3 flex items-center justify-between gap-2 text-sm">
                   <span className="text-slate-600">
-                    Estimated tax ({selectedTaxRate || 0}%)
+                    Estimated tax
                   </span>
-                  <strong className="text-right text-slate-800">
-                    {money(estimatedTax)}
+
+                  <strong className="text-right text-slate-500">
+                    —
                   </strong>
                 </div>
 
-                <p className="mt-1 text-xs text-slate-500">
-                  Tax details are saved with the order and carried into its
-                  invoice.
+                <p className="mt-1 text-xs text-amber-700">
+                  Tax cannot be estimated until minimum selling prices are
+                  successfully retrieved from Finance.
                 </p>
               </div>
 
@@ -843,6 +1221,7 @@ export default function OrdersPage() {
 
                 <select
                   id="order-installment"
+                  name="order-installment"
                   value={installmentMonths}
                   onChange={(event) =>
                     setInstallmentMonths(
@@ -865,9 +1244,9 @@ export default function OrdersPage() {
 
               <div>
                 <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <label className="block text-sm font-medium text-slate-700">
+                  <p className="block text-sm font-medium text-slate-700">
                     Order Items
-                  </label>
+                  </p>
 
                   {!customerSelected && (
                     <span className="text-xs font-medium text-amber-700">
@@ -876,20 +1255,29 @@ export default function OrdersPage() {
                   )}
                 </div>
 
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Minimum selling prices are currently unavailable from
+                  Finance. Prices will remain blank until the Finance
+                  connection is restored.
+                </p>
+
                 {loadingItems && (
                   <p className="mb-2 text-xs text-slate-600">
-                    Loading items and stock...
+                    Updating item and stock information...
                   </p>
                 )}
 
                 <div className="space-y-3">
                   {lines.map((line, index) => {
                     const selectedItem = itemCatalog[line.IM_ID];
+
                     const requested =
                       requestedByItem.get(line.IM_ID) ?? 0;
+
                     const available = Number(
                       selectedItem?.stock_available ?? 0
                     );
+
                     const isInsufficient =
                       Boolean(selectedItem) && requested > available;
 
@@ -906,19 +1294,14 @@ export default function OrdersPage() {
                       const sku = String(item.SKU ?? "").toLowerCase();
 
                       return (
-                        itemName.includes(term) || sku.includes(term)
+                        itemName.includes(term) ||
+                        sku.includes(term)
                       );
                     });
 
                     const showSuggestions =
-                      activeItemLine === line.lineId && customerSelected;
-
-                    const originalPrice = Number(
-                      selectedItem?.Price ?? 0
-                    );
-
-                    const discountedPrice =
-                      originalPrice * (1 - line.discount / 100);
+                      activeItemLine === line.lineId &&
+                      customerSelected;
 
                     return (
                       <div
@@ -938,6 +1321,7 @@ export default function OrdersPage() {
 
                             <input
                               id={`item-search-${line.lineId}`}
+                              name={`item-search-${line.lineId}`}
                               type="search"
                               value={
                                 query ||
@@ -956,7 +1340,9 @@ export default function OrdersPage() {
                               onBlur={() => {
                                 setTimeout(() => {
                                   setActiveItemLine((current) =>
-                                    current === line.lineId ? null : current
+                                    current === line.lineId
+                                      ? null
+                                      : current
                                   );
                                 }, 150);
                               }}
@@ -1002,11 +1388,11 @@ export default function OrdersPage() {
                                         </span>
 
                                         <span className="text-xs text-slate-500">
-                                          {item.SKU} · {money(item.Price ?? 0)}
+                                          {item.SKU} · Minimum selling price: —
                                         </span>
 
                                         <span className="text-xs font-medium text-green-700">
-                                          Stock available:{" "}
+                                          Available stock:{" "}
                                           {Number(item.stock_available ?? 0)}
                                           {item.unit_of_measure
                                             ? ` ${item.unit_of_measure}`
@@ -1025,11 +1411,16 @@ export default function OrdersPage() {
                           </div>
 
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-600">
+                            <label
+                              htmlFor={`order-quantity-${line.lineId}`}
+                              className="mb-1 block text-xs font-medium text-slate-600"
+                            >
                               Quantity
                             </label>
 
                             <input
+                              id={`order-quantity-${line.lineId}`}
+                              name={`order-quantity-${line.lineId}`}
                               type="number"
                               min="1"
                               step="1"
@@ -1045,19 +1436,23 @@ export default function OrdersPage() {
                                 })
                               }
                               disabled={!customerSelected || saving}
-                              aria-label="Quantity"
                               placeholder="Qty"
                               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2 sm:text-sm"
                             />
                           </div>
 
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-600">
+                            <label
+                              htmlFor={`order-discount-${line.lineId}`}
+                              className="mb-1 block text-xs font-medium text-slate-600"
+                            >
                               Discount (%)
                             </label>
 
                             <div className="relative">
                               <input
+                                id={`order-discount-${line.lineId}`}
+                                name={`order-discount-${line.lineId}`}
                                 type="number"
                                 min="0"
                                 max="100"
@@ -1076,7 +1471,6 @@ export default function OrdersPage() {
                                   })
                                 }
                                 disabled={!customerSelected || saving}
-                                aria-label="Discount percentage"
                                 placeholder="0"
                                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-3 pr-8 text-base text-slate-800 outline-none focus:border-green-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 sm:py-2 sm:text-sm"
                               />
@@ -1128,16 +1522,16 @@ export default function OrdersPage() {
 
                             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                               <span className="text-slate-600">
-                                Original unit price:{" "}
-                                <strong className="text-slate-800">
-                                  {money(originalPrice)}
+                                Minimum selling price:{" "}
+                                <strong className="text-slate-500">
+                                  —
                                 </strong>
                               </span>
 
                               <span className="text-slate-600">
                                 Discounted unit price:{" "}
-                                <strong className="text-slate-800">
-                                  {money(discountedPrice)}
+                                <strong className="text-slate-500">
+                                  —
                                 </strong>
                               </span>
                             </div>
@@ -1148,9 +1542,9 @@ export default function OrdersPage() {
                   })}
                 </div>
 
-                {!loadingItems && items.length === 0 && (
+                {!loadingItems && selectItems.length === 0 && (
                   <p className="mt-2 text-xs text-slate-600">
-                    No items available.
+                    No Active Finished Goods items available.
                   </p>
                 )}
 
@@ -1164,8 +1558,9 @@ export default function OrdersPage() {
                     </p>
 
                     <p className="mt-1">
-                      You can still submit this request. Inventory will review
-                      it before accepting.
+                      You can still submit this request. Inventory will check
+                      stock and move the order to Waiting for Stock if the
+                      requested quantity is unavailable.
                     </p>
 
                     <ul className="mt-2 list-disc space-y-1 pl-5">
@@ -1233,7 +1628,9 @@ function SummaryCard({
     <div className="min-w-0 rounded-xl border border-[#D1D5DB] bg-[#E5E7EB] p-4 shadow-sm sm:p-5">
       <p className="text-sm font-medium text-slate-600">{title}</p>
 
-      <p className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueColor}`}>
+      <p
+        className={`mt-2 break-words text-xl font-bold sm:text-2xl ${valueColor}`}
+      >
         {value}
       </p>
     </div>

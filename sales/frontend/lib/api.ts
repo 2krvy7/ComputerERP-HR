@@ -4,6 +4,7 @@ import type {
   SalesOrderCreate,
   SalesOrderItem,
   FinishedGoodItem,
+  SalesOrderStatus,
 } from "../types/order";
 
 import type {
@@ -78,9 +79,7 @@ export async function request<T>(
       responseData = JSON.parse(responseText);
     } catch {
       if (response.ok) {
-        throw new Error(
-          "The server returned an invalid response."
-        );
+        throw new Error("The server returned an invalid response.");
       }
     }
   }
@@ -140,8 +139,7 @@ export const authAPI = {
       method: "POST",
     }),
 
-  getMe: () =>
-    request<AuthUser>("/api/auth/me"),
+  getMe: () => request<AuthUser>("/api/auth/me"),
 
   updateProfile: (data: ProfileUpdate) =>
     request<AuthUser>("/api/auth/me", {
@@ -159,8 +157,7 @@ export const authAPI = {
 // USER MANAGEMENT
 
 export const userAPI = {
-  getAll: () =>
-    request<AuthUser[]>("/api/users"),
+  getAll: () => request<AuthUser[]>("/api/users"),
 
   create: (data: {
     full_name: string;
@@ -229,11 +226,9 @@ export const customerAPI = {
 // SALES ORDERS
 
 export const salesOrderAPI = {
-  getAll: () =>
-    request<SalesOrder[]>("/api/orders"),
+  getAll: () => request<SalesOrder[]>("/api/orders"),
 
-  getById: (id: number) =>
-    request<SalesOrder>(`/api/orders/${id}`),
+  getById: (id: number) => request<SalesOrder>(`/api/orders/${id}`),
 
   getItems: (search = "") =>
     request<SalesOrderItem[]>(
@@ -246,7 +241,7 @@ export const salesOrderAPI = {
       body: JSON.stringify(data),
     }),
 
-  updateStatus: (id: number, status: "Accepted") =>
+  updateStatus: (id: number, status: SalesOrderStatus) =>
     request<SalesOrder>(`/api/orders/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
@@ -275,8 +270,7 @@ export const salesOrderAPI = {
 // DELIVERIES
 
 export const deliveryAPI = {
-  getAll: () =>
-    request<Delivery[]>("/api/deliveries"),
+  getAll: () => request<Delivery[]>("/api/deliveries"),
 
   getById: (id: number) =>
     request<Delivery>(`/api/deliveries/${id}`),
@@ -299,7 +293,7 @@ export const deliveryAPI = {
       method: "PATCH",
       body: JSON.stringify({
         status,
-        received_by: receivedBy,
+        ...(receivedBy ? { received_by: receivedBy } : {}),
       }),
     }),
 };
@@ -307,11 +301,9 @@ export const deliveryAPI = {
 // SALES INVOICES
 
 export const invoiceAPI = {
-  getAll: () =>
-    request<SalesInvoice[]>("/api/invoices"),
+  getAll: () => request<SalesInvoice[]>("/api/invoices"),
 
-  getById: (id: number) =>
-    request<SalesInvoice>(`/api/invoices/${id}`),
+  getById: (id: number) => request<SalesInvoice>(`/api/invoices/${id}`),
 
   create: (data: SalesInvoiceCreate) =>
     request<SalesInvoice>("/api/invoices", {
@@ -333,8 +325,7 @@ export const accountsReceivableAPI = {
 // PAYMENT COLLECTIONS
 
 export const paymentCollectionAPI = {
-  getAll: () =>
-    request<Collection[]>("/api/payment-collections"),
+  getAll: () => request<Collection[]>("/api/payment-collections"),
 
   getById: (id: number) =>
     request<Collection>(`/api/payment-collections/${id}`),
@@ -349,11 +340,9 @@ export const paymentCollectionAPI = {
 // SALES RETURNS
 
 export const salesReturnAPI = {
-  getAll: () =>
-    request<SalesReturn[]>("/api/returns"),
+  getAll: () => request<SalesReturn[]>("/api/returns"),
 
-  getById: (id: number) =>
-    request<SalesReturn>(`/api/returns/${id}`),
+  getById: (id: number) => request<SalesReturn>(`/api/returns/${id}`),
 
   create: (data: SalesReturnCreate) =>
     request<SalesReturn>("/api/returns", {
@@ -361,6 +350,26 @@ export const salesReturnAPI = {
       body: JSON.stringify(data),
     }),
 };
+
+
+export interface OnHandStock {
+  IM_ID: number;
+  SKU: string;
+  Item_Name: string;
+  Category: string | null;
+  unit_of_measure: string | null;
+  quantity_on_hand: number;
+  quantity_reserved: number;
+  available_stock: number;
+  reorder_level: number;
+  status: "In Stock" | "Low Stock" | "Out of Stock";
+}
+
+export const onHandStockAPI = {
+  getAll: () =>
+    request<OnHandStock[]>("/api/dashboard/on-hand-stocks"),
+};
+
 
 // SALES QUOTATIONS
 
@@ -370,8 +379,7 @@ export const quotationAPI = {
       `/api/quotations/items?search=${encodeURIComponent(search)}`
     ),
 
-  getAll: () =>
-    request<SalesQuotation[]>("/api/quotations"),
+  getAll: () => request<SalesQuotation[]>("/api/quotations"),
 
   create: (data: SalesQuotationCreate) =>
     request<SalesQuotation>("/api/quotations", {

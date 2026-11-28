@@ -248,12 +248,14 @@ export default function Home() {
     return () => window.removeEventListener("focus", handleFocus);
   }, []);
 
-  const formatCurrency = (val?: number) =>
-    new Intl.NumberFormat("en-US", {
+    const formatCurrency = (val: number) =>
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Number(val || 0));
+
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";

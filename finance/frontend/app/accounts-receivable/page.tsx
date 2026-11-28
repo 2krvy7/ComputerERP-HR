@@ -5,35 +5,29 @@ import "./arreceivable.css";
 
 export default function ARInvoices() {
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [receiptStats, setReceiptStats] = useState({ totalCollected: 0, receiptCount: 0 });
+  const [receiptStats, setReceiptStats] = useState({
+    totalCollected: 0,
+    receiptCount: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [todayStr, setTodayStr] = useState("");
 
-  // Tabs & Filters
-  const [activeTab, setActiveTab] = useState<"Unpaid" | "ALL" | "Overdue" | "Draft" | "Paid">("Unpaid");
+  // Tabs & Filters (Starts on "ALL" = All Invoices)
+  const [activeTab, setActiveTab] = useState<
+    "ALL" | "Unpaid" | "Overdue" | "Draft" | "Paid"
+  >("ALL");
   const [search, setSearch] = useState("");
   const [customerFilter, setCustomerFilter] = useState("ALL");
   const [dueFilter, setDueFilter] = useState("ALL");
 
-  // Modals
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // View Invoice Modal
   const [viewingInvoice, setViewingInvoice] = useState<any | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Create Form State
-  const [formCustomerId, setFormCustomerId] = useState("");
-  const [formSalesInvId, setFormSalesInvId] = useState("");
-  const [formDueDate, setFormDueDate] = useState("");
-  const [formAmount, setFormAmount] = useState("");
-  const [formStatus, setFormStatus] = useState("Sent");
 
   const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
-).replace(/\/$/, "");
-
+    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+  ).replace(/\/$/, "");
 
   useEffect(() => {
     setTodayStr(new Date().toISOString().split("T")[0]);
@@ -44,20 +38,14 @@ export default function ARInvoices() {
     setLoading(true);
     setError(null);
     try {
-      const [invRes, custRes, recRes] = await Promise.all([
-        // FETCH 1: GET http://127.0.0
+      const [invRes, recRes] = await Promise.all([
+        // FETCH 1: GET ${API_URL}/api/arinvoices
         // Backend File: finance/backend/routers/arinvoices.py -> get_ar_invoices()
         // Database Tables: Auto-syncs Team 4 Sales Invoices & ARReceipts, then reads "ARInvoice" joined with "Customer"
         // Purpose: Loads all customer receivables for the AR Invoices table and KPI cards
         fetch(`${API_URL}/api/arinvoices`),
 
-        // FETCH 2: GET http://127.0.0customers
-        // Backend File: finance/backend/routers/arinvoices.py -> get_customers()
-        // Database Table: Reads Team 4 "Customer" table
-        // Purpose: Populates the customer dropdown inside the Create AR Invoice modal
-        fetch(`${API_URL}/api/arinvoices/customers`),
-
-        // FETCH 3: GET http://127.0.0receipts-summary
+        // FETCH 2: GET ${API_URL}/api/arinvoices/receipts-summary
         // Backend File: finance/backend/routers/arinvoices.py -> get_receipts_summary()
         // Database Table: Aggregates "ARReceipt" (totalCollected and receiptCount)
         // Purpose: Displays total collections received on the AR Invoices summary card
@@ -68,10 +56,6 @@ export default function ARInvoices() {
       const invJson = await invRes.json();
       setInvoices(Array.isArray(invJson) ? invJson : []);
 
-      if (custRes.ok) {
-        const custJson = await custRes.json();
-        setCustomers(Array.isArray(custJson) ? custJson : []);
-      }
       if (recRes.ok) {
         setReceiptStats(await recRes.json());
       }
@@ -82,10 +66,13 @@ export default function ARInvoices() {
     }
   }
 
+  // Philippine Peso (PHP) currency formatter
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(Number(val || 0));
 
   const formatDate = (dateStr?: string) => {
@@ -96,56 +83,60 @@ export default function ARInvoices() {
       year: "numeric",
     });
   };
-
+  // Normalize customer invoices & sort newest invoice on top (rawId DESC)
   const normalizedInvoices = useMemo(() => {
-    return invoices.map((row, idx) => {
-      const rawId = row.arInvoiceID ?? row.arinvoiceid ?? row.id ?? idx + 1;
-      const displayId = `INV-${String(rawId).padStart(4, "0")}`;
-      const custId = row.customerID ?? row.customerid ?? "";
-      const customer =
-        row.customer_name ??
-        row.customerName ??
-        (custId ? `Customer #${custId}` : "Walk-in Customer");
-      const salesRef = row.salesInvoiceID ?? row.salesinvoiceid;
-      const description = salesRef
-        ? `Sales Invoice #${salesRef}`
-        : "Customer Receivable";
-      const dueDateRaw = row.dueDate ?? row.duedate ?? "";
-      const isoDue = dueDateRaw
-        ? new Date(dueDateRaw).toISOString().split("T")[0]
-        : "";
-      const amount = Number(row.amount ?? 0);
-      const balance = Number(
-        row.remainingBalance ?? row.remainingbalance ?? amount
-      );
+    return invoices
+      .map((row, idx) => {
+        const rawId = Number(
+          row.arInvoiceID ?? row.arinvoiceid ?? row.id ?? idx + 1
+        );
+        const displayId = `INV-${String(rawId).padStart(4, "0")}`;
+        const custId = row.customerID ?? row.customerid ?? "";
+        const customer =
+          row.customer_name ??
+          row.customerName ??
+          (custId ? `Customer #${custId}` : "Walk-in Customer");
+        const salesRef = row.salesInvoiceID ?? row.salesinvoiceid;
+        const description = salesRef
+          ? `Sales Invoice #${salesRef}`
+          : "Customer Receivable";
+        const dueDateRaw = row.dueDate ?? row.duedate ?? "";
+        const isoDue = dueDateRaw
+          ? new Date(dueDateRaw).toISOString().split("T")[0]
+          : "";
+        const amount = Number(row.amount ?? 0);
+        const balance = Number(
+          row.remainingBalance ?? row.remainingbalance ?? amount
+        );
 
-      let status = row.status ?? "Sent";
-      if (balance <= 0 || status.toLowerCase() === "paid") {
-        status = "Paid";
-      } else if (
-        status.toLowerCase() !== "draft" &&
-        todayStr &&
-        isoDue &&
-        isoDue < todayStr
-      ) {
-        status = "Overdue";
-      }
+        let status = row.status ?? "Sent";
+        if (balance <= 0 || status.toLowerCase() === "paid") {
+          status = "Paid";
+        } else if (
+          status.toLowerCase() !== "draft" &&
+          todayStr &&
+          isoDue &&
+          isoDue < todayStr
+        ) {
+          status = "Overdue";
+        }
 
-      return {
-        rawId,
-        displayId,
-        customer,
-        description,
-        isoDue,
-        dueDateFormatted: formatDate(dueDateRaw),
-        amount,
-        balance,
-        status,
-      };
-    });
+        return {
+          rawId,
+          displayId,
+          customer,
+          description,
+          isoDue,
+          dueDateFormatted: formatDate(dueDateRaw),
+          amount,
+          balance,
+          status,
+        };
+      })
+      .sort((a, b) => b.rawId - a.rawId);
   }, [invoices, todayStr]);
 
-    const stats = useMemo(() => {
+  const stats = useMemo(() => {
     const unpaid = normalizedInvoices.filter(
       (i) => i.status !== "Paid" && i.status !== "Draft"
     );
@@ -166,15 +157,19 @@ export default function ARInvoices() {
     };
   }, [normalizedInvoices, receiptStats]);
 
-
   const filteredInvoices = useMemo(() => {
     return normalizedInvoices.filter((inv) => {
-      if (activeTab === "Unpaid" && (inv.status === "Paid" || inv.status === "Draft")) return false;
+      if (
+        activeTab === "Unpaid" &&
+        (inv.status === "Paid" || inv.status === "Draft")
+      )
+        return false;
       if (activeTab === "Overdue" && inv.status !== "Overdue") return false;
       if (activeTab === "Draft" && inv.status !== "Draft") return false;
       if (activeTab === "Paid" && inv.status !== "Paid") return false;
 
-      if (customerFilter !== "ALL" && inv.customer !== customerFilter) return false;
+      if (customerFilter !== "ALL" && inv.customer !== customerFilter)
+        return false;
       if (dueFilter === "OVERDUE" && inv.status !== "Overdue") return false;
       if (dueFilter === "UPCOMING" && inv.status === "Overdue") return false;
 
@@ -191,45 +186,9 @@ export default function ARInvoices() {
     });
   }, [normalizedInvoices, activeTab, customerFilter, dueFilter, search]);
 
-  async function handleCreateInvoice(e: React.FormEvent) {
-    e.preventDefault();
-    if (!formCustomerId || !formDueDate || !formAmount) return;
-
-    setSubmitting(true);
-    try {
-      // FETCH 4: POST http://127.0.0
-      // Backend File: finance/backend/routers/arinvoices.py -> create_ar_invoice()
-      // Database Table: Inserts a new customer invoice into "ARInvoice"
-      // Purpose: Creates a new receivable record in PostgreSQL
-      const res = await fetch(`${API_URL}/api/arinvoices`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerID: Number(formCustomerId),
-          salesInvoiceID: formSalesInvId ? Number(formSalesInvId) : null,
-          dueDate: formDueDate,
-          amount: Number(formAmount),
-          status: formStatus,
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Failed to create invoice");
-      }
-      setShowCreateModal(false);
-      setFormAmount("");
-      setFormSalesInvId("");
-      await fetchData();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function handleStatusUpdate(rawId: number, newStatus: string) {
     try {
-      // FETCH 5: PATCH http://127.0.0{rawId}/status?status={newStatus}
+      // FETCH 3: PATCH ${API_URL}/api/arinvoices/${rawId}/status?status=${newStatus}
       // Backend File: finance/backend/routers/arinvoices.py -> update_ar_status()
       // Database Table: Updates "ARInvoice" status ('Sent' or 'Paid') and sets remainingBalance = 0 when Paid
       // Purpose: Updates invoice status from the View Invoice modal
@@ -248,7 +207,7 @@ export default function ARInvoices() {
   async function handleSyncFromSales() {
     setSyncing(true);
     try {
-      // FETCH 6: POST http://127.0.0sync-sales
+      // FETCH 4: POST ${API_URL}/api/arinvoices/sync-sales
       // Backend File: finance/backend/routers/arinvoices.py -> trigger_sales_sync()
       // Database Tables: Copies unimported rows from Team 4 "Sales Invoice" into Finance "ARInvoice"
       // Purpose: Pulls new customer invoices from Sales on demand
@@ -263,31 +222,20 @@ export default function ARInvoices() {
       setSyncing(false);
     }
   }
-
-
   return (
     <div className="ar-page">
+      {/* Aligned Fixed Header (No subtitle, no Create Invoice button) */}
       <div className="page-header">
-        <div>
-          <h1>AR Invoices</h1>
-          <p>
-            Send customer invoices, track due dates and stay on top of receivables.
-          </p>
-        </div>
+        <h1>AR Invoices</h1>
 
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={handleSyncFromSales}
-            disabled={syncing}
-          >
-            {syncing ? "Syncing Sales..." : "Sync from Sales"}
-          </button>
-          <button className="create-btn" onClick={() => setShowCreateModal(true)}>
-            Create Invoice
-          </button>
-        </div>
+        <button
+          type="button"
+          className="primary-btn"
+          onClick={handleSyncFromSales}
+          disabled={syncing}
+        >
+          {syncing ? "Syncing Sales..." : "Sync from Sales"}
+        </button>
       </div>
 
       {/* Summary Cards */}
@@ -329,12 +277,12 @@ export default function ARInvoices() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs (Starts on All Invoices) */}
       <div className="ar-tabs">
         {(
           [
-            { key: "Unpaid", label: "Unpaid Invoices" },
             { key: "ALL", label: "All Invoices" },
+            { key: "Unpaid", label: "Unpaid Invoices" },
             { key: "Overdue", label: "Overdue" },
             { key: "Draft", label: "Drafts" },
             { key: "Paid", label: "Paid" },
@@ -342,6 +290,7 @@ export default function ARInvoices() {
         ).map((t) => (
           <button
             key={t.key}
+            type="button"
             className={activeTab === t.key ? "active" : ""}
             onClick={() => setActiveTab(t.key)}
           >
@@ -354,12 +303,14 @@ export default function ARInvoices() {
       <div className="filter-bar">
         <input
           type="text"
+          className="filter-search-input"
           placeholder="Search invoice or customer..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
         <select
+          className="filter-select"
           value={customerFilter}
           onChange={(e) => setCustomerFilter(e.target.value)}
         >
@@ -374,6 +325,7 @@ export default function ARInvoices() {
         </select>
 
         <select
+          className="filter-select"
           value={dueFilter}
           onChange={(e) => setDueFilter(e.target.value)}
         >
@@ -383,10 +335,13 @@ export default function ARInvoices() {
         </select>
 
         <button
+          type="button"
+          className="reset-filter-btn"
           onClick={() => {
             setSearch("");
             setCustomerFilter("ALL");
             setDueFilter("ALL");
+            setActiveTab("ALL");
           }}
         >
           Reset Filters
@@ -401,17 +356,21 @@ export default function ARInvoices() {
             <p>Live Accounts Receivable Register</p>
           </div>
 
-          <button className="secondary-btn" onClick={fetchData}>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={fetchData}
+          >
             Refresh List
           </button>
         </div>
 
         {loading ? (
-          <p style={{ padding: "1rem" }}>Loading customer invoices...</p>
+          <p className="state-message">Loading customer invoices...</p>
         ) : error ? (
-          <p style={{ padding: "1rem", color: "red" }}>Error: {error}</p>
+          <p className="state-message error">Error: {error}</p>
         ) : (
-          <table>
+          <table className="ar-table">
             <thead>
               <tr>
                 <th>Invoice</th>
@@ -427,14 +386,16 @@ export default function ARInvoices() {
             <tbody>
               {filteredInvoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "1rem" }}>
+                  <td colSpan={7} className="empty-table-cell">
                     No customer invoices found.
                   </td>
                 </tr>
               ) : (
                 filteredInvoices.map((invoice) => (
                   <tr key={invoice.rawId}>
-                    <td>{invoice.displayId}</td>
+                    <td>
+                      <strong>{invoice.displayId}</strong>
+                    </td>
 
                     <td>
                       <div>
@@ -445,16 +406,21 @@ export default function ARInvoices() {
 
                     <td>{invoice.dueDateFormatted}</td>
                     <td>{formatCurrency(invoice.amount)}</td>
-                    <td>{formatCurrency(invoice.balance)}</td>
+                    <td>
+                      <strong>{formatCurrency(invoice.balance)}</strong>
+                    </td>
 
                     <td>
-                      <span className={`status ${invoice.status.toLowerCase()}`}>
+                      <span
+                        className={`status ${invoice.status.toLowerCase()}`}
+                      >
                         {invoice.status}
                       </span>
                     </td>
 
                     <td>
                       <button
+                        type="button"
                         className="view-btn"
                         onClick={() => setViewingInvoice(invoice)}
                       >
@@ -469,147 +435,10 @@ export default function ARInvoices() {
         )}
       </div>
 
-      {/* Create Invoice Modal */}
-      {showCreateModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <form
-            onSubmit={handleCreateInvoice}
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "400px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
-            <h3>Create AR Invoice</h3>
-
-            <label>Customer *</label>
-            {customers.length > 0 ? (
-              <select
-                required
-                value={formCustomerId}
-                onChange={(e) => setFormCustomerId(e.target.value)}
-              >
-                <option value="">-- Select Customer --</option>
-                {customers.map((c, idx) => {
-                  const id = c.customerID ?? c.customerid ?? c.id ?? idx;
-                  const name =
-                    c.customerName ??
-                    c.customername ??
-                    c.name ??
-                    `Customer #${id}`;
-                  return (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-            ) : (
-              <input
-                type="number"
-                required
-                placeholder="Customer ID (e.g. 1)"
-                value={formCustomerId}
-                onChange={(e) => setFormCustomerId(e.target.value)}
-              />
-            )}
-
-            <label>Sales Invoice ID (Optional)</label>
-            <input
-              type="number"
-              placeholder="e.g. 101"
-              value={formSalesInvId}
-              onChange={(e) => setFormSalesInvId(e.target.value)}
-            />
-
-            <label>Due Date *</label>
-            <input
-              type="date"
-              required
-              value={formDueDate}
-              onChange={(e) => setFormDueDate(e.target.value)}
-            />
-
-            <label>Invoice Amount *</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              placeholder="0.00"
-              value={formAmount}
-              onChange={(e) => setFormAmount(e.target.value)}
-            />
-
-            <label>Initial Status</label>
-            <select
-              value={formStatus}
-              onChange={(e) => setFormStatus(e.target.value)}
-            >
-              <option value="Sent">Sent</option>
-              <option value="Draft">Draft</option>
-            </select>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              <button type="button" onClick={() => setShowCreateModal(false)}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="create-btn"
-                disabled={submitting}
-              >
-                {submitting ? "Saving..." : "Save Invoice"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* View Invoice Modal */}
       {viewingInvoice && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              padding: "1.5rem",
-              borderRadius: "8px",
-              width: "400px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "0.75rem",
-            }}
-          >
+        <div className="modal-overlay">
+          <div className="modal-box">
             <h3>{viewingInvoice.displayId}</h3>
             <p>
               <strong>Customer:</strong> {viewingInvoice.customer}
@@ -632,17 +461,17 @@ export default function ARInvoices() {
               <strong>Status:</strong> {viewingInvoice.status}
             </p>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: "0.5rem",
-                marginTop: "0.5rem",
-              }}
-            >
-              <button onClick={() => setViewingInvoice(null)}>Close</button>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="cancel-btn"
+                onClick={() => setViewingInvoice(null)}
+              >
+                Close
+              </button>
               {viewingInvoice.status === "Draft" && (
                 <button
+                  type="button"
                   className="secondary-btn"
                   onClick={() =>
                     handleStatusUpdate(viewingInvoice.rawId, "Sent")
@@ -653,7 +482,8 @@ export default function ARInvoices() {
               )}
               {viewingInvoice.status !== "Paid" && (
                 <button
-                  className="create-btn"
+                  type="button"
+                  className="primary-btn"
                   onClick={() =>
                     handleStatusUpdate(viewingInvoice.rawId, "Paid")
                   }

@@ -23,6 +23,12 @@ const COLORS = {
   logo: "#c0d9d9",
 };
 
+// HR frontend (employee self-service pages live there)
+const HR_URL = (
+  process.env.NEXT_PUBLIC_HR_URL ||
+  "https://computer-erp-hr-frontend.vercel.app"
+).replace(/\/+$/, "");
+
 const NAV = [
   { label: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
   { label: "Suppliers", href: "/suppliers", Icon: Contact },
@@ -34,11 +40,30 @@ const NAV = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [hoverUser, setHoverUser] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
     setUser(getUser());
   }, []);
+
+  // Open my employee page in HR, carrying the login token
+  const openMyPage = () => {
+    let token = "";
+
+    try {
+      token =
+        localStorage.getItem("erp_token") ||
+        sessionStorage.getItem("erp_token") ||
+        "";
+    } catch {
+      token = "";
+    }
+
+    window.location.href = `${HR_URL}/employee-dashboard#token=${encodeURIComponent(
+      token
+    )}`;
+  };
 
   return (
     <aside
@@ -129,27 +154,44 @@ export default function Sidebar() {
       {/* Pushes the user card + logout to the bottom */}
       <div style={{ flexGrow: 1 }} />
 
-      {/* User card */}
-      <div
+      {/* User card (opens my employee page in HR) */}
+      <button
+        type="button"
+        onClick={openMyPage}
+        onMouseEnter={() => setHoverUser(true)}
+        onMouseLeave={() => setHoverUser(false)}
+        title="Open my employee page"
         style={{
           height: "5.2vw",
           borderRadius: "1vw",
           backgroundColor: COLORS.light,
+          border: "none",
           display: "flex",
           alignItems: "center",
           gap: "1vw",
           padding: "0 1.64vw",
+          width: "100%",
+          textAlign: "left",
+          fontFamily: "inherit",
+          color: "white",
+          cursor: "pointer",
+          filter: hoverUser ? "brightness(1.08)" : "none",
+          transition: "filter 0.15s",
         }}
       >
         <CircleUser style={{ width: "1.5vw", height: "1.5vw", flexShrink: 0 }} />
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
-            <span style={{ fontSize: "0.78vw", fontWeight: 600, color: "#ffffff" }}>{user?.username ?? "…"}</span>
-            <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>
-              {user ? `${user.sub} · ${user.department ?? "All departments"}` : ""}
-            </span>
-            <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>{user?.role ?? ""}</span>
+          <span style={{ fontSize: "0.78vw", fontWeight: 600, color: "#ffffff" }}>
+            {user?.username ?? "…"}
+          </span>
+          <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>
+            {user ? `${user.sub} · ${user.department ?? "All departments"}` : ""}
+          </span>
+          <span style={{ fontSize: "0.5vw", opacity: 0.8, color: "#ffffff" }}>
+            {user?.role ?? ""}
+          </span>
         </div>
-      </div>
+      </button>
 
       {/* Logout */}
       <button

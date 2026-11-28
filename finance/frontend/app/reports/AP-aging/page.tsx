@@ -83,10 +83,12 @@ export default function APAgingPage() {
   }, []);
 
   const formatCurrency = (val: number) =>
-    new Intl.NumberFormat("en-US", {
+    new Intl.NumberFormat("en-PH", {
       style: "currency",
-      currency: "USD",
-    }).format(Number(val || 0));
+      currency: "PHP",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(val);
 
   const formatCell = (val: number) => (val > 0 ? formatCurrency(val) : "-");
 
@@ -218,31 +220,7 @@ export default function APAgingPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filters">
-        <button onClick={fetchAPAging}>
-          {todayLabel ? `As of ${todayLabel}` : "As of Today"}
-        </button>
-        <button>Age by due date</button>
-        <select
-          value={selectedSupplier}
-          onChange={(e) => setSelectedSupplier(e.target.value)}
-          style={{
-            padding: "0.45rem 0.75rem",
-            borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            background: "#fff",
-          }}
-        >
-          <option value="ALL">All suppliers ({supplierRows.length})</option>
-          {supplierRows.map((r) => (
-            <option key={r.supplier} value={r.supplier}>
-              {r.supplier}
-            </option>
-          ))}
-        </select>
-        <button>USD</button>
-      </div>
+      
 
       {/* Summary Cards */}
       <div className="summary-grid">
